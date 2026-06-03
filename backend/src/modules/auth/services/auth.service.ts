@@ -3,12 +3,15 @@ import prisma from "../../../shared/config/prisma.js"
 import { generateAcessToken,generateRefreshToken } from "../../../shared/utils/jwt.js"
 import { UserRole } from "@prisma/client"
 import {z} from "zod"
-import { signupSchema } from "../validations/auth.validation.js"
+import { signupSchema ,loginSchema } from "../validations/auth.validation.js"
 
 type SignupInput = z.infer<typeof signupSchema>
 
+type LoginInput = z.infer<typeof loginSchema>
+
 export class AuthService{
     static async signup(data:SignupInput){
+        console.log(data)
         const {name,phone,email,password,role} = data
         const existingUser = await prisma.user.findFirst({
             where:{
@@ -60,4 +63,55 @@ export class AuthService{
             refreshToken,
         }
     }
+
+    static async login(data:LoginInput){
+        const {identifier,password} =data
+
+        const user = await prisma.user.findFirst({
+            where:{
+                OR:[
+                    {phone:identifier},
+                    {email:identifier}
+                ]
+            }
+        })
+
+        if(!user){
+            throw new Error("User not found")
+        }
+
+        // comapring password 
+        const ispasswordValid = await bcrypt.compare(password,user.password)
+        
+        if(!ispasswordValid){
+            throw new Error("Invalid Password")
+        }
+
+        const accessToken = generateAcessToken(user.id,user.role)
+
+        const refreshToken = generateRefreshToken(user.id)
+
+        await prisma.user.update({
+            where:{
+                id:user.id
+            },
+            data:{
+                refreshToken
+            }
+        })
+
+        return {
+            user:{
+                id:user.id,
+                name:user.name,
+                phone:user.phone,
+                email:user.email,
+                role:user.role,
+            },
+            accessToken,
+            refreshToken
+        }
+    }
+
+
 }
