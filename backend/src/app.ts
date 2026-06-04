@@ -5,6 +5,8 @@ import morgan from "morgan"
 import cookieParser from "cookie-parser"
 import authRoutes from "./modules/auth/routes/auth.routes.js"
 import userRoutes from "./modules/users/routes/user.routes.js"
+import workerRoutes from "./modules/workers/routes/worker.routes.js";
+import locationRoutes from "./modules/location/routes/location.routes.js"
 const app = express();
 
 
@@ -22,6 +24,18 @@ app.get("/api/v1/health",(_req,res)=>{
         message:"Server is running"
     })
 })
+
+
+app.use(
+  "/api/v1/workers",
+  workerRoutes
+);
+app.use(
+  "/api/v1/location",
+  locationRoutes
+);
+
+
 
 
 export default app;
