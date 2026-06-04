@@ -10,7 +10,6 @@ export const signupSchema = z.object({
     .regex(/^[0-9]{10}$/,"Phone number must be exactly 10 digits"),
 
     email:z
-    .string()
     .email("Invalid email format")
     .optional(),
 

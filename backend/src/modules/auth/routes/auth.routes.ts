@@ -4,13 +4,14 @@ import { authMiddleware, type AuthRequest } from "../../../shared/middleware/aut
 import { roleMiddleware } from "../../../shared/middleware/role.middleware.js"
 import { UserRole } from "@prisma/client"
 
+
 const router = Router()
 router.post("/signup",AuthController.signup)
 router.post("/login",AuthController.login)
 
 // Test route for auth middleware 
 
-router.get("/me",authMiddleware,(req:AuthRequest,res)=>{
+router.get("/authmid",authMiddleware,(req:AuthRequest,res)=>{
     return res.json({
         success:true,
         user:req.user
@@ -24,4 +25,16 @@ router.get("/worker-only",authMiddleware,roleMiddleware(UserRole.WORKER),(req,re
         message:"Welcome Worker"
     })
 })
+
+router.post(
+  "/refresh-token",
+  AuthController.refreshToken
+);
+
+router.post(
+  "/logout",
+  authMiddleware,
+  AuthController.logout
+);
+
 export default router

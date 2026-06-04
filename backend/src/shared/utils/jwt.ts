@@ -1,6 +1,6 @@
 import "dotenv/config"
 import jwt from "jsonwebtoken"
-export const generateAcessToken  =(userId:string ,role:string)=>{
+export const generateAccessToken  =(userId:string ,role:string)=>{
     return jwt.sign({userId,role},process.env.JWT_ACCESS_SECRET!,{expiresIn:'15m'})
 }
 

@@ -27,8 +27,16 @@ model User{
   email String? @unique
   password String
   role UserRole
+  address String?
+  city String?
+  state String?
+  pincode String?
+  profileImage String?
+  isActive Boolean @default(true) 
   isVerified Boolean @default(false)
   refreshToken String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+ 
