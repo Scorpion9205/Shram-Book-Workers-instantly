@@ -8,6 +8,7 @@ import userRoutes from "./modules/users/routes/user.routes.js"
 import workerRoutes from "./modules/workers/routes/worker.routes.js";
 import locationRoutes from "./modules/location/routes/location.routes.js"
 import providerRoutes from "./modules/providers/routes/provider.routes.js";
+import skillRoutes from "./modules/skills/routes/skill.routes.js"
 const app = express();
 
 
@@ -39,6 +40,11 @@ app.use(
 app.use(
   "/api/v1/providers",
   providerRoutes
+);
+
+app.use(
+  "/api/v1/skills",
+  skillRoutes
 );
 
 

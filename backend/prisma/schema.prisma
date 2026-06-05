@@ -5,12 +5,10 @@
 
 generator client {
   provider = "prisma-client-js"
-  
 }
 
 datasource db {
   provider = "postgresql"
-  
 }
 
 enum UserRole {
@@ -42,35 +40,48 @@ enum BookingStatus {
   CANCELLED
 }
 
-enum ProviderType{
+enum ProviderType {
   INDIVIDUAL
   COMPANY
 }
 
+enum InstantRequestStatus {
+  OPEN
+  FILLED
+  EXPIRED
+  CANCELLED
+  COMPLETED
+}
+
+enum InstantResponseStatus {
+  ACCEPTED
+  REJECTED
+}
+
 model User {
-  id           String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  name         String
-  phone        String   @unique
-  email        String?  @unique
-  password     String
+  name     String
+  phone    String  @unique
+  email    String? @unique
+  password String
 
-  role         UserRole
+  role UserRole
 
-  address      String?
-  city         String?
-  state        String?
-  pincode      String?
+  address String?
+  city    String?
+  state   String?
+  pincode String?
 
   profileImage String?
 
-  isActive     Boolean  @default(true)
-  isVerified   Boolean  @default(false)
+  isActive   Boolean @default(true)
+  isVerified Boolean @default(false)
 
   refreshToken String?
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   workerProfile   WorkerProfile?
   providerProfile ProviderProfile?
@@ -82,7 +93,8 @@ model User {
 
   bookingsAsProvider Booking[] @relation("ProviderBookings")
 
-  notifications Notification[]
+  notifications   Notification[]
+  instantRequests InstantRequest[]
 }
 
 model UserLocation {
@@ -95,7 +107,7 @@ model UserLocation {
 
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 }
 
@@ -122,10 +134,11 @@ model WorkerProfile {
 
   applications Application[]
 
-  bookings Booking[]
-  agentLinks AgentWorker[] 
+  bookings                Booking[]
+  agentLinks              AgentWorker[]
+  instantRequestResponses InstantRequestResponse[]
 }
- 
+
 model ProviderProfile {
   id String @id @default(uuid())
 
@@ -168,13 +181,16 @@ model Skill {
   name String @unique
 
   workers WorkerSkill[]
+
+  instantRequests     InstantRequest[]
+  instantRequestItems InstantRequestItem[]
 }
 
 model WorkerSkill {
   id String @id @default(uuid())
 
   workerId String
-  skillId String
+  skillId  String
 
   worker WorkerProfile @relation(fields: [workerId], references: [id])
 
@@ -186,7 +202,7 @@ model WorkerSkill {
 model AgentWorker {
   id String @id @default(uuid())
 
-  agentId String
+  agentId  String
   workerId String
 
   agent AgentProfile @relation(fields: [agentId], references: [id])
@@ -203,18 +219,17 @@ model Job {
 
   description String?
 
-  latitude Float
+  latitude  Float
   longitude Float
 
   address String?
-  city String?
-  state String?
+  city    String?
+  state   String?
   pincode String?
 
   budget Float?
 
   requiredWorkers Int
-
 
   status JobStatus @default(OPEN)
 
@@ -236,9 +251,9 @@ model Application {
   jobId String
 
   workerId String?
-  agentId String?
+  agentId  String?
 
-  bidAmount Float?
+  bidAmount   Float?
   workerCount Int?
 
   status ApplicationStatus @default(PENDING)
@@ -260,13 +275,13 @@ model Booking {
   providerId String
 
   workerId String?
-  agentId String?
+  agentId  String?
 
   amount Float
 
   status BookingStatus @default(PENDING)
 
-  startedAt DateTime?
+  startedAt   DateTime?
   completedAt DateTime?
 
   createdAt DateTime @default(now())
@@ -306,4 +321,75 @@ model Notification {
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])
+}
+
+model InstantRequest {
+  id String @id @default(uuid())
+
+  providerId String
+
+  title String
+
+  description String?
+
+  latitude  Float
+  longitude Float
+
+  address String?
+
+  amount Float
+
+  status InstantRequestStatus @default(OPEN)
+
+  expiresAt DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  provider User @relation(fields: [providerId], references: [id])
+
+  items   InstantRequestItem[]
+  skill   Skill?               @relation(fields: [skillId], references: [id])
+  skillId String?
+
+  @@index([providerId])
+  @@index([status])
+}
+
+model InstantRequestResponse {
+  id String @id @default(uuid())
+
+  itemId String
+
+  workerId String
+
+  status InstantResponseStatus
+
+  createdAt DateTime @default(now())
+
+  item InstantRequestItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  worker WorkerProfile @relation(fields: [workerId], references: [id])
+
+  @@unique([itemId, workerId])
+}
+
+model InstantRequestItem {
+  id String @id @default(uuid())
+
+  requestId String
+
+  skillId String
+
+  requiredWorkers Int
+
+  acceptedWorkers Int @default(0)
+
+  request InstantRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  skill Skill @relation(fields: [skillId], references: [id])
+
+  responses InstantRequestResponse[]
+
+  @@index([skillId])
 }
