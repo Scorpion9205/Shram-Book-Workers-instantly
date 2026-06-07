@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Skill" ADD COLUMN     "baseRate" DOUBLE PRECISION NOT NULL DEFAULT 0;

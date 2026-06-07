@@ -9,6 +9,8 @@ import workerRoutes from "./modules/workers/routes/worker.routes.js";
 import locationRoutes from "./modules/location/routes/location.routes.js"
 import providerRoutes from "./modules/providers/routes/provider.routes.js";
 import skillRoutes from "./modules/skills/routes/skill.routes.js"
+import instantRequestRoutes from "./modules/instant-requests/routes/instant-request.routes.js";
+
 const app = express();
 
 
@@ -45,6 +47,11 @@ app.use(
 app.use(
   "/api/v1/skills",
   skillRoutes
+);
+
+app.use(
+  "/api/v1/instant-requests",
+  instantRequestRoutes
 );
 
 

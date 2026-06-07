@@ -180,6 +180,8 @@ model Skill {
 
   name String @unique
 
+  baseRate Float @default(0)
+
   workers WorkerSkill[]
 
   instantRequests     InstantRequest[]
