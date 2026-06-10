@@ -152,4 +152,30 @@ export class InstantRequestController {
 
     }
   }
+
+  static async getMyRequests(
+    req: AuthRequest,
+    res: Response
+  ) {
+    try {
+
+      const requests =
+        await InstantRequestService.getMyRequests(
+          req.user!.userId
+        );
+
+      return res.status(200).json({
+        success: true,
+        requests,
+      });
+
+    } catch (error: any) {
+
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+
+    }
+  }
 }

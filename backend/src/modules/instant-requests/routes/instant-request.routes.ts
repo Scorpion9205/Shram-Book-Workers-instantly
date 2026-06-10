@@ -33,4 +33,11 @@ router.post(
   InstantRequestController.acceptRequest
 );
 
+router.get(
+  "/my-requests",
+  authMiddleware,
+  roleMiddleware("PROVIDER"),
+  InstantRequestController.getMyRequests
+);
+
 export default router;

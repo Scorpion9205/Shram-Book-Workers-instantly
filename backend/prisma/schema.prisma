@@ -272,7 +272,9 @@ model Application {
 model Booking {
   id String @id @default(uuid())
 
-  jobId String
+  jobId String?
+
+  instantRequestId String?
 
   providerId String
 
@@ -287,14 +289,29 @@ model Booking {
   completedAt DateTime?
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  job Job @relation(fields: [jobId], references: [id])
+  instantRequestResponseId String?
+
+  job Job? @relation(fields: [jobId], references: [id])
+
+  instantRequest InstantRequest? @relation(fields: [instantRequestId], references: [id])
 
   worker WorkerProfile? @relation(fields: [workerId], references: [id])
 
   agent AgentProfile? @relation(fields: [agentId], references: [id])
 
+  response InstantRequestResponse? @relation(fields: [instantRequestResponseId], references: [id])
+
   provider User @relation("ProviderBookings", fields: [providerId], references: [id])
+
+  @@unique([instantRequestResponseId])
+  @@index([providerId])
+  @@index([workerId])
+  @@index([agentId])
+  @@index([jobId])
+  @@index([instantRequestId])
+  @@index([status])
 }
 
 model Review {
@@ -350,6 +367,8 @@ model InstantRequest {
 
   provider User @relation(fields: [providerId], references: [id])
 
+  bookings Booking[]
+
   items   InstantRequestItem[]
   skill   Skill?               @relation(fields: [skillId], references: [id])
   skillId String?
@@ -371,7 +390,8 @@ model InstantRequestResponse {
 
   item InstantRequestItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
-  worker WorkerProfile @relation(fields: [workerId], references: [id])
+  worker   WorkerProfile @relation(fields: [workerId], references: [id])
+  bookings Booking[]
 
   @@unique([itemId, workerId])
 }
@@ -392,6 +412,8 @@ model InstantRequestItem {
   skill Skill @relation(fields: [skillId], references: [id])
 
   responses InstantRequestResponse[]
+
+  status InstantRequestStatus @default(OPEN)
 
   @@index([skillId])
 }

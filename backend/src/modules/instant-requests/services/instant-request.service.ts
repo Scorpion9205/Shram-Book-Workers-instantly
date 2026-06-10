@@ -93,203 +93,341 @@ export class InstantRequestService {
   }
 
   static async getNearbyRequests(
-  userId: string
-) {
+    userId: string
+  ) {
 
-  const worker =
-    await prisma.workerProfile.findUnique({
-      where: {
-        userId,
-      },
-
-      include: {
-        skills: true,
-      },
-    });
-
-  if (!worker) {
-    throw new Error(
-      "Worker profile not found"
-    );
-  }
-
-  const skillIds =
-    worker.skills.map(
-      (workerSkill) =>
-        workerSkill.skillId
-    );
-
-  if (skillIds.length === 0) {
-    return [];
-  }
-
-  const requests =
-    await prisma.instantRequest.findMany({
-      where: {
-        status: "OPEN",
-
-        items: {
-          some: {
-            skillId: {
-              in: skillIds,
-            },
-          },
-        },
-      },
-
-      select: {
-        id: true,
-
-        title: true,
-
-        description: true,
-
-        amount: true,
-
-        address: true,
-
-        createdAt: true,
-
-        provider: {
-          select: {
-            name: true,
-          },
+    const worker =
+      await prisma.workerProfile.findUnique({
+        where: {
+          userId,
         },
 
-        items: {
-          select: {
-            id: true,
+        include: {
+          skills: true,
+        },
+      });
 
-            requiredWorkers: true,
+    if (!worker) {
+      throw new Error(
+        "Worker profile not found"
+      );
+    }
 
-            acceptedWorkers: true,
 
-            skill: {
-              select: {
-                id: true,
+    const skillIds =
+      worker.skills.map(
+        (workerSkill) =>
+          workerSkill.skillId
+      );
 
-                name: true,
+    if (skillIds.length === 0) {
+      return [];
+    }
+
+    const requests =
+      await prisma.instantRequest.findMany({
+        where: {
+          status: "OPEN",
+
+          items: {
+            some: {
+              skillId: {
+                in: skillIds,
               },
             },
           },
         },
-      },
 
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+        select: {
+          id: true,
 
-  return requests;
-}
+          title: true,
 
+          description: true,
 
-static async acceptRequest(
-  userId: string,
-  itemId: string
-) {
+          amount: true,
 
-  const worker =
-    await prisma.workerProfile.findUnique({
-      where: {
-        userId,
-      },
+          address: true,
 
-      include: {
-        skills: true,
-      },
-    });
+          createdAt: true,
 
-  if (!worker) {
-    throw new Error(
-      "Worker profile not found"
-    );
-  }
-
-  return await prisma.$transaction(
-    async (tx) => {
-
-      const item =
-        await tx.instantRequestItem.findUnique({
-          where: {
-            id: itemId,
+          provider: {
+            select: {
+              name: true,
+            },
           },
 
-          include: {
-            request: true,
+          items: {
+            select: {
+              id: true,
+
+              requiredWorkers: true,
+
+              acceptedWorkers: true,
+
+              skill: {
+                select: {
+                  id: true,
+
+                  name: true,
+                },
+              },
+            },
           },
-        });
+        },
 
-      if (!item) {
-        throw new Error(
-          "Request item not found"
-        );
-      }
-
-      if (item.request.status !== "OPEN") {
-        throw new Error(
-          "Request is closed"
-        );
-      }
-
-      const hasSkill =
-        worker.skills.some(
-          (skill) =>
-            skill.skillId === item.skillId
-        );
-
-      if (!hasSkill) {
-        throw new Error(
-          "You don't have required skill"
-        );
-      }
-
-      const alreadyAccepted =
-        await tx.instantRequestResponse.findFirst({
-          where: {
-            itemId,
-            workerId: worker.id,
-          },
-        });
-
-      if (alreadyAccepted) {
-        throw new Error(
-          "You already accepted this request"
-        );
-      }
-
-      if (
-        item.acceptedWorkers >=
-        item.requiredWorkers
-      ) {
-        throw new Error(
-          "All slots are filled"
-        );
-      }
-
-      await tx.instantRequestResponse.create({
-        data: {
-          itemId,
-          workerId: worker.id,
-          status: "ACCEPTED",
+        orderBy: {
+          createdAt: "desc",
         },
       });
 
-      const updatedItem =
-        await tx.instantRequestItem.update({
-          where: {
-            id: itemId,
-          },
+    return requests;
+  }
+  static async acceptRequest(
+    userId: string,
+    itemId: string
+  ) {
 
-          data: {
-            acceptedWorkers: {
-              increment: 1,
+    const worker =
+      await prisma.workerProfile.findUnique({
+        where: {
+          userId,
+        },
+
+        include: {
+          skills: true,
+        },
+      });
+
+    if (!worker) {
+      throw new Error(
+        "Worker profile not found"
+      );
+    }
+
+    return await prisma.$transaction(
+      async (tx) => {
+
+        const item =
+          await tx.instantRequestItem.findUnique({
+            where: {
+              id: itemId,
             },
+
+            include: {
+              request: true,
+            },
+          });
+
+        if (!item) {
+          throw new Error(
+            "Request item not found"
+          );
+        }
+
+        if (item.request.status !== "OPEN") {
+          throw new Error(
+            "Request is closed"
+          );
+        }
+
+        const hasSkill =
+          worker.skills.some(
+            (skill) =>
+              skill.skillId === item.skillId
+          );
+
+        if (!hasSkill) {
+          throw new Error(
+            "You don't have required skill"
+          );
+        }
+
+        const alreadyAccepted =
+          await tx.instantRequestResponse.findFirst({
+            where: {
+              itemId,
+              workerId: worker.id,
+            },
+          });
+
+        if (alreadyAccepted) {
+          throw new Error(
+            "You already accepted this request"
+          );
+        }
+
+        if (
+          item.acceptedWorkers >=
+          item.requiredWorkers
+        ) {
+          throw new Error(
+            "All slots are filled"
+          );
+        }
+
+        const response =
+          await tx.instantRequestResponse.create({
+            data: {
+              itemId,
+              workerId: worker.id,
+              status: "ACCEPTED",
+            },
+          });
+
+        await tx.booking.create({
+          data: {
+            providerId: item.request.providerId,
+
+            workerId: worker.id,
+
+            instantRequestId: item.request.id,
+
+            instantRequestResponseId: response.id,
+
+            amount: 0,
+
+            status: "CONFIRMED",
           },
         });
 
-      return updatedItem;
+        
+
+        const updatedItem =
+          await tx.instantRequestItem.update({
+            where: {
+              id: itemId,
+            },
+
+            data: {
+              acceptedWorkers: {
+                increment: 1,
+              },
+            },
+          });
+
+
+        if (
+          updatedItem.acceptedWorkers >=
+          updatedItem.requiredWorkers
+        ) {
+
+          await tx.instantRequestItem.update({
+            where: {
+              id: itemId,
+            },
+
+            data: {
+              status: "FILLED",
+            },
+          });
+
+        }
+
+
+        const openItems =
+          await tx.instantRequestItem.count({
+            where: {
+              requestId: item.requestId,
+              status: "OPEN",
+            },
+          });
+
+        if (openItems === 0) {
+
+          await tx.instantRequest.update({
+            where: {
+              id: item.requestId,
+            },
+
+            data: {
+              status: "FILLED",
+            },
+          });
+
+        }
+
+        return updatedItem;
+      }
+    );
+  }
+
+
+  static async getMyRequests(
+    userId: string
+  ) {
+
+    const provider =
+      await prisma.providerProfile.findUnique({
+        where: {
+          userId,
+        },
+      });
+
+    if (!provider) {
+      throw new Error(
+        "Provider profile not found"
+      );
     }
-  );
-}
+
+    const requests =
+      await prisma.instantRequest.findMany({
+        where: {
+          providerId: userId,
+        },
+
+        select: {
+          id: true,
+
+          title: true,
+
+          amount: true,
+
+          status: true,
+
+          createdAt: true,
+
+          items: {
+            select: {
+              id: true,
+
+              requiredWorkers: true,
+
+              acceptedWorkers: true,
+
+              skill: {
+                select: {
+                  name: true,
+                },
+              },
+
+              responses: {
+                select: {
+                  status: true,
+
+                  worker: {
+                    select: {
+                      user: {
+                        select: {
+                          name: true,
+                          phone: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
+
+
+
+    return requests;
+  }
 }
