@@ -1,5 +1,4 @@
 import prisma from "../../config/prisma.js";
-
 export class FareService {
 
   static async calculateInstantFare(

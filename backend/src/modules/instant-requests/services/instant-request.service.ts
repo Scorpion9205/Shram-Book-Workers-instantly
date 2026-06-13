@@ -1,6 +1,7 @@
 import prisma from "../../../shared/config/prisma.js";
 import type { CreateInstantRequestInput } from "../validations/instant-request.validation.js";
 import { FareService } from "../../../shared/services/pricing/fare.service.js";
+import { getIO } from "../../../socket/socket.js";
 
 export class InstantRequestService {
 
@@ -86,6 +87,9 @@ export class InstantRequestService {
               },
             },
           });
+
+        const io = getIO();
+        io.emit("instant_request_created", createdRequest)
 
         return createdRequest;
       }
@@ -291,7 +295,7 @@ export class InstantRequestService {
           },
         });
 
-        
+
 
         const updatedItem =
           await tx.instantRequestItem.update({
@@ -346,6 +350,16 @@ export class InstantRequestService {
           });
 
         }
+        const io = getIO();
+
+        io.emit(
+          "worker_accepted",
+          {
+            workerId: worker.id,
+            requestId: item.requestId,
+            itemId,
+          }
+        );
 
         return updatedItem;
       }
