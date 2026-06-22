@@ -144,4 +144,146 @@ export class BookingService {
 
   }
 
+  static async startWork(
+    bookingId: string,
+    userId: string
+  ) {
+
+    const booking =
+      await prisma.booking.findUnique({
+        where: {
+          id: bookingId,
+        },
+
+        include: {
+          worker: true,
+        },
+      });
+
+    if (!booking) {
+      throw new Error(
+        "Booking not found"
+      );
+    }
+
+    if (
+      booking.worker?.userId !==
+      userId
+    ) {
+      throw new Error(
+        "Unauthorized"
+      );
+    }
+
+    if (
+      booking.status !== "CONFIRMED"
+    ) {
+      throw new Error(
+        "Booking is not confirmed"
+      );
+    }
+
+    return await prisma.booking.update({
+      where: {
+        id: bookingId,
+      },
+
+      data: {
+        status: "IN_PROGRESS",
+        startedAt: new Date(),
+      },
+    });
+  }
+
+ static async completeWork(
+  bookingId: string,
+  userId: string
+) {
+
+  const booking =
+    await prisma.booking.findUnique({
+      where: {
+        id: bookingId,
+      },
+
+      include: {
+        worker: true,
+      },
+    });
+
+  if (!booking) {
+    throw new Error(
+      "Booking not found"
+    );
+  }
+
+  if (
+    booking.worker?.userId !==
+    userId
+  ) {
+    throw new Error(
+      "Unauthorized"
+    );
+  }
+
+  if (
+    booking.status !==
+    "IN_PROGRESS"
+  ) {
+    throw new Error(
+      "Booking is not in progress"
+    );
+  }
+
+  return await prisma.$transaction(
+    async (tx) => {
+
+      const updatedBooking =
+        await tx.booking.update({
+          where: {
+            id: bookingId,
+          },
+
+          data: {
+            status: "COMPLETED",
+            completedAt: new Date(),
+          },
+        });
+
+      await tx.workerProfile.update({
+        where: {
+          id: booking.workerId!,
+        },
+
+        data: {
+          totalJobs: {
+            increment: 1,
+          },
+
+          isAvailable: true,
+        },
+      });
+
+      if (
+        booking.instantRequestId
+      ) {
+
+        await tx.instantRequest.update({
+          where: {
+            id: booking.instantRequestId,
+          },
+
+          data: {
+            status: "COMPLETED",
+          },
+        });
+
+      }
+
+      return updatedBooking;
+
+    }
+  );
+}
+
 }

@@ -1,6 +1,7 @@
-import {Server} from "socket.io";
-import type {Server as HttpServer} from "http";
-let io : Server;
+import { Server } from "socket.io";
+import type { Server as HttpServer } from "http";
+
+let io: Server;
 
 export const initializeSocket = (
   server: HttpServer
@@ -18,6 +19,36 @@ export const initializeSocket = (
     console.log(
       "Socket Connected:",
       socket.id
+    );
+
+    socket.on(
+      "join_skill_room",
+      (skillId: string) => {
+
+        socket.join(
+          `skill:${skillId}`
+        );
+
+        console.log(
+          `${socket.id} joined skill:${skillId}`
+        );
+
+      }
+    );
+
+    socket.on(
+      "leave_skill_room",
+      (skillId: string) => {
+
+        socket.leave(
+          `skill:${skillId}`
+        );
+
+        console.log(
+          `${socket.id} left skill:${skillId}`
+        );
+
+      }
     );
 
     socket.on("disconnect", () => {

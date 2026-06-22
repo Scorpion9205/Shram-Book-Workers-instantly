@@ -35,3 +35,16 @@ socket.on(
 
     }
 );
+
+socket.on(
+  "request_expired",
+  (data) => {
+
+    console.log(
+      "REQUEST EXPIRED"
+    );
+
+    console.log(data);
+
+  }
+);

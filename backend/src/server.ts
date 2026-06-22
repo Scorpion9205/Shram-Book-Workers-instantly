@@ -1,6 +1,7 @@
 import http from "http";
 
 import app from "./app.js";
+import { startExpireInstantRequestsJob } from "./shared/jobs/expire-instant-requests.job.js";
 
 import {
   initializeSocket,
@@ -19,5 +20,6 @@ server.listen(PORT, () => {
   console.log(
     `Server running on port ${PORT}`
   );
+  // startExpireInstantRequestsJob();
 
 });

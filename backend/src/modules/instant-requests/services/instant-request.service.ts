@@ -2,6 +2,7 @@ import prisma from "../../../shared/config/prisma.js";
 import type { CreateInstantRequestInput } from "../validations/instant-request.validation.js";
 import { FareService } from "../../../shared/services/pricing/fare.service.js";
 import { getIO } from "../../../socket/socket.js";
+import { calculateDistance } from "../../../shared/utils/distance.js";
 
 export class InstantRequestService {
 
@@ -29,7 +30,6 @@ export class InstantRequestService {
       latitude,
       longitude,
       address,
-
       items,
     } = data;
 
@@ -47,30 +47,38 @@ export class InstantRequestService {
               providerId: userId,
 
               title,
-              description: description ?? null,
+
+              description:
+                description ?? null,
 
               latitude,
               longitude,
 
-              address: address ?? null,
+              address:
+                address ?? null,
 
               amount: fare.total,
 
               expiresAt: new Date(
-                Date.now() + 30 * 60 * 1000
+                Date.now() +
+                30 * 60 * 1000
               ),
             },
           });
 
         await tx.instantRequestItem.createMany({
-          data: items.map((item) => ({
-            requestId: request.id,
+          data: items.map(
+            (item) => ({
+              requestId:
+                request.id,
 
-            skillId: item.skillId,
+              skillId:
+                item.skillId,
 
-            requiredWorkers:
-              item.requiredWorkers,
-          })),
+              requiredWorkers:
+                item.requiredWorkers,
+            })
+          ),
         });
 
         const createdRequest =
@@ -88,14 +96,47 @@ export class InstantRequestService {
             },
           });
 
+        if (!createdRequest) {
+          throw new Error(
+            "Request not found"
+          );
+        }
+
         const io = getIO();
-        io.emit("instant_request_created", createdRequest)
+
+        for (
+          const item of createdRequest.items
+        ) {
+
+          io.to(
+            `skill:${item.skillId}`
+          ).emit(
+            "instant_request_created",
+            {
+              requestId:
+                createdRequest.id,
+
+              itemId:
+                item.id,
+
+              title:
+                createdRequest.title,
+
+              skillId:
+                item.skillId,
+
+              requiredWorkers:
+                item.requiredWorkers,
+            }
+          );
+
+        }
 
         return createdRequest;
+
       }
     );
   }
-
   static async getNearbyRequests(
     userId: string
   ) {
@@ -117,6 +158,18 @@ export class InstantRequestService {
       );
     }
 
+    const workerLocation =
+      await prisma.userLocation.findUnique({
+        where: {
+          userId,
+        },
+      });
+
+    if (!workerLocation) {
+      throw new Error(
+        "Worker location not found"
+      );
+    }
 
     const skillIds =
       worker.skills.map(
@@ -133,11 +186,17 @@ export class InstantRequestService {
         where: {
           status: "OPEN",
 
+          expiresAt: {
+            gt: new Date(),
+          },
+
           items: {
             some: {
               skillId: {
                 in: skillIds,
               },
+
+              status: "OPEN",
             },
           },
         },
@@ -153,6 +212,9 @@ export class InstantRequestService {
 
           address: true,
 
+          latitude: true,
+          longitude: true,
+
           createdAt: true,
 
           provider: {
@@ -162,6 +224,14 @@ export class InstantRequestService {
           },
 
           items: {
+            where: {
+              skillId: {
+                in: skillIds,
+              },
+
+              status: "OPEN",
+            },
+
             select: {
               id: true,
 
@@ -172,7 +242,6 @@ export class InstantRequestService {
               skill: {
                 select: {
                   id: true,
-
                   name: true,
                 },
               },
@@ -185,7 +254,42 @@ export class InstantRequestService {
         },
       });
 
-    return requests;
+    const SEARCH_RADIUS_KM = 10;
+
+    const nearbyRequests =
+      requests
+        .map((request) => {
+
+          const distance =
+            calculateDistance(
+              workerLocation.latitude,
+              workerLocation.longitude,
+
+              request.latitude,
+              request.longitude
+            );
+
+          return {
+            ...request,
+
+            distanceKm:
+              Number(
+                distance.toFixed(2)
+              ),
+          };
+        })
+        .filter(
+          (request) =>
+            request.distanceKm <=
+            SEARCH_RADIUS_KM
+        )
+        .sort(
+          (a, b) =>
+            a.distanceKm -
+            b.distanceKm
+        );
+
+    return nearbyRequests;
   }
   static async acceptRequest(
     userId: string,
@@ -361,7 +465,14 @@ export class InstantRequestService {
           }
         );
 
-        return updatedItem;
+        const finalItem =
+          await tx.instantRequestItem.findUnique({
+            where: {
+              id: itemId,
+            },
+          });
+
+        return finalItem;
       }
     );
   }

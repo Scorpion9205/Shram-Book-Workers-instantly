@@ -30,6 +30,7 @@ enum ApplicationStatus {
   PENDING
   ACCEPTED
   REJECTED
+  WITHDRAWN
 }
 
 enum BookingStatus {
@@ -92,6 +93,7 @@ model User {
   jobsPosted Job[] @relation("ProviderJobs")
 
   bookingsAsProvider Booking[] @relation("ProviderBookings")
+  providerReviews    Review[]  @relation("ProviderReviews")
 
   notifications   Notification[]
   instantRequests InstantRequest[]
@@ -126,6 +128,8 @@ model WorkerProfile {
 
   rating Float @default(0)
 
+  totalReviews Int @default(0)
+
   totalJobs Int @default(0)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -135,6 +139,7 @@ model WorkerProfile {
   applications Application[]
 
   bookings                Booking[]
+  reviews                 Review[]
   agentLinks              AgentWorker[]
   instantRequestResponses InstantRequestResponse[]
 }
@@ -186,6 +191,7 @@ model Skill {
 
   instantRequests     InstantRequest[]
   instantRequestItems InstantRequestItem[]
+  jobs Job[]
 }
 
 model WorkerSkill {
@@ -221,13 +227,15 @@ model Job {
 
   description String?
 
-  latitude  Float
+  latitude Float
   longitude Float
 
   address String?
-  city    String?
-  state   String?
+  city String?
+  state String?
   pincode String?
+
+  skillId String
 
   budget Float?
 
@@ -240,33 +248,47 @@ model Job {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  provider User @relation("ProviderJobs", fields: [providerId], references: [id])
+  provider User @relation("ProviderJobs",fields: [providerId],references: [id])
+
+  skill Skill @relation(fields: [skillId],references: [id])
 
   applications Application[]
 
   bookings Booking[]
-}
 
+  @@index([providerId])
+  @@index([skillId])
+  @@index([status])
+}
 model Application {
   id String @id @default(uuid())
 
   jobId String
 
   workerId String?
-  agentId  String?
+  agentId String?
 
-  bidAmount   Float?
+  bidAmount Float?
   workerCount Int?
 
   status ApplicationStatus @default(PENDING)
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   job Job @relation(fields: [jobId], references: [id])
 
-  worker WorkerProfile? @relation(fields: [workerId], references: [id])
+  worker WorkerProfile?@relation(fields: [workerId], references: [id])
 
-  agent AgentProfile? @relation(fields: [agentId], references: [id])
+  agent AgentProfile?@relation(fields: [agentId], references: [id])
+
+  @@unique([jobId, workerId])
+  @@unique([jobId, agentId])
+
+  @@index([jobId])
+  @@index([workerId])
+  @@index([agentId])
+  @@index([status])
 }
 
 model Booking {
@@ -292,6 +314,7 @@ model Booking {
   updatedAt DateTime @updatedAt
 
   instantRequestResponseId String?
+  review                   Review?
 
   job Job? @relation(fields: [jobId], references: [id])
 
@@ -319,11 +342,24 @@ model Review {
 
   bookingId String @unique
 
+  providerId String
+
+  workerId String
+
   rating Int
 
   comment String?
 
   createdAt DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id])
+
+  provider User @relation("ProviderReviews", fields: [providerId], references: [id])
+
+  worker WorkerProfile @relation(fields: [workerId], references: [id])
+
+  @@index([workerId])
+  @@index([providerId])
 }
 
 model Notification {

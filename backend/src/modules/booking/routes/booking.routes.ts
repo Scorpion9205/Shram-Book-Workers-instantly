@@ -24,4 +24,18 @@ router.get(
   BookingController.getBookingById
 );
 
+router.patch(
+  "/:bookingId/start",
+  authMiddleware,
+  roleMiddleware("WORKER"),
+  BookingController.startWork
+);
+
+router.patch(
+  "/:bookingId/complete",
+  authMiddleware,
+  roleMiddleware("WORKER"),
+  BookingController.completeWork
+);
+
 export default router;

@@ -11,7 +11,8 @@ import providerRoutes from "./modules/providers/routes/provider.routes.js";
 import skillRoutes from "./modules/skills/routes/skill.routes.js"
 import instantRequestRoutes from "./modules/instant-requests/routes/instant-request.routes.js";
 import bookingRoutes from "./modules/booking/routes/booking.routes.js"
-
+import reviewRoutes
+  from "./modules/reviews/routes/review.routes.js";
 const app = express();
 
 
@@ -60,6 +61,11 @@ app.use(
 app.use(
   "/api/v1/bookings",
   bookingRoutes
+);
+
+app.use(
+  "/api/v1/reviews",
+  reviewRoutes
 );
 
 
