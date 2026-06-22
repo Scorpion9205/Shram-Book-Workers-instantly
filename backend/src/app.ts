@@ -13,6 +13,8 @@ import instantRequestRoutes from "./modules/instant-requests/routes/instant-requ
 import bookingRoutes from "./modules/booking/routes/booking.routes.js"
 import reviewRoutes
   from "./modules/reviews/routes/review.routes.js";
+
+  import jobRoutes from "./modules/jobs/routes/job.routes.js"
 const app = express();
 
 
@@ -68,6 +70,7 @@ app.use(
   reviewRoutes
 );
 
+app.use("/api/v1/jobs",jobRoutes)
 
 
 
