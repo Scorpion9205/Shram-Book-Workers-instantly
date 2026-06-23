@@ -45,3 +45,21 @@ export const createJobSchema = z.object({
 
 export type CreateJobInput =
   z.infer<typeof createJobSchema>;
+
+export const applyJobSchema =
+  z.object({
+    bidAmount: z
+      .number()
+      .positive(),
+
+    workerCount: z
+      .number()
+      .int()
+      .positive()
+      .optional(),
+  });
+
+export type ApplyJobInput =
+  z.infer<
+    typeof applyJobSchema
+  >;
