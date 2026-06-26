@@ -192,4 +192,144 @@ export class JobController {
     }
 
   }
+  static async getJobApplications(
+  req: AuthRequest,
+  res: Response
+) {
+
+  try {
+
+    const jobId =
+      req.params.jobId;
+
+    if (
+      !jobId ||
+      Array.isArray(jobId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid job id",
+      });
+    }
+
+    const applications =
+      await JobService.getJobApplications(
+        req.user!.userId,
+        jobId
+      );
+
+    return res.status(200).json({
+      success: true,
+      applications,
+    });
+
+  } catch (error: any) {
+
+    return res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+
+  }
+
+}
+static async acceptApplication(
+  req: AuthRequest,
+  res: Response
+) {
+
+  try {
+
+    const applicationId =
+      req.params.applicationId;
+
+    if (
+      !applicationId ||
+      Array.isArray(applicationId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid application id",
+      });
+    }
+
+    const result =
+      await JobService.acceptApplication(
+        req.user!.userId,
+        applicationId
+      );
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Application accepted successfully",
+      data: result,
+    });
+
+  } catch (error: any) {
+
+    return res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+
+  }
+
+}
+
+static async getMyApplications(
+  req: AuthRequest,
+  res: Response
+) {
+
+  try {
+
+    const applications =
+      await JobService.getMyApplications(
+        req.user!.userId
+      );
+
+    return res.status(200).json({
+      success: true,
+      applications,
+    });
+
+  } catch (error: any) {
+
+    return res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+
+  }
+
+}
+
+static async getProviderJobs(
+  req: AuthRequest,
+  res: Response
+) {
+
+  try {
+
+    const jobs =
+      await JobService.getProviderJobs(
+        req.user!.userId
+      );
+
+    return res.status(200).json({
+      success: true,
+      jobs,
+    });
+
+  } catch (error: any) {
+
+    return res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+
+  }
+
+}
 }

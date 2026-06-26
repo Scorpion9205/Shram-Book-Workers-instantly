@@ -260,9 +260,301 @@ export class JobService {
   }
 
   static async applyForJob(
-  userId: string,
-  jobId: string,
-  data: ApplyJobInput
+    userId: string,
+    jobId: string,
+    data: ApplyJobInput
+  ) {
+
+    const worker =
+      await prisma.workerProfile.findUnique({
+        where: {
+          userId,
+        },
+      });
+
+    if (!worker) {
+      throw new Error(
+        "Worker profile not found"
+      );
+    }
+
+    const job =
+      await prisma.job.findUnique({
+        where: {
+          id: jobId,
+        },
+      });
+
+    if (!job) {
+      throw new Error(
+        "Job not found"
+      );
+    }
+
+    if (job.status !== "OPEN") {
+      throw new Error(
+        "Job is closed"
+      );
+    }
+
+    const alreadyApplied =
+      await prisma.application.findFirst({
+        where: {
+          jobId,
+          workerId: worker.id,
+        },
+      });
+
+    if (alreadyApplied) {
+      throw new Error(
+        "You have already applied"
+      );
+    }
+
+    const application =
+      await prisma.application.create({
+        data: {
+          jobId,
+
+          workerId: worker.id,
+
+          bidAmount:
+            data.bidAmount,
+
+          status: "PENDING",
+        },
+      });
+
+    return application;
+  }
+
+  static async getJobApplications(
+    userId: string,
+    jobId: string
+  ) {
+
+    const job =
+      await prisma.job.findUnique({
+        where: {
+          id: jobId,
+        },
+      });
+
+    if (!job) {
+      throw new Error(
+        "Job not found"
+      );
+    }
+
+    if (job.providerId !== userId) {
+      throw new Error(
+        "Unauthorized"
+      );
+    }
+
+    const applications =
+      await prisma.application.findMany({
+        where: {
+          jobId,
+        },
+
+
+
+        select: {
+
+          id: true,
+
+          bidAmount: true,
+
+          workerCount: true,
+
+          status: true,
+
+          createdAt: true,
+
+          worker: {
+            select: {
+              experience: true,
+              dailyRate: true,
+              rating: true,
+              totalJobs: true,
+
+              user: {
+                select: {
+                  name: true,
+                  phone: true,
+                  profileImage: true,
+                },
+              },
+            },
+          },
+
+          agent: {
+            select: {
+              agencyName: true,
+
+              rating: true,
+
+              user: {
+                select: {
+                  name: true,
+                  phone: true,
+                  profileImage: true,
+                },
+              },
+            },
+          },
+
+        },
+
+        orderBy: {
+          bidAmount: "asc",
+        },
+
+      });
+
+    return applications;
+  }
+  static async acceptApplication(
+    userId: string,
+    applicationId: string
+  ) {
+
+    return await prisma.$transaction(
+      async (tx) => {
+
+        const application =
+          await tx.application.findUnique({
+            where: {
+              id: applicationId,
+            },
+
+            include: {
+              job: true,
+              worker: true,
+            },
+          });
+
+        if (!application) {
+          throw new Error(
+            "Application not found"
+          );
+        }
+
+        if (
+          application.job.providerId !==
+          userId
+        ) {
+          throw new Error(
+            "Unauthorized"
+          );
+        }
+
+        if (
+          application.status !== "PENDING"
+        ) {
+          throw new Error(
+            "Application already processed"
+          );
+        }
+
+        if (
+          application.job.status !==
+          "OPEN"
+        ) {
+          throw new Error(
+            "Job is closed"
+          );
+        }
+
+        await tx.application.update({
+          where: {
+            id: applicationId,
+          },
+
+          data: {
+            status: "ACCEPTED",
+          },
+        });
+
+        await tx.booking.create({
+          data: {
+
+            jobId:
+              application.jobId,
+
+            providerId:
+              application.job.providerId,
+
+            workerId:
+              application.workerId,
+
+            amount:
+              application.bidAmount ?? 0,
+
+            status:
+              "CONFIRMED",
+
+          },
+        });
+
+        const updatedJob =
+          await tx.job.update({
+            where: {
+              id:
+                application.jobId,
+            },
+
+            data: {
+              requiredWorkers: {
+                decrement: 1,
+              },
+            },
+          });
+
+        if (
+          updatedJob.requiredWorkers === 0
+        ) {
+
+          await tx.job.update({
+            where: {
+              id:
+                updatedJob.id,
+            },
+
+            data: {
+              status:
+                "ASSIGNED",
+            },
+          });
+
+          await tx.application.updateMany({
+            where: {
+              jobId:
+                updatedJob.id,
+
+              status:
+                "PENDING",
+            },
+
+            data: {
+              status:
+                "REJECTED",
+            },
+          });
+
+        }
+
+        return {
+          success: true,
+        };
+
+      }
+    );
+
+  }
+  static async getMyApplications(
+  userId: string
 ) {
 
   const worker =
@@ -278,54 +570,107 @@ export class JobService {
     );
   }
 
-  const job =
-    await prisma.job.findUnique({
+  const applications =
+    await prisma.application.findMany({
       where: {
-        id: jobId,
-      },
-    });
-
-  if (!job) {
-    throw new Error(
-      "Job not found"
-    );
-  }
-
-  if (job.status !== "OPEN") {
-    throw new Error(
-      "Job is closed"
-    );
-  }
-
-  const alreadyApplied =
-    await prisma.application.findFirst({
-      where: {
-        jobId,
         workerId: worker.id,
       },
-    });
 
-  if (alreadyApplied) {
-    throw new Error(
-      "You have already applied"
-    );
-  }
+      select: {
+        id: true,
 
-  const application =
-    await prisma.application.create({
-      data: {
-        jobId,
+        bidAmount: true,
 
-        workerId: worker.id,
+        status: true,
 
-        bidAmount:
-          data.bidAmount,
+        createdAt: true,
 
-        status: "PENDING",
+        job: {
+          select: {
+            id: true,
+
+            title: true,
+
+            budget: true,
+
+            address: true,
+
+            city: true,
+
+            requiredWorkers: true,
+
+            status: true,
+
+            provider: {
+              select: {
+                name: true,
+                phone: true,
+              },
+            },
+
+            skill: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+      },
+
+      orderBy: {
+        createdAt: "desc",
       },
     });
 
-  return application;
+  return applications;
 }
 
+static async getProviderJobs(
+  userId: string
+) {
+
+  const jobs =
+    await prisma.job.findMany({
+      where: {
+        providerId: userId,
+      },
+
+      select: {
+
+        id: true,
+
+        title: true,
+
+        budget: true,
+
+        requiredWorkers: true,
+
+        status: true,
+
+        createdAt: true,
+
+        skill: {
+          select: {
+            name: true,
+          },
+        },
+
+        _count: {
+          select: {
+            applications: true,
+            bookings: true,
+          },
+        },
+
+      },
+
+      orderBy: {
+        createdAt: "desc",
+      },
+
+    });
+
+  return jobs;
+
+}
 }
