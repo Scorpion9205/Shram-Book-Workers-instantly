@@ -15,6 +15,7 @@ import reviewRoutes
   from "./modules/reviews/routes/review.routes.js";
 
   import jobRoutes from "./modules/jobs/routes/job.routes.js"
+  import dashboardRoutes from "./modules/dashboard/routes/dashboard.routes.js"
 const app = express();
 
 
@@ -73,6 +74,10 @@ app.use(
 app.use("/api/v1/jobs",jobRoutes)
 
 
+app.use(
+  "/api/v1/dashboard",
+  dashboardRoutes
+);
 
 export default app;
 
