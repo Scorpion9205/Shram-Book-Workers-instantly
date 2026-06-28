@@ -5,6 +5,7 @@ import { UserRole } from "@prisma/client"
 import { z } from "zod"
 import { signupSchema, loginSchema } from "../validations/auth.validation.js"
 import jwt from "jsonwebtoken"
+import { RedisService } from "../../../shared/services/redis/redis.service.js"
 
 type SignupInput = z.infer<typeof signupSchema>
 
@@ -43,14 +44,11 @@ export class AuthService {
         const accessToken = generateAccessToken(user.id, user.role)
         const refreshToken = generateRefreshToken(user.id)
 
-        await prisma.user.update({
-            where: {
-                id: user.id,
-            },
-            data: {
-                refreshToken,
-            }
-        });
+        await RedisService.set(
+            `refresh:${user.id}`,
+            refreshToken,
+            7 * 24 * 60 * 60
+        );
 
         return {
             user: {
@@ -96,14 +94,11 @@ export class AuthService {
 
         const refreshToken = generateRefreshToken(user.id)
 
-        await prisma.user.update({
-            where: {
-                id: user.id
-            },
-            data: {
-                refreshToken
-            }
-        })
+        await RedisService.set(
+            `refresh:${user.id}`,
+            refreshToken,
+            7 * 24 * 60 * 60
+        );
 
         return {
             user: {
@@ -149,8 +144,13 @@ export class AuthService {
             );
         }
 
+        const storedRefreshToken =
+            await RedisService.get<string>(
+                `refresh:${user.id}`
+            );
+
         if (
-            user.refreshToken !==
+            storedRefreshToken !==
             refreshToken
         ) {
             throw new Error(
@@ -171,15 +171,9 @@ export class AuthService {
     }
 
     static async logout(userId: string) {
-        await prisma.user.update({
-            where: {
-                id: userId,
-            },
-            data: {
-                refreshToken: null,
-            },
-        });
-
+        await RedisService.del(
+            `refresh:${userId}`
+        );
         return true;
     }
 

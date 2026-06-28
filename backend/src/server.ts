@@ -1,4 +1,7 @@
 import http from "http";
+import dotenv from "dotenv"
+dotenv.config();
+import "./shared/config/redis.js"
 
 import app from "./app.js";
 import { startExpireInstantRequestsJob } from "./shared/jobs/expire-instant-requests.job.js";
@@ -23,3 +26,4 @@ server.listen(PORT, () => {
   // startExpireInstantRequestsJob();
 
 });
+console.log(process.env.REDIS_PORT);
