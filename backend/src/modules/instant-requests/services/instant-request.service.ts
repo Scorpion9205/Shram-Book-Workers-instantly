@@ -4,6 +4,7 @@ import { FareService } from "../../../shared/services/pricing/fare.service.js";
 import { getIO } from "../../../socket/socket.js";
 import { calculateDistance } from "../../../shared/utils/distance.js";
 import { RedisService } from "../../../shared/services/redis/redis.service.js";
+import { CacheInvalidationService } from "../../../shared/services/cache/cache-invalidation.service.js";
 export class InstantRequestService {
 
   static async createInstantRequest(
@@ -323,6 +324,7 @@ export class InstantRequestService {
     itemId: string
   ) {
 
+
     const worker =
       await prisma.workerProfile.findUnique({
         where: {
@@ -340,168 +342,222 @@ export class InstantRequestService {
       );
     }
 
-    return await prisma.$transaction(
-      async (tx) => {
+    const lockKey = `lock:instant-item:${itemId}`;
 
-        const item =
-          await tx.instantRequestItem.findUnique({
-            where: {
-              id: itemId,
-            },
+    const lockToken =
+      await RedisService.acquireLock(
+        lockKey,
+        15
+      );
 
-            include: {
-              request: true,
-            },
-          });
+    if (!lockToken) {
+      throw new Error(
+        "Another worker is already accepting this request."
+      );
+    }
+    try {
+      const result = await prisma.$transaction(
+        async (tx) => {
 
-        if (!item) {
-          throw new Error(
-            "Request item not found"
-          );
-        }
-
-        if (item.request.status !== "OPEN") {
-          throw new Error(
-            "Request is closed"
-          );
-        }
-
-        const hasSkill =
-          worker.skills.some(
-            (skill) =>
-              skill.skillId === item.skillId
-          );
-
-        if (!hasSkill) {
-          throw new Error(
-            "You don't have required skill"
-          );
-        }
-
-        const alreadyAccepted =
-          await tx.instantRequestResponse.findFirst({
-            where: {
-              itemId,
-              workerId: worker.id,
-            },
-          });
-
-        if (alreadyAccepted) {
-          throw new Error(
-            "You already accepted this request"
-          );
-        }
-
-        if (
-          item.acceptedWorkers >=
-          item.requiredWorkers
-        ) {
-          throw new Error(
-            "All slots are filled"
-          );
-        }
-
-        const response =
-          await tx.instantRequestResponse.create({
-            data: {
-              itemId,
-              workerId: worker.id,
-              status: "ACCEPTED",
-            },
-          });
-
-        await tx.booking.create({
-          data: {
-            providerId: item.request.providerId,
-
-            workerId: worker.id,
-
-            instantRequestId: item.request.id,
-
-            instantRequestResponseId: response.id,
-
-            amount: 0,
-
-            status: "CONFIRMED",
-          },
-        });
-
-
-
-        const updatedItem =
-          await tx.instantRequestItem.update({
-            where: {
-              id: itemId,
-            },
-
-            data: {
-              acceptedWorkers: {
-                increment: 1,
+          const item =
+            await tx.instantRequestItem.findUnique({
+              where: {
+                id: itemId,
               },
-            },
-          });
 
+              include: {
+                request: true,
+              },
+            });
 
-        if (
-          updatedItem.acceptedWorkers >=
-          updatedItem.requiredWorkers
-        ) {
-
-          await tx.instantRequestItem.update({
-            where: {
-              id: itemId,
-            },
-
-            data: {
-              status: "FILLED",
-            },
-          });
-
-        }
-
-
-        const openItems =
-          await tx.instantRequestItem.count({
-            where: {
-              requestId: item.requestId,
-              status: "OPEN",
-            },
-          });
-
-        if (openItems === 0) {
-
-          await tx.instantRequest.update({
-            where: {
-              id: item.requestId,
-            },
-
-            data: {
-              status: "FILLED",
-            },
-          });
-
-        }
-        const io = getIO();
-
-        io.emit(
-          "worker_accepted",
-          {
-            workerId: worker.id,
-            requestId: item.requestId,
-            itemId,
+          if (!item) {
+            throw new Error(
+              "Request item not found"
+            );
           }
-        );
 
-        const finalItem =
-          await tx.instantRequestItem.findUnique({
-            where: {
-              id: itemId,
+          if (item.request.status !== "OPEN") {
+            throw new Error(
+              "Request is closed"
+            );
+          }
+
+          const hasSkill =
+            worker.skills.some(
+              (skill) =>
+                skill.skillId === item.skillId
+            );
+
+          if (!hasSkill) {
+            throw new Error(
+              "You don't have required skill"
+            );
+          }
+
+          const alreadyAccepted =
+            await tx.instantRequestResponse.findFirst({
+              where: {
+                itemId,
+                workerId: worker.id,
+              },
+            });
+
+          if (alreadyAccepted) {
+            throw new Error(
+              "You already accepted this request"
+            );
+          }
+
+          if (
+            item.acceptedWorkers >=
+            item.requiredWorkers
+          ) {
+            throw new Error(
+              "All slots are filled"
+            );
+          }
+
+          const response =
+            await tx.instantRequestResponse.create({
+              data: {
+                itemId,
+                workerId: worker.id,
+                status: "ACCEPTED",
+              },
+            });
+
+          await tx.booking.create({
+            data: {
+              providerId: item.request.providerId,
+
+              workerId: worker.id,
+
+              instantRequestId: item.request.id,
+
+              instantRequestResponseId: response.id,
+
+              amount: 0,
+
+              status: "CONFIRMED",
             },
           });
 
-        return finalItem;
-      }
-    );
+
+
+          const updateResult =
+            await tx.instantRequestItem.updateMany({
+              where: {
+                id: itemId,
+                acceptedWorkers: {
+                  lt: item.requiredWorkers,
+                },
+              },
+              data: {
+                acceptedWorkers: {
+                  increment: 1,
+                },
+              },
+            });
+
+          if (updateResult.count === 0) {
+            throw new Error("All slots are already filled");
+          }
+
+          const updatedItem =
+            await tx.instantRequestItem.findUnique({
+              where: {
+                id: itemId,
+              },
+            });
+
+          if (!updatedItem) {
+            throw new Error("Request item not found");
+          }
+
+
+          if (
+            updatedItem.acceptedWorkers >=
+            updatedItem.requiredWorkers
+          ) {
+
+            await tx.instantRequestItem.update({
+              where: {
+                id: itemId,
+              },
+
+              data: {
+                status: "FILLED",
+              },
+            });
+
+          }
+
+
+          const openItems =
+            await tx.instantRequestItem.count({
+              where: {
+                requestId: item.requestId,
+                status: "OPEN",
+              },
+            });
+
+          if (openItems === 0) {
+
+            await tx.instantRequest.update({
+              where: {
+                id: item.requestId,
+              },
+
+              data: {
+                status: "FILLED",
+              },
+            });
+
+          }
+
+
+
+
+          const finalItem =
+            await tx.instantRequestItem.findUnique({
+              where: {
+                id: itemId,
+              },
+            });
+
+          return {
+            item: finalItem,
+            providerUserId: item.request.providerId,
+            workerUserId: worker.userId,
+          };
+        }
+      );
+      await CacheInvalidationService.afterInstantRequestAccepted(
+        result.providerUserId,
+        result.workerUserId
+      );
+
+      const io = getIO();
+
+      io.emit(
+        "worker_accepted",
+        {
+          workerId: worker.id,
+          requestId: result.item?.requestId,
+          itemId,
+        }
+      );
+
+      return result.item;
+    }
+    finally {
+
+      await RedisService.releaseLock(
+        lockKey,
+        lockToken
+      );
+
+    }
   }
 
 

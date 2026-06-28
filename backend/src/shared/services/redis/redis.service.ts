@@ -1,5 +1,5 @@
 import { redis } from "../../config/redis.js";
-
+import { randomUUID } from "crypto";
 export class RedisService {
 
   static async set(
@@ -64,29 +64,74 @@ export class RedisService {
 
   }
 
-  static async acquireLock(
-    key: string,
-    ttl: number
+ static async acquireLock(
+  key: string,
+  ttlSeconds = 10
+): Promise<string | null> {
+
+  const token = randomUUID();
+
+  const result = await redis.set(
+    key,
+    token,
+    "EX",
+    ttlSeconds,
+    "NX"
+  );
+
+  if (result !== "OK") {
+    return null;
+  }
+
+  return token;
+}
+static async releaseLock(
+  key: string,
+  token: string
 ) {
 
-    const result =
-        await redis.set(
-            key,
-            "locked",
-            "EX",
-            ttl,
-            "NX"
-        );
+  const script = `
+    if redis.call("GET", KEYS[1]) == ARGV[1] then
+      return redis.call("DEL", KEYS[1])
+    else
+      return 0
+    end
+  `;
 
-    return result === "OK";
+  await redis.eval(
+    script,
+    1,
+    key,
+    token
+  );
 
 }
-
-static async releaseLock(
-    key: string
+static async deletePattern(
+  pattern: string
 ) {
 
-    await redis.del(key);
+  let cursor = "0";
+
+  do {
+
+    const [nextCursor, keys] =
+      await redis.scan(
+        cursor,
+        "MATCH",
+        pattern,
+        "COUNT",
+        100
+      );
+
+    cursor = nextCursor;
+
+    if (keys.length > 0) {
+
+      await redis.del(...keys);
+
+    }
+
+  } while (cursor !== "0");
 
 }
 

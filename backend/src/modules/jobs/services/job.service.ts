@@ -3,6 +3,7 @@ import type { CreateJobInput } from "../validations/job.validation.js";
 import { calculateDistance } from "../../../shared/utils/distance.js";
 import type { ApplyJobInput } from "../validations/job.validation.js";
 import { RedisService } from "../../../shared/services/redis/redis.service.js";
+import { CacheInvalidationService } from "../../../shared/services/cache/cache-invalidation.service.js";
 export class JobService {
 
   static async createJob(
@@ -86,6 +87,11 @@ export class JobService {
           },
         },
       });
+
+
+    await CacheInvalidationService.afterJobCreated(
+      userId
+    );
 
     return job;
   }
@@ -447,7 +453,7 @@ export class JobService {
     applicationId: string
   ) {
 
-    return await prisma.$transaction(
+    const result = await prisma.$transaction(
       async (tx) => {
 
         const application =
@@ -465,6 +471,12 @@ export class JobService {
         if (!application) {
           throw new Error(
             "Application not found"
+          );
+        }
+
+        if (!application.worker?.userId) {
+          throw new Error(
+            "Worker user not found"
           );
         }
 
@@ -571,13 +583,20 @@ export class JobService {
           });
 
         }
-
         return {
           success: true,
+          workerUserId: application.worker.userId,
         };
-
       }
     );
+    await CacheInvalidationService.afterJobAccepted(
+      userId,
+      result.workerUserId
+    );
+
+    return {
+      success: true
+    };
 
   }
   static async getMyApplications(
