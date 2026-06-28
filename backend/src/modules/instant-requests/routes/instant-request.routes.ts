@@ -2,13 +2,18 @@ import {Router} from "express";
 import { InstantRequestController } from "../controllers/instant-request.controller.js";
 import { authMiddleware } from "../../../shared/middleware/auth.middleware.js";
 import { roleMiddleware } from "../../../shared/middleware/role.middleware.js";
+import { rateLimiter } from "../../../shared/middleware/rateLimiter.middleware.js";
 
 const router = Router();
 
 router.post(
   "/",
   authMiddleware,
-  roleMiddleware("PROVIDER"),
+  roleMiddleware("PROVIDER"),rateLimiter(
+    "instant:create",
+    15,
+    60
+  ),
   InstantRequestController.createInstantRequest
 );
 

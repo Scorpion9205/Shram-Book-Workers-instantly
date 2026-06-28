@@ -1,10 +1,23 @@
 import prisma from "../../../shared/config/prisma.js";
-
+import { RedisService } from "../../../shared/services/redis/redis.service.js";
 export class DashboardService {
 
   static async getWorkerDashboard(
     userId: string
   ) {
+    const cacheKey =
+      `dashboard:worker:${userId}`;
+
+    const cachedDashboard =
+      await RedisService.get(cacheKey);
+
+    if (cachedDashboard) {
+
+      console.log("✅ Dashboard from Redis");
+
+      return cachedDashboard;
+
+    }
 
     const worker =
       await prisma.workerProfile.findUnique({
@@ -113,7 +126,7 @@ export class DashboardService {
 
     ]);
 
-    return {
+    const dashboard = {
 
       todayEarnings:
         todayBookings._sum.amount ?? 0,
@@ -152,177 +165,210 @@ export class DashboardService {
         inProgressBookings > 0,
 
     };
+    await RedisService.set(
+      cacheKey,
+      dashboard,
+      60
+    );
+
+    console.log("✅ Dashboard cached");
+
+    return dashboard;
 
   }
   static async getProviderDashboard(
-  userId: string
-) {
+    userId: string
+  ) {
+    const cacheKey =
+      `dashboard:provider:${userId}`;
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+    const cachedDashboard =
+      await RedisService.get(cacheKey);
 
-  const weekStart = new Date();
-  weekStart.setDate(
-    weekStart.getDate() - 7
-  );
+    if (cachedDashboard) {
 
-  const monthStart = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    1
-  );
+      console.log("✅ Provider Dashboard from Redis");
 
-  const [
-    activeJobs,
-    completedJobs,
+      return cachedDashboard;
 
-    activeBookings,
-    completedBookings,
+    }
 
-    pendingApplications,
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-    todaySpent,
-    weekSpent,
-    monthSpent,
+    const weekStart = new Date();
+    weekStart.setDate(
+      weekStart.getDate() - 7
+    );
 
-    totalWorkersHired,
-  ] = await Promise.all([
+    const monthStart = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      1
+    );
 
-    prisma.job.count({
-      where: {
-        providerId: userId,
+    const [
+      activeJobs,
+      completedJobs,
 
-        status: {
-          in: [
-            "OPEN",
-            "ASSIGNED",
-            "IN_PROGRESS",
-          ],
-        },
-      },
-    }),
+      activeBookings,
+      completedBookings,
 
-    prisma.job.count({
-      where: {
-        providerId: userId,
-        status: "COMPLETED",
-      },
-    }),
+      pendingApplications,
 
-    prisma.booking.count({
-      where: {
-        providerId: userId,
+      todaySpent,
+      weekSpent,
+      monthSpent,
 
-        status: {
-          in: [
-            "CONFIRMED",
-            "IN_PROGRESS",
-          ],
-        },
-      },
-    }),
-
-    prisma.booking.count({
-      where: {
-        providerId: userId,
-        status: "COMPLETED",
-      },
-    }),
-
-    prisma.application.count({
-      where: {
-        job: {
-          providerId: userId,
-        },
-
-        status: "PENDING",
-      },
-    }),
-
-    prisma.booking.aggregate({
-      where: {
-        providerId: userId,
-
-        status: "COMPLETED",
-
-        completedAt: {
-          gte: today,
-        },
-      },
-
-      _sum: {
-        amount: true,
-      },
-    }),
-
-    prisma.booking.aggregate({
-      where: {
-        providerId: userId,
-
-        status: "COMPLETED",
-
-        completedAt: {
-          gte: weekStart,
-        },
-      },
-
-      _sum: {
-        amount: true,
-      },
-    }),
-
-    prisma.booking.aggregate({
-      where: {
-        providerId: userId,
-
-        status: "COMPLETED",
-
-        completedAt: {
-          gte: monthStart,
-        },
-      },
-
-      _sum: {
-        amount: true,
-      },
-    }),
-
-    prisma.booking.count({
-      where: {
-        providerId: userId,
-
-        status: "COMPLETED",
-      },
-    }),
-
-  ]);
-
-  return {
-
-    activeJobs,
-
-    completedJobs,
-
-    activeBookings,
-
-    completedBookings,
-
-    pendingApplications,
-
-    workersHired:
       totalWorkersHired,
+    ] = await Promise.all([
 
-    todaySpent:
-      todaySpent._sum.amount ?? 0,
+      prisma.job.count({
+        where: {
+          providerId: userId,
 
-    thisWeekSpent:
-      weekSpent._sum.amount ?? 0,
+          status: {
+            in: [
+              "OPEN",
+              "ASSIGNED",
+              "IN_PROGRESS",
+            ],
+          },
+        },
+      }),
 
-    thisMonthSpent:
-      monthSpent._sum.amount ?? 0,
+      prisma.job.count({
+        where: {
+          providerId: userId,
+          status: "COMPLETED",
+        },
+      }),
 
-  };
+      prisma.booking.count({
+        where: {
+          providerId: userId,
 
-}
+          status: {
+            in: [
+              "CONFIRMED",
+              "IN_PROGRESS",
+            ],
+          },
+        },
+      }),
+
+      prisma.booking.count({
+        where: {
+          providerId: userId,
+          status: "COMPLETED",
+        },
+      }),
+
+      prisma.application.count({
+        where: {
+          job: {
+            providerId: userId,
+          },
+
+          status: "PENDING",
+        },
+      }),
+
+      prisma.booking.aggregate({
+        where: {
+          providerId: userId,
+
+          status: "COMPLETED",
+
+          completedAt: {
+            gte: today,
+          },
+        },
+
+        _sum: {
+          amount: true,
+        },
+      }),
+
+      prisma.booking.aggregate({
+        where: {
+          providerId: userId,
+
+          status: "COMPLETED",
+
+          completedAt: {
+            gte: weekStart,
+          },
+        },
+
+        _sum: {
+          amount: true,
+        },
+      }),
+
+      prisma.booking.aggregate({
+        where: {
+          providerId: userId,
+
+          status: "COMPLETED",
+
+          completedAt: {
+            gte: monthStart,
+          },
+        },
+
+        _sum: {
+          amount: true,
+        },
+      }),
+
+      prisma.booking.count({
+        where: {
+          providerId: userId,
+
+          status: "COMPLETED",
+        },
+      }),
+
+    ]);
+
+    const dashboard = {
+
+      activeJobs,
+
+      completedJobs,
+
+      activeBookings,
+
+      completedBookings,
+
+      pendingApplications,
+
+      workersHired:
+        totalWorkersHired,
+
+      todaySpent:
+        todaySpent._sum.amount ?? 0,
+
+      thisWeekSpent:
+        weekSpent._sum.amount ?? 0,
+
+      thisMonthSpent:
+        monthSpent._sum.amount ?? 0,
+
+    };
+
+    await RedisService.set(
+      cacheKey,
+      dashboard,
+      60
+    );
+
+    console.log(
+      "✅ Provider Dashboard Cached"
+    );
+
+    return dashboard;
+  }
 
 }

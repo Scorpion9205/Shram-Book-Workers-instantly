@@ -2,6 +2,8 @@ import type { Request, Response } from "express"
 import { AuthService } from "../services/auth.service.js"
 import { signupSchema, loginSchema } from "../validations/auth.validation.js"
 import type { AuthRequest } from "../../../shared/middleware/auth.middleware.js"
+import { redis } from "../../../shared/config/redis.js"
+import { RedisService } from "../../../shared/services/redis/redis.service.js"
 export class AuthController {
     static async signup(req: Request, res: Response) {
         try {
@@ -47,7 +49,19 @@ export class AuthController {
                     errors: validationResult.error.issues
                 })
             }
-            const result = await AuthService.login(validationResult.data);
+            const result =
+                await AuthService.login(
+                    validationResult.data
+                );
+
+            const identifier =
+                validationResult.data.identifier;
+
+            const rateLimitKey =
+                `rate:login:${req.ip}:${identifier}`;
+
+            await RedisService.del(rateLimitKey);
+
             res.cookie("refreshToken", result.refreshToken), {
                 httpOnly: true,
                 secure: false,
@@ -120,6 +134,6 @@ export class AuthController {
         }
     }
 
-    
+
 
 }

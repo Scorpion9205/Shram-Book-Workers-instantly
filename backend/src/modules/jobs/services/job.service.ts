@@ -2,7 +2,7 @@ import prisma from "../../../shared/config/prisma.js";
 import type { CreateJobInput } from "../validations/job.validation.js";
 import { calculateDistance } from "../../../shared/utils/distance.js";
 import type { ApplyJobInput } from "../validations/job.validation.js";
-
+import { RedisService } from "../../../shared/services/redis/redis.service.js";
 export class JobService {
 
   static async createJob(
@@ -93,6 +93,23 @@ export class JobService {
   static async getAllJobs(
     userId: string
   ) {
+    const cacheKey =
+      `jobs:nearby:${userId}`;
+
+    const cachedJobs =
+      await RedisService.get<any>(
+        cacheKey
+      );
+
+    if (cachedJobs) {
+
+      console.log(
+        "✅ Nearby Jobs from Redis"
+      );
+
+      return cachedJobs;
+
+    }
 
     const worker =
       await prisma.workerProfile.findUnique({
@@ -217,6 +234,16 @@ export class JobService {
             a.distanceKm -
             b.distanceKm
         );
+
+    await RedisService.set(
+      cacheKey,
+      nearbyJobs,
+      120
+    );
+
+    console.log(
+      "✅ Nearby Jobs Cached"
+    );
 
     return nearbyJobs;
   }
@@ -554,123 +581,123 @@ export class JobService {
 
   }
   static async getMyApplications(
-  userId: string
-) {
+    userId: string
+  ) {
 
-  const worker =
-    await prisma.workerProfile.findUnique({
-      where: {
-        userId,
-      },
-    });
+    const worker =
+      await prisma.workerProfile.findUnique({
+        where: {
+          userId,
+        },
+      });
 
-  if (!worker) {
-    throw new Error(
-      "Worker profile not found"
-    );
+    if (!worker) {
+      throw new Error(
+        "Worker profile not found"
+      );
+    }
+
+    const applications =
+      await prisma.application.findMany({
+        where: {
+          workerId: worker.id,
+        },
+
+        select: {
+          id: true,
+
+          bidAmount: true,
+
+          status: true,
+
+          createdAt: true,
+
+          job: {
+            select: {
+              id: true,
+
+              title: true,
+
+              budget: true,
+
+              address: true,
+
+              city: true,
+
+              requiredWorkers: true,
+
+              status: true,
+
+              provider: {
+                select: {
+                  name: true,
+                  phone: true,
+                },
+              },
+
+              skill: {
+                select: {
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
+
+    return applications;
   }
 
-  const applications =
-    await prisma.application.findMany({
-      where: {
-        workerId: worker.id,
-      },
+  static async getProviderJobs(
+    userId: string
+  ) {
 
-      select: {
-        id: true,
+    const jobs =
+      await prisma.job.findMany({
+        where: {
+          providerId: userId,
+        },
 
-        bidAmount: true,
+        select: {
 
-        status: true,
+          id: true,
 
-        createdAt: true,
+          title: true,
 
-        job: {
-          select: {
-            id: true,
+          budget: true,
 
-            title: true,
+          requiredWorkers: true,
 
-            budget: true,
+          status: true,
 
-            address: true,
+          createdAt: true,
 
-            city: true,
-
-            requiredWorkers: true,
-
-            status: true,
-
-            provider: {
-              select: {
-                name: true,
-                phone: true,
-              },
-            },
-
-            skill: {
-              select: {
-                name: true,
-              },
+          skill: {
+            select: {
+              name: true,
             },
           },
-        },
-      },
 
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
-
-  return applications;
-}
-
-static async getProviderJobs(
-  userId: string
-) {
-
-  const jobs =
-    await prisma.job.findMany({
-      where: {
-        providerId: userId,
-      },
-
-      select: {
-
-        id: true,
-
-        title: true,
-
-        budget: true,
-
-        requiredWorkers: true,
-
-        status: true,
-
-        createdAt: true,
-
-        skill: {
-          select: {
-            name: true,
+          _count: {
+            select: {
+              applications: true,
+              bookings: true,
+            },
           },
+
         },
 
-        _count: {
-          select: {
-            applications: true,
-            bookings: true,
-          },
+        orderBy: {
+          createdAt: "desc",
         },
 
-      },
+      });
 
-      orderBy: {
-        createdAt: "desc",
-      },
+    return jobs;
 
-    });
-
-  return jobs;
-
-}
+  }
 }

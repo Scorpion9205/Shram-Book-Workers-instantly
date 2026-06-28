@@ -3,7 +3,7 @@ import type { CreateInstantRequestInput } from "../validations/instant-request.v
 import { FareService } from "../../../shared/services/pricing/fare.service.js";
 import { getIO } from "../../../socket/socket.js";
 import { calculateDistance } from "../../../shared/utils/distance.js";
-
+import { RedisService } from "../../../shared/services/redis/redis.service.js";
 export class InstantRequestService {
 
   static async createInstantRequest(
@@ -140,6 +140,23 @@ export class InstantRequestService {
   static async getNearbyRequests(
     userId: string
   ) {
+    const cacheKey =
+      `requests:nearby:${userId}`;
+
+    const cachedRequests =
+      await RedisService.get<any>(
+        cacheKey
+      );
+
+    if (cachedRequests) {
+
+      console.log(
+        "✅ Nearby Requests from Redis"
+      );
+
+      return cachedRequests;
+
+    }
 
     const worker =
       await prisma.workerProfile.findUnique({
@@ -288,6 +305,16 @@ export class InstantRequestService {
             a.distanceKm -
             b.distanceKm
         );
+
+    await RedisService.set(
+      cacheKey,
+      nearbyRequests,
+      60
+    );
+
+    console.log(
+      "✅ Nearby Requests Cached"
+    );
 
     return nearbyRequests;
   }

@@ -64,4 +64,30 @@ export class RedisService {
 
   }
 
+  static async acquireLock(
+    key: string,
+    ttl: number
+) {
+
+    const result =
+        await redis.set(
+            key,
+            "locked",
+            "EX",
+            ttl,
+            "NX"
+        );
+
+    return result === "OK";
+
+}
+
+static async releaseLock(
+    key: string
+) {
+
+    await redis.del(key);
+
+}
+
 }

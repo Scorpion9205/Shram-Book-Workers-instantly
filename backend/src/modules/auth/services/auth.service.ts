@@ -6,7 +6,8 @@ import { z } from "zod"
 import { signupSchema, loginSchema } from "../validations/auth.validation.js"
 import jwt from "jsonwebtoken"
 import { RedisService } from "../../../shared/services/redis/redis.service.js"
-
+import type { AuthRequest } from "../../../shared/middleware/auth.middleware.js"
+import { redis } from "../../../shared/config/redis.js"
 type SignupInput = z.infer<typeof signupSchema>
 
 type LoginInput = z.infer<typeof loginSchema>
@@ -99,7 +100,7 @@ export class AuthService {
             refreshToken,
             7 * 24 * 60 * 60
         );
-
+        
         return {
             user: {
                 id: user.id,

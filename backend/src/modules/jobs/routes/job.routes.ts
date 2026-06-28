@@ -2,9 +2,14 @@ import { Router } from "express";
 import { JobController } from "../controllers/job.controller.js";
 import { authMiddleware } from "../../../shared/middleware/auth.middleware.js";
 import { roleMiddleware } from "../../../shared/middleware/role.middleware.js";
+import { rateLimiter } from "../../../shared/middleware/rateLimiter.middleware.js";
 const router = Router();
 
-router.post("/",authMiddleware,roleMiddleware("PROVIDER"),JobController.createJob)
+router.post("/",authMiddleware,roleMiddleware("PROVIDER"),rateLimiter(
+    "job:create",
+    30,
+    60
+  ),JobController.createJob)
 
 router.get(
   "/",
