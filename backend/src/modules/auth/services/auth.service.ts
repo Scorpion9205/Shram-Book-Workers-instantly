@@ -6,8 +6,8 @@ import { z } from "zod"
 import { signupSchema, loginSchema } from "../validations/auth.validation.js"
 import jwt from "jsonwebtoken"
 import { RedisService } from "../../../shared/services/redis/redis.service.js"
-import type { AuthRequest } from "../../../shared/middleware/auth.middleware.js"
-import { redis } from "../../../shared/config/redis.js"
+import { emailService } from "../../../shared/email/index.js"
+import { randomUUID } from "crypto"
 type SignupInput = z.infer<typeof signupSchema>
 
 type LoginInput = z.infer<typeof loginSchema>
@@ -50,6 +50,22 @@ export class AuthService {
             refreshToken,
             7 * 24 * 60 * 60
         );
+
+        if (user.email) {
+
+            emailService
+                .sendWelcomeEmail(
+                    user.email,
+                    user.name
+                )
+                .catch((error) => {
+                    console.error(
+                        "Failed to send welcome email:",
+                        error
+                    );
+                });
+
+        }
 
         return {
             user: {
@@ -100,7 +116,7 @@ export class AuthService {
             refreshToken,
             7 * 24 * 60 * 60
         );
-        
+
         return {
             user: {
                 id: user.id,
@@ -176,6 +192,134 @@ export class AuthService {
             `refresh:${userId}`
         );
         return true;
+    }
+
+    static async forgotPassword(
+        email: string
+    ) {
+
+        const user =
+            await prisma.user.findUnique({
+                where: {
+                    email,
+                },
+            });
+
+
+        if (!user) {
+            return {
+                success: true,
+                message:
+                    "If an account exists, you will receive a password reset email.",
+            };
+        }
+
+        const token =
+            randomUUID();
+
+        await RedisService.set(
+
+            `reset-password:${token}`,
+
+            user.id,
+
+            15 * 60
+
+        );
+
+        const resetLink =
+
+            `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+
+        emailService
+            .sendForgotPasswordEmail(
+
+                user.email!,
+
+                user.name,
+
+                resetLink
+
+            )
+            .catch(console.error);
+
+        return {
+            success: true,
+            message:
+                "If an account exists, you will receive a password reset email.",
+        };
+
+    }
+
+    static async resetPassword(
+        token: string,
+        password: string
+    ) {
+
+        const userId =
+            await RedisService.get<string>(
+                `reset-password:${token}`
+            );
+
+        if (!userId) {
+            throw new Error(
+                "Invalid or expired reset token"
+            );
+        }
+
+        const user =
+            await prisma.user.findUnique({
+                where: {
+                    id: userId,
+                },
+            });
+
+        if (!user) {
+            throw new Error(
+                "User not found"
+            );
+        }
+
+        const hashedPassword =
+            await bcrypt.hash(password, 10);
+
+        await prisma.user.update({
+            where: {
+                id: user.id,
+            },
+            data: {
+                password: hashedPassword,
+            },
+        });
+
+
+        await RedisService.del(
+            `reset-password:${token}`
+        );
+
+
+        await RedisService.del(
+            `refresh:${user.id}`
+        );
+        if (user.email) {
+
+            emailService
+                .sendPasswordChangedEmail(
+
+                    user.email,
+
+                    user.name
+
+                )
+                .catch(console.error);
+
+        }
+        return {
+            success: true,
+            message:
+                "Password reset successfully",
+        };
+
     }
 
 

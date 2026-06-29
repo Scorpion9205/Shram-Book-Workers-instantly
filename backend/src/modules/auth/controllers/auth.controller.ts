@@ -4,6 +4,7 @@ import { signupSchema, loginSchema } from "../validations/auth.validation.js"
 import type { AuthRequest } from "../../../shared/middleware/auth.middleware.js"
 import { redis } from "../../../shared/config/redis.js"
 import { RedisService } from "../../../shared/services/redis/redis.service.js"
+import { forgotPasswordSchema,resetPasswordSchema } from "../validations/auth.validation.js"
 export class AuthController {
     static async signup(req: Request, res: Response) {
         try {
@@ -135,5 +136,83 @@ export class AuthController {
     }
 
 
+static async forgotPassword(
+  req: Request,
+  res: Response
+) {
 
+  try {
+
+    const validation =
+      forgotPasswordSchema.safeParse(
+        req.body
+      );
+
+    if (!validation.success) {
+
+      return res.status(400).json({
+
+        success: false,
+
+        errors:
+          validation.error.issues,
+
+      });
+
+    }
+
+    const result =
+      await AuthService.forgotPassword(
+        validation.data.email
+      );
+
+    return res.status(200).json(result);
+
+  }
+  catch (error: any) {
+
+    return res.status(500).json({
+
+      success: false,
+
+      message: error.message,
+
+    });
+
+  }
+
+}
+static async resetPassword(
+  req: Request,
+  res: Response
+) {
+  try {
+
+    const validation =
+      resetPasswordSchema.safeParse(req.body);
+
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        errors: validation.error.issues,
+      });
+    }
+
+    const result =
+      await AuthService.resetPassword(
+        validation.data.token,
+        validation.data.password
+      );
+
+    return res.status(200).json(result);
+
+  } catch (error: any) {
+
+    return res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+
+  }
+}
 }
