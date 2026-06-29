@@ -5,6 +5,10 @@ import type { AuthRequest } from "../../../shared/middleware/auth.middleware.js"
 import { redis } from "../../../shared/config/redis.js"
 import { RedisService } from "../../../shared/services/redis/redis.service.js"
 import { forgotPasswordSchema,resetPasswordSchema } from "../validations/auth.validation.js"
+import {
+    sendOTPSchema,
+    verifyOTPSchema
+} from "../validations/auth.validation.js";
 export class AuthController {
     static async signup(req: Request, res: Response) {
         try {
@@ -214,5 +218,119 @@ static async resetPassword(
     });
 
   }
+}
+
+static async sendOTP(
+    req: Request,
+    res: Response
+) {
+
+    try {
+
+        const validation =
+            sendOTPSchema.safeParse(req.body);
+
+        if (!validation.success) {
+
+            return res.status(400).json({
+                success: false,
+                errors: validation.error.issues,
+            });
+
+        }
+
+        const result =
+            await AuthService.sendOTP(
+                validation.data.identifier
+            );
+
+        return res.status(200).json(result);
+
+    } catch (error: any) {
+
+        return res.status(400).json({
+            success: false,
+            message: error.message,
+        });
+
+    }
+
+}
+
+static async verifyOTP(
+    req: Request,
+    res: Response
+) {
+
+    try {
+
+        const validation =
+            verifyOTPSchema.safeParse(req.body);
+
+        if (!validation.success) {
+
+            return res.status(400).json({
+                success: false,
+                errors: validation.error.issues,
+            });
+
+        }
+
+        const result =
+            await AuthService.verifyOTP(
+
+                validation.data.identifier,
+
+                validation.data.otp
+
+            );
+
+        return res.status(200).json(result);
+
+    } catch (error: any) {
+
+        return res.status(400).json({
+            success: false,
+            message: error.message,
+        });
+
+    }
+
+}
+static async resendOTP(
+    req: Request,
+    res: Response
+) {
+
+    try {
+
+        const validation =
+            sendOTPSchema.safeParse(req.body);
+
+        if (!validation.success) {
+
+            return res.status(400).json({
+                success: false,
+                errors: validation.error.issues,
+            });
+
+        }
+
+        const result =
+            await AuthService.resendOTP(
+                validation.data.identifier
+            );
+
+        return res.status(200).json(result);
+
+    } catch (error: any) {
+
+        return res.status(400).json({
+            success: false,
+            message: error.message,
+        });
+
+    }
+
 }
 }

@@ -8,6 +8,7 @@ import jwt from "jsonwebtoken"
 import { RedisService } from "../../../shared/services/redis/redis.service.js"
 import { emailService } from "../../../shared/email/index.js"
 import { randomUUID } from "crypto"
+import { verificationService } from "../../../shared/verification/index.js";
 type SignupInput = z.infer<typeof signupSchema>
 
 type LoginInput = z.infer<typeof loginSchema>
@@ -321,6 +322,52 @@ export class AuthService {
         };
 
     }
+   static async sendOTP(identifier: string) {
 
+    await verificationService.sendOTP(identifier);
+
+    return {
+        success: true,
+        message: "OTP sent successfully."
+    };
+
+}
+
+static async verifyOTP(
+    identifier: string,
+    otp: string
+) {
+
+    const verified =
+        await verificationService.verifyOTP(
+            identifier,
+            otp
+        );
+
+    if (!verified) {
+        throw new Error(
+            "Invalid or expired OTP"
+        );
+    }
+
+    return {
+        success: true,
+        message: "OTP verified successfully."
+    };
+
+}
+
+static async resendOTP(
+    identifier: string
+) {
+
+    await verificationService.sendOTP(identifier);
+
+    return {
+        success: true,
+        message: "OTP resent successfully."
+    };
+
+}
 
 }

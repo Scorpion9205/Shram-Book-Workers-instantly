@@ -4,6 +4,8 @@ import WelcomeEmail from "../templates/Welcome.js";
 import ForgotPassword from "../templates/ForgotPassword.js";
 import PasswordChanged
 from "../templates/PasswordChanged.js";
+import OtpEmail
+from "../templates/OtpEmail.js";
 export class EmailService {
 
   constructor(
@@ -82,10 +84,37 @@ async sendPasswordChangedEmail(
 
         to,
 
-        "✅ Your SHRAM password has been changed",
+        "Your SHRAM password has been changed",
 
         <PasswordChanged
             name={name}
+        />
+
+    );
+
+}
+async sendOTPEmail(
+
+    to: string,
+
+    name: string,
+
+    otp: string
+
+) {
+
+    await this.send(
+
+        to,
+
+        "Your SHRAM Verification Code",
+
+        <OtpEmail
+
+            name={name}
+
+            otp={otp}
+
         />
 
     );

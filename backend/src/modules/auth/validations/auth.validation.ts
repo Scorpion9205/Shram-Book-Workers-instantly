@@ -62,3 +62,12 @@ export const resetPasswordSchema =
         ),
 
   });
+
+  export const sendOTPSchema = z.object({
+  identifier: z.string().min(1, "Identifier is required"),
+});
+
+export const verifyOTPSchema = z.object({
+  identifier: z.string().min(1, "Identifier is required"),
+  otp: z.string().length(6, "OTP must be 6 digits"),
+});

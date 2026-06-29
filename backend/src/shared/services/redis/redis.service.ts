@@ -26,6 +26,7 @@ export class RedisService {
     }
 
     await redis.set(key, data);
+    console.log("SET:", key, data);
 
   }
 
@@ -40,11 +41,15 @@ export class RedisService {
       return null;
     }
 
+console.log("GET:", key);
+console.log("REDIS RETURN:", data);
+
     try {
       return JSON.parse(data) as T;
     } catch {
       return data as T;
     }
+    
 
   }
 
