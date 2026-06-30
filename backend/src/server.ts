@@ -5,6 +5,8 @@ import "./shared/config/redis.js"
 
 import app from "./app.js";
 import { startExpireInstantRequestsJob } from "./shared/jobs/expire-instant-requests.job.js";
+import { rabbitMQ } from "./shared/queue/connection/rabbitmq.connection.js";
+import { EmailConsumer } from "./shared/queue/consumers/email.consumer.js";
 
 import {
   initializeSocket,
@@ -18,6 +20,8 @@ const server =
 
 initializeSocket(server);
 
+await rabbitMQ.connect();
+await EmailConsumer.consume();
 server.listen(PORT, () => {
 
   console.log(

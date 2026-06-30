@@ -9,6 +9,8 @@ import { RedisService } from "../../../shared/services/redis/redis.service.js"
 import { emailService } from "../../../shared/email/index.js"
 import { randomUUID } from "crypto"
 import { verificationService } from "../../../shared/verification/index.js";
+import { EmailProducer } from "../../../shared/queue/producers/email.producer.js"
+import { EmailType } from "../../../shared/queue/types/queue.types.js"
 type SignupInput = z.infer<typeof signupSchema>
 
 type LoginInput = z.infer<typeof loginSchema>
@@ -54,11 +56,10 @@ export class AuthService {
 
         if (user.email) {
 
-            emailService
-                .sendWelcomeEmail(
-                    user.email,
-                    user.name
-                )
+            await emailService.sendWelcomeEmail(
+                user.email,
+                user.name
+            )
                 .catch((error) => {
                     console.error(
                         "Failed to send welcome email:",
@@ -101,7 +102,6 @@ export class AuthService {
             throw new Error("Account is deactivated");
         }
 
-        // comapring password 
         const ispasswordValid = await bcrypt.compare(password, user.password)
 
         if (!ispasswordValid) {
@@ -232,16 +232,11 @@ export class AuthService {
 
             `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
 
-        emailService
-            .sendForgotPasswordEmail(
-
-                user.email!,
-
-                user.name,
-
-                resetLink
-
-            )
+        await emailService.sendForgotPasswordEmail(
+            user.email!,
+            user.name,
+            resetLink
+        )
             .catch(console.error);
 
         return {
@@ -322,52 +317,52 @@ export class AuthService {
         };
 
     }
-   static async sendOTP(identifier: string) {
+    static async sendOTP(identifier: string) {
 
-    await verificationService.sendOTP(identifier);
+        await verificationService.sendOTP(identifier);
 
-    return {
-        success: true,
-        message: "OTP sent successfully."
-    };
+        return {
+            success: true,
+            message: "OTP sent successfully."
+        };
 
-}
-
-static async verifyOTP(
-    identifier: string,
-    otp: string
-) {
-
-    const verified =
-        await verificationService.verifyOTP(
-            identifier,
-            otp
-        );
-
-    if (!verified) {
-        throw new Error(
-            "Invalid or expired OTP"
-        );
     }
 
-    return {
-        success: true,
-        message: "OTP verified successfully."
-    };
+    static async verifyOTP(
+        identifier: string,
+        otp: string
+    ) {
 
-}
+        const verified =
+            await verificationService.verifyOTP(
+                identifier,
+                otp
+            );
 
-static async resendOTP(
-    identifier: string
-) {
+        if (!verified) {
+            throw new Error(
+                "Invalid or expired OTP"
+            );
+        }
 
-    await verificationService.sendOTP(identifier);
+        return {
+            success: true,
+            message: "OTP verified successfully."
+        };
 
-    return {
-        success: true,
-        message: "OTP resent successfully."
-    };
+    }
 
-}
+    static async resendOTP(
+        identifier: string
+    ) {
+
+        await verificationService.sendOTP(identifier);
+
+        return {
+            success: true,
+            message: "OTP resent successfully."
+        };
+
+    }
 
 }
