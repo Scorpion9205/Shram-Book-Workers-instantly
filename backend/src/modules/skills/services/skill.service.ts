@@ -16,17 +16,32 @@ export class SkillService {
         userId: string,
         skillIds: string[]
     ) {
+        const uniqueSkillIds =
+            Array.from(new Set(skillIds));
 
         const worker =
-            await prisma.workerProfile.findUnique({
+            await prisma.workerProfile.upsert({
                 where: {
                     userId
+                },
+                update: {},
+                create: {
+                    userId
+                },
+            });
+
+        const skills =
+            await prisma.skill.findMany({
+                where: {
+                    id: {
+                        in: uniqueSkillIds
+                    }
                 }
             });
 
-        if (!worker) {
+        if (skills.length !== uniqueSkillIds.length) {
             throw new Error(
-                "Worker profile not found"
+                "Invalid skill selected"
             );
         }
 
@@ -37,7 +52,7 @@ export class SkillService {
         });
 
         await prisma.workerSkill.createMany({
-            data: skillIds.map(skillId => ({
+            data: uniqueSkillIds.map(skillId => ({
                 workerId: worker.id,
                 skillId
             }))
@@ -57,17 +72,15 @@ export class SkillService {
         userId: string
     ) {
         const worker =
-            await prisma.workerProfile.findUnique({
+            await prisma.workerProfile.upsert({
                 where: {
                     userId
-                }
+                },
+                update: {},
+                create: {
+                    userId
+                },
             });
-
-        if (!worker) {
-            throw new Error(
-                "Worker profile not found"
-            );
-        }
 
         return await prisma.workerSkill.findMany({
             where: {

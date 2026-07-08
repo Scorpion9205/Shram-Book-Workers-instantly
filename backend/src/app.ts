@@ -8,6 +8,7 @@ import userRoutes from "./modules/users/routes/user.routes.js"
 import workerRoutes from "./modules/workers/routes/worker.routes.js";
 import locationRoutes from "./modules/location/routes/location.routes.js"
 import providerRoutes from "./modules/providers/routes/provider.routes.js";
+import agentRoutes from "./modules/agents/routes/agent.routes.js";
 import skillRoutes from "./modules/skills/routes/skill.routes.js"
 import instantRequestRoutes from "./modules/instant-requests/routes/instant-request.routes.js";
 import bookingRoutes from "./modules/booking/routes/booking.routes.js"
@@ -20,7 +21,10 @@ const app = express();
 
 
 app.use(helmet())
-app.use(cors())
+app.use(cors({
+  origin: process.env.FRONTEND_URL ?? "http://localhost:3000",
+  credentials: true,
+}))
 app.use(morgan("dev"))
 app.use(express.json())
 app.use(express.urlencoded({extended:true}))
@@ -47,6 +51,11 @@ app.use(
 app.use(
   "/api/v1/providers",
   providerRoutes
+);
+
+app.use(
+  "/api/v1/agents",
+  agentRoutes
 );
 
 app.use(

@@ -27,7 +27,6 @@ server.listen(PORT, () => {
   console.log(
     `Server running on port ${PORT}`
   );
-  // startExpireInstantRequestsJob();
+  startExpireInstantRequestsJob();
 
 });
-console.log(process.env.REDIS_PORT);

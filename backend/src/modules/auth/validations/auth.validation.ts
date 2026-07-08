@@ -38,10 +38,10 @@ export const loginSchema = z.object({
 export const forgotPasswordSchema =
   z.object({
 
-    email:
+    identifier:
       z
         .string()
-        .email("Invalid email"),
+        .min(1, "Phone or Email is required"),
 
   });
 

@@ -42,8 +42,12 @@ export class WorkerService {
 
     static async getMyProfile(userId: string) {
         const worker =
-            await prisma.workerProfile.findUnique({
+            await prisma.workerProfile.upsert({
                 where: {
+                    userId,
+                },
+                update: {},
+                create: {
                     userId,
                 },
                 include: {
@@ -60,14 +64,13 @@ export class WorkerService {
                             pincode: true,
                         },
                     },
+                    skills: {
+                        include: {
+                            skill: true,
+                        },
+                    },
                 },
             });
-
-        if (!worker) {
-            throw new Error(
-                "Worker profile not found"
-            );
-        }
 
         return worker;
     }
@@ -76,25 +79,18 @@ export class WorkerService {
         userId: string,
         data: UpdateWorkerProfileInput
     ) {
-        const worker =
-            await prisma.workerProfile.findUnique({
-                where: {
-                    userId,
-                },
-            });
-
-        if (!worker) {
-            throw new Error(
-                "Worker profile not found"
-            );
-        }
-
         const updatedWorker =
-            await prisma.workerProfile.update({
+            await prisma.workerProfile.upsert({
                 where: {
                     userId,
                 },
-                data: {
+                create: {
+                    userId,
+                    bio: data.bio ?? null,
+                    experience: data.experience ?? 0,
+                    dailyRate: data.dailyRate ?? null,
+                },
+                update: {
                     ...(data.bio !== undefined && {
                         bio: data.bio,
                     }),
@@ -116,25 +112,16 @@ export class WorkerService {
         userId: string,
         data: UpdateAvailabilityInput
     ) {
-        const worker =
-            await prisma.workerProfile.findUnique({
-                where: {
-                    userId,
-                },
-            });
-
-        if (!worker) {
-            throw new Error(
-                "Worker profile not found"
-            );
-        }
-
         const updatedWorker =
-            await prisma.workerProfile.update({
+            await prisma.workerProfile.upsert({
                 where: {
                     userId,
                 },
-                data: {
+                create: {
+                    userId,
+                    isAvailable: data.isAvailable,
+                },
+                update: {
                     isAvailable: data.isAvailable,
                 },
             });

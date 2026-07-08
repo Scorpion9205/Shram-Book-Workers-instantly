@@ -24,6 +24,14 @@ router.get(
   roleMiddleware("WORKER"),
   JobController.getMyApplications
 );
+
+router.get(
+  "/provider/my-jobs",
+  authMiddleware,
+  roleMiddleware("PROVIDER"),
+  JobController.getProviderJobs
+);
+
 router.get(
   "/:jobId",
   authMiddleware,
@@ -33,7 +41,7 @@ router.get(
 router.post(
   "/:jobId/apply",
   authMiddleware,
-  roleMiddleware("WORKER"),
+  roleMiddleware("WORKER", "AGENT"),
   JobController.applyForJob
 );
 
@@ -51,11 +59,11 @@ router.patch(
   JobController.acceptApplication
 );
 
-router.get(
-  "/provider/my-jobs",
+router.patch(
+  "/applications/:applicationId/reject",
   authMiddleware,
   roleMiddleware("PROVIDER"),
-  JobController.getProviderJobs
+  JobController.rejectApplication
 );
 
 export default router;

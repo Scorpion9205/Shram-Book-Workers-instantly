@@ -9,15 +9,11 @@ import { RedisService } from "../../../shared/services/redis/redis.service.js"
 import { emailService } from "../../../shared/email/index.js"
 import { randomUUID } from "crypto"
 import { verificationService } from "../../../shared/verification/index.js";
-import { EmailProducer } from "../../../shared/queue/producers/email.producer.js"
-import { EmailType } from "../../../shared/queue/types/queue.types.js"
 type SignupInput = z.infer<typeof signupSchema>
-
 type LoginInput = z.infer<typeof loginSchema>
 
 export class AuthService {
     static async signup(data: SignupInput) {
-        console.log(data)
         const { name, phone, email, password, role } = data
         const existingUser = await prisma.user.findFirst({
             where: {
@@ -55,7 +51,6 @@ export class AuthService {
         );
 
         if (user.email) {
-
             await emailService.sendWelcomeEmail(
                 user.email,
                 user.name
@@ -196,13 +191,16 @@ export class AuthService {
     }
 
     static async forgotPassword(
-        email: string
+        identifier: string
     ) {
 
         const user =
-            await prisma.user.findUnique({
+            await prisma.user.findFirst({
                 where: {
-                    email,
+                    OR: [
+                        { email: identifier },
+                        { phone: identifier },
+                    ],
                 },
             });
 
@@ -219,25 +217,23 @@ export class AuthService {
             randomUUID();
 
         await RedisService.set(
-
             `reset-password:${token}`,
-
             user.id,
-
             15 * 60
-
         );
 
         const resetLink =
 
             `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
 
-        await emailService.sendForgotPasswordEmail(
-            user.email!,
-            user.name,
-            resetLink
-        )
-            .catch(console.error);
+        if (user.email) {
+            await emailService.sendForgotPasswordEmail(
+                user.email,
+                user.name,
+                resetLink
+            )
+                .catch(console.error);
+        }
 
         return {
             success: true,
@@ -344,6 +340,18 @@ export class AuthService {
                 "Invalid or expired OTP"
             );
         }
+
+        await prisma.user.updateMany({
+            where: {
+                OR: [
+                    { phone: identifier },
+                    { email: identifier },
+                ],
+            },
+            data: {
+                isVerified: true,
+            },
+        });
 
         return {
             success: true,

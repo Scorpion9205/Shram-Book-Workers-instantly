@@ -2,9 +2,8 @@ import type { Request, Response } from "express"
 import { AuthService } from "../services/auth.service.js"
 import { signupSchema, loginSchema } from "../validations/auth.validation.js"
 import type { AuthRequest } from "../../../shared/middleware/auth.middleware.js"
-import { redis } from "../../../shared/config/redis.js"
 import { RedisService } from "../../../shared/services/redis/redis.service.js"
-import { forgotPasswordSchema,resetPasswordSchema } from "../validations/auth.validation.js"
+import { forgotPasswordSchema, resetPasswordSchema } from "../validations/auth.validation.js"
 import {
     sendOTPSchema,
     verifyOTPSchema
@@ -34,7 +33,8 @@ export class AuthController {
             return res.status(201).json({
                 success: true,
                 message: "User registered successfully",
-                user: result.user
+                user: result.user,
+                accessToken: result.accessToken,
             })
         } catch (error: any) {
             return res.status(400).json({
@@ -67,11 +67,12 @@ export class AuthController {
 
             await RedisService.del(rateLimitKey);
 
-            res.cookie("refreshToken", result.refreshToken), {
+            res.cookie("refreshToken", result.refreshToken, {
                 httpOnly: true,
                 secure: false,
-                samesite: "lax"
-            }
+                sameSite: "lax",
+                maxAge: 7 * 24 * 60 * 60 * 1000
+            })
             return res.status(200).json({
                 success: true,
                 message: "Login successful",
@@ -91,8 +92,15 @@ export class AuthController {
     ) {
         try {
             const refreshToken =
-                req.cookies.refreshToken;
+                req.cookies.refreshToken ??
+                req.body?.refreshToken;
 
+            if (!refreshToken) {
+                return res.status(401).json({
+                    success: false,
+                    message: "Refresh token required",
+                });
+            }
             const result =
                 await AuthService.refreshToken(
                     refreshToken
@@ -106,8 +114,7 @@ export class AuthController {
         } catch (error: any) {
             return res.status(401).json({
                 success: false,
-                message:
-                    error.message,
+                message:error.message,
             });
         }
     }
@@ -140,197 +147,197 @@ export class AuthController {
     }
 
 
-static async forgotPassword(
-  req: Request,
-  res: Response
-) {
+    static async forgotPassword(
+        req: Request,
+        res: Response
+    ) {
 
-  try {
+        try {
 
-    const validation =
-      forgotPasswordSchema.safeParse(
-        req.body
-      );
+            const validation =
+                forgotPasswordSchema.safeParse(
+                    req.body
+                );
 
-    if (!validation.success) {
+            if (!validation.success) {
 
-      return res.status(400).json({
+                return res.status(400).json({
 
-        success: false,
+                    success: false,
 
-        errors:
-          validation.error.issues,
+                    errors:
+                        validation.error.issues,
 
-      });
+                });
 
-    }
+            }
 
-    const result =
-      await AuthService.forgotPassword(
-        validation.data.email
-      );
+            const result =
+                await AuthService.forgotPassword(
+                    validation.data.identifier
+                );
 
-    return res.status(200).json(result);
+            return res.status(200).json(result);
 
-  }
-  catch (error: any) {
+        }
+        catch (error: any) {
 
-    return res.status(500).json({
+            return res.status(500).json({
 
-      success: false,
-
-      message: error.message,
-
-    });
-
-  }
-
-}
-static async resetPassword(
-  req: Request,
-  res: Response
-) {
-  try {
-
-    const validation =
-      resetPasswordSchema.safeParse(req.body);
-
-    if (!validation.success) {
-      return res.status(400).json({
-        success: false,
-        errors: validation.error.issues,
-      });
-    }
-
-    const result =
-      await AuthService.resetPassword(
-        validation.data.token,
-        validation.data.password
-      );
-
-    return res.status(200).json(result);
-
-  } catch (error: any) {
-
-    return res.status(400).json({
-      success: false,
-      message: error.message,
-    });
-
-  }
-}
-
-static async sendOTP(
-    req: Request,
-    res: Response
-) {
-
-    try {
-
-        const validation =
-            sendOTPSchema.safeParse(req.body);
-
-        if (!validation.success) {
-
-            return res.status(400).json({
                 success: false,
-                errors: validation.error.issues,
+
+                message: error.message,
+
             });
 
         }
 
-        const result =
-            await AuthService.sendOTP(
-                validation.data.identifier
-            );
-
-        return res.status(200).json(result);
-
-    } catch (error: any) {
-
-        return res.status(400).json({
-            success: false,
-            message: error.message,
-        });
-
     }
+    static async resetPassword(
+        req: Request,
+        res: Response
+    ) {
+        try {
 
-}
+            const validation =
+                resetPasswordSchema.safeParse(req.body);
 
-static async verifyOTP(
-    req: Request,
-    res: Response
-) {
+            if (!validation.success) {
+                return res.status(400).json({
+                    success: false,
+                    errors: validation.error.issues,
+                });
+            }
 
-    try {
+            const result =
+                await AuthService.resetPassword(
+                    validation.data.token,
+                    validation.data.password
+                );
 
-        const validation =
-            verifyOTPSchema.safeParse(req.body);
+            return res.status(200).json(result);
 
-        if (!validation.success) {
+        } catch (error: any) {
 
             return res.status(400).json({
                 success: false,
-                errors: validation.error.issues,
+                message: error.message,
+            });
+
+        }
+    }
+
+    static async sendOTP(
+        req: Request,
+        res: Response
+    ) {
+
+        try {
+
+            const validation =
+                sendOTPSchema.safeParse(req.body);
+
+            if (!validation.success) {
+
+                return res.status(400).json({
+                    success: false,
+                    errors: validation.error.issues,
+                });
+
+            }
+
+            const result =
+                await AuthService.sendOTP(
+                    validation.data.identifier
+                );
+
+            return res.status(200).json(result);
+
+        } catch (error: any) {
+
+            return res.status(400).json({
+                success: false,
+                message: error.message,
             });
 
         }
 
-        const result =
-            await AuthService.verifyOTP(
-
-                validation.data.identifier,
-
-                validation.data.otp
-
-            );
-
-        return res.status(200).json(result);
-
-    } catch (error: any) {
-
-        return res.status(400).json({
-            success: false,
-            message: error.message,
-        });
-
     }
 
-}
-static async resendOTP(
-    req: Request,
-    res: Response
-) {
+    static async verifyOTP(
+        req: Request,
+        res: Response
+    ) {
 
-    try {
+        try {
 
-        const validation =
-            sendOTPSchema.safeParse(req.body);
+            const validation =
+                verifyOTPSchema.safeParse(req.body);
 
-        if (!validation.success) {
+            if (!validation.success) {
+
+                return res.status(400).json({
+                    success: false,
+                    errors: validation.error.issues,
+                });
+
+            }
+
+            const result =
+                await AuthService.verifyOTP(
+
+                    validation.data.identifier,
+
+                    validation.data.otp
+
+                );
+
+            return res.status(200).json(result);
+
+        } catch (error: any) {
 
             return res.status(400).json({
                 success: false,
-                errors: validation.error.issues,
+                message: error.message,
             });
 
         }
 
-        const result =
-            await AuthService.resendOTP(
-                validation.data.identifier
-            );
+    }
+    static async resendOTP(
+        req: Request,
+        res: Response
+    ) {
 
-        return res.status(200).json(result);
+        try {
 
-    } catch (error: any) {
+            const validation =
+                sendOTPSchema.safeParse(req.body);
 
-        return res.status(400).json({
-            success: false,
-            message: error.message,
-        });
+            if (!validation.success) {
+
+                return res.status(400).json({
+                    success: false,
+                    errors: validation.error.issues,
+                });
+
+            }
+
+            const result =
+                await AuthService.resendOTP(
+                    validation.data.identifier
+                );
+
+            return res.status(200).json(result);
+
+        } catch (error: any) {
+
+            return res.status(400).json({
+                success: false,
+                message: error.message,
+            });
+
+        }
 
     }
-
-}
 }

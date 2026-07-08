@@ -11,18 +11,15 @@ export class JobService {
     data: CreateJobInput
   ) {
 
-    const provider =
-      await prisma.providerProfile.findUnique({
-        where: {
-          userId,
-        },
-      });
-
-    if (!provider) {
-      throw new Error(
-        "Provider profile not found"
-      );
-    }
+    await prisma.providerProfile.upsert({
+      where: {
+        userId,
+      },
+      update: {},
+      create: {
+        userId,
+      },
+    });
 
     const skill =
       await prisma.skill.findUnique({
@@ -99,8 +96,143 @@ export class JobService {
   static async getAllJobs(
     userId: string
   ) {
-    const cacheKey =
-      `jobs:nearby:${userId}`;
+
+    const user = await prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+      select: {
+        role: true,
+      },
+    });
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    let cacheKey = "";
+    let latitude = 0;
+    let longitude = 0;
+    let skillIds: string[] = [];
+
+    if (user.role === "WORKER") {
+
+      cacheKey = `jobs:nearby:worker:${userId}`;
+
+      const worker = await prisma.workerProfile.findUnique({
+        where: {
+          userId,
+        },
+        include: {
+          skills: true,
+        },
+      });
+
+      if (!worker) {
+        throw new Error("Worker profile not found");
+      }
+
+      const location =
+        await prisma.userLocation.findUnique({
+          where: {
+            userId,
+          },
+        });
+
+      if (!location) {
+        throw new Error("Worker location not found");
+      }
+
+      latitude = location.latitude;
+      longitude = location.longitude;
+
+      skillIds = worker.skills.map(
+        (skill) => skill.skillId
+      );
+
+    }
+
+    else if (user.role === "AGENT") {
+
+      cacheKey = `jobs:nearby:agent:${userId}`;
+
+      const agent =
+        await prisma.agentProfile.findUnique({
+          where: {
+            userId,
+          },
+        });
+
+      if (!agent) {
+        throw new Error("Agent profile not found");
+      }
+
+      const location =
+        await prisma.userLocation.findUnique({
+          where: {
+            userId,
+          },
+        });
+
+      if (!location) {
+        throw new Error("Agent location not found");
+      }
+
+      latitude = location.latitude;
+      longitude = location.longitude;
+
+      const linkedWorkers =
+        await prisma.agentWorker.findMany({
+
+          where: {
+            agentId: agent.id,
+          },
+
+          include: {
+
+            worker: {
+
+              include: {
+
+                skills: true,
+
+              },
+
+            },
+
+          },
+
+        });
+
+      skillIds = [
+
+        ...new Set(
+
+          linkedWorkers.flatMap((item) =>
+
+            item.worker.skills.map(
+              (skill) => skill.skillId
+            )
+
+          )
+
+        ),
+
+      ];
+
+    }
+
+    else {
+
+      throw new Error(
+        "Only workers and agents can access jobs."
+      );
+
+    }
+
+    if (skillIds.length === 0) {
+      return [];
+    }
 
     const cachedJobs =
       await RedisService.get<any>(
@@ -117,56 +249,23 @@ export class JobService {
 
     }
 
-    const worker =
-      await prisma.workerProfile.findUnique({
-        where: {
-          userId,
-        },
-
-        include: {
-          skills: true,
-        },
-      });
-
-    if (!worker) {
-      throw new Error(
-        "Worker profile not found"
-      );
-    }
-
-    const workerLocation =
-      await prisma.userLocation.findUnique({
-        where: {
-          userId,
-        },
-      });
-
-    if (!workerLocation) {
-      throw new Error(
-        "Worker location not found"
-      );
-    }
-
-    const skillIds =
-      worker.skills.map(
-        (skill) => skill.skillId
-      );
-
-    if (skillIds.length === 0) {
-      return [];
-    }
-
     const jobs =
       await prisma.job.findMany({
+
         where: {
+
           status: "OPEN",
 
           skillId: {
+
             in: skillIds,
+
           },
+
         },
 
         select: {
+
           id: true,
 
           title: true,
@@ -178,73 +277,103 @@ export class JobService {
           requiredWorkers: true,
 
           latitude: true,
+
           longitude: true,
 
           address: true,
+
           city: true,
+
           state: true,
 
           createdAt: true,
 
           skill: {
+
             select: {
+
               id: true,
+
               name: true,
+
             },
+
           },
 
           provider: {
+
             select: {
+
               id: true,
+
               name: true,
+
             },
+
           },
+
         },
 
         orderBy: {
+
           createdAt: "desc",
+
         },
+
       });
 
     const SEARCH_RADIUS_KM = 10;
 
-    const nearbyJobs =
-      jobs
-        .map((job) => {
+    const nearbyJobs = jobs
 
-          const distance =
-            calculateDistance(
-              workerLocation.latitude,
-              workerLocation.longitude,
+      .map((job) => {
 
-              job.latitude,
-              job.longitude
-            );
+        const distance = calculateDistance(
 
-          return {
-            ...job,
+          latitude,
 
-            distanceKm:
-              Number(
-                distance.toFixed(2)
-              ),
-          };
-        })
-        .filter(
-          (job) =>
-            job.distanceKm <=
-            SEARCH_RADIUS_KM
-        )
-        .sort(
-          (a, b) =>
-            a.distanceKm -
-            b.distanceKm
+          longitude,
+
+          job.latitude,
+
+          job.longitude
+
         );
 
+        return {
+
+          ...job,
+
+          distanceKm: Number(
+            distance.toFixed(2)
+          ),
+
+        };
+
+      })
+
+      .filter(
+
+        (job) =>
+          job.distanceKm <= SEARCH_RADIUS_KM
+
+      )
+
+      .sort(
+
+        (a, b) =>
+          a.distanceKm - b.distanceKm
+
+      );
+
     await RedisService.set(
+
       cacheKey,
+
       nearbyJobs,
+
       120
+
     );
 
     console.log(
@@ -252,6 +381,7 @@ export class JobService {
     );
 
     return nearbyJobs;
+
   }
 
   static async getJobById(
@@ -348,6 +478,8 @@ export class JobService {
       await prisma.application.create({
         data: {
           jobId,
+
+          applicantType: "WORKER",
 
           workerId: worker.id,
 
@@ -599,6 +731,62 @@ export class JobService {
     };
 
   }
+
+  static async rejectApplication(
+    userId: string,
+    applicationId: string
+  ) {
+
+    const application =
+      await prisma.application.findUnique({
+        where: {
+          id: applicationId,
+        },
+
+        include: {
+          job: true,
+        },
+      });
+
+    if (!application) {
+      throw new Error(
+        "Application not found"
+      );
+    }
+
+    if (
+      application.job.providerId !==
+      userId
+    ) {
+      throw new Error(
+        "Unauthorized"
+      );
+    }
+
+    if (
+      application.status !== "PENDING"
+    ) {
+      throw new Error(
+        "Application already processed"
+      );
+    }
+
+    await prisma.application.update({
+      where: {
+        id: applicationId,
+      },
+
+      data: {
+        status: "REJECTED",
+      },
+    });
+
+    return {
+      success: true,
+    };
+
+  }
+
   static async getMyApplications(
     userId: string
   ) {

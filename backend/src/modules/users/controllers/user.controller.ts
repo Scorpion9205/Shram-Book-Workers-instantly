@@ -1,7 +1,7 @@
 import type { Request, Response } from "express"
 import { UserService } from "../services/user.service.js"
 import { type AuthRequest } from "../../../shared/middleware/auth.middleware.js"
-import { changePasswordSchema } from "../validations/user.validation.js"
+import { changePasswordSchema, updateProfileSchema } from "../validations/user.validation.js"
 
 export class UserController {
     static async getProfile(req: AuthRequest, res: Response) {
@@ -21,7 +21,23 @@ export class UserController {
 
     static async updateProfile(req: AuthRequest, res: Response) {
         try {
-            const updatedUser = await UserService.updateProfile(req.user!.userId, req.body)
+            const validationResult =
+                updateProfileSchema.safeParse(req.body);
+
+            if (!validationResult.success) {
+                return res.status(400).json({
+                    success: false,
+                    errors:
+                        validationResult.error
+                            .flatten()
+                            .fieldErrors,
+                });
+            }
+
+            const updatedUser = await UserService.updateProfile(
+                req.user!.userId,
+                validationResult.data
+            )
 
             return res.status(200).json({
                 success: true,

@@ -125,6 +125,12 @@ export class BookingController {
                     req.user!.userId
                 );
 
+            return res.status(200).json({
+                success: true,
+                message: "Work started successfully",
+                booking,
+            });
+
         } catch (error: any) {
 
             return res.status(400).json({
@@ -159,6 +165,13 @@ export class BookingController {
                     bookingId,
                     req.user!.userId
                 );
+
+            return res.status(200).json({
+                success: true,
+                message: "Work completed successfully",
+                booking,
+            });
+
         } catch (error: any) {
 
             return res.status(400).json({

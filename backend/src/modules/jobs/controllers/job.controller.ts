@@ -277,6 +277,48 @@ static async acceptApplication(
 
 }
 
+static async rejectApplication(
+  req: AuthRequest,
+  res: Response
+) {
+
+  try {
+
+    const applicationId =
+      req.params.applicationId;
+
+    if (
+      !applicationId ||
+      Array.isArray(applicationId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid application id",
+      });
+    }
+
+    await JobService.rejectApplication(
+      req.user!.userId,
+      applicationId
+    );
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Application rejected successfully",
+    });
+
+  } catch (error: any) {
+
+    return res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+
+  }
+
+}
+
 static async getMyApplications(
   req: AuthRequest,
   res: Response

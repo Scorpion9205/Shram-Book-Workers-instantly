@@ -12,18 +12,15 @@ export class InstantRequestService {
     data: CreateInstantRequestInput
   ) {
 
-    const provider =
-      await prisma.providerProfile.findUnique({
+    await prisma.providerProfile.upsert({
         where: {
           userId,
         },
+        update: {},
+        create: {
+          userId,
+        },
       });
-
-    if (!provider) {
-      throw new Error(
-        "Provider profile not found"
-      );
-    }
 
     const {
       title,
@@ -31,6 +28,7 @@ export class InstantRequestService {
       latitude,
       longitude,
       address,
+      amount,
       items,
     } = data;
 
@@ -58,7 +56,7 @@ export class InstantRequestService {
               address:
                 address ?? null,
 
-              amount: fare.total,
+              amount: amount ?? fare.total,
 
               expiresAt: new Date(
                 Date.now() +

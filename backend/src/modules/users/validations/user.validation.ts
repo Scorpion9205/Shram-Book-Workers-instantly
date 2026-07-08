@@ -10,6 +10,9 @@ export const updateProfileSchema = z.object({
     profileImage:z.string().optional(),
 })
 
+export type UpdateProfileInput =
+  z.infer<typeof updateProfileSchema>;
+
 export const changePasswordSchema =
   z.object({
     oldPassword: z

@@ -17,6 +17,11 @@ export const createInstantRequestSchema = z.object({
 
   address: z.string().optional(),
 
+  amount: z
+    .number()
+    .positive("Amount must be greater than 0")
+    .optional(),
+
   
 
   items: z

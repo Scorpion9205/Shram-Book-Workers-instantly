@@ -46,18 +46,30 @@ export const createJobSchema = z.object({
 export type CreateJobInput =
   z.infer<typeof createJobSchema>;
 
-export const applyJobSchema =
-  z.object({
-    bidAmount: z
-      .number()
-      .positive(),
+export const applyJobSchema = z.object({
 
-    workerCount: z
-      .number()
-      .int()
-      .positive()
-      .optional(),
-  });
+  bidAmount: z
+    .number()
+    .positive(),
+
+  estimatedDays: z
+    .number()
+    .int()
+    .positive(),
+
+  workerCount: z
+    .number()
+    .int()
+    .positive()
+    .optional(),
+
+  message: z
+    .string()
+    .trim()
+    .max(500)
+    .optional(),
+
+});
 
 export type ApplyJobInput =
   z.infer<

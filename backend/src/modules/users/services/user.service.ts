@@ -1,5 +1,6 @@
 import prisma from "../../../shared/config/prisma.js";
 import bcrypt from "bcryptjs"
+import type { UpdateProfileInput } from "../validations/user.validation.js";
 
 export class UserService {
     static async getProfile(userId: string) {
@@ -25,21 +26,31 @@ export class UserService {
 
     static async updateProfile(
         userId: string,
-        data: {
-            name?: string,
-            email?: string,
-            address?: string,
-            city?: string,
-            state?: string,
-            pincode?: string,
-            profileImage?: string;
-        }
-
+        data: UpdateProfileInput
     ) {
+        const {
+            name,
+            email,
+            address,
+            city,
+            state,
+            pincode,
+            profileImage,
+        } = data;
+
         return await prisma.user.update({
             where: {
                 id: userId
-            }, data,
+            },
+            data: {
+                ...(name !== undefined && { name }),
+                ...(email !== undefined && { email }),
+                ...(address !== undefined && { address }),
+                ...(city !== undefined && { city }),
+                ...(state !== undefined && { state }),
+                ...(pincode !== undefined && { pincode }),
+                ...(profileImage !== undefined && { profileImage }),
+            },
 
             select: {
                 id: true,
