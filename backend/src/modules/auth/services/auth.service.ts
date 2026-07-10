@@ -13,70 +13,161 @@ type SignupInput = z.infer<typeof signupSchema>
 type LoginInput = z.infer<typeof loginSchema>
 
 export class AuthService {
-    static async signup(data: SignupInput) {
-        const { name, phone, email, password, role } = data
-        const existingUser = await prisma.user.findFirst({
-            where: {
-                OR: [
-                    { phone }, ...(email ? [{ email }] : [])
-                ]
-            }
-        })
+    // static async signup(data: SignupInput) {
+    //     const { name, phone, email, password, role } = data
+    //     const existingUser = await prisma.user.findFirst({
+    //         where: {
+    //             OR: [
+    //                 { phone }, ...(email ? [{ email }] : [])
+    //             ]
+    //         }
+    //     })
 
-        if (existingUser) {
-            throw new Error("User already exists")
+    //     if (existingUser) {
+    //         throw new Error("User already exists")
+    //     }
+
+    //     const salt = await bcrypt.genSalt(10)
+
+    //     const hashedPassword = await bcrypt.hash(password, salt)
+
+    //     const user = await prisma.user.create({
+    //         data: {
+    //             name,
+    //             phone,
+    //             email: email ?? null,
+    //             password: hashedPassword,
+    //             role: role as UserRole,
+    //         }
+    //     });
+
+    //     const accessToken = generateAccessToken(user.id, user.role)
+    //     const refreshToken = generateRefreshToken(user.id)
+
+    //     await RedisService.set(
+    //         `refresh:${user.id}`,
+    //         refreshToken,
+    //         7 * 24 * 60 * 60
+    //     );
+
+    //     if (user.email) {
+    //         try {
+    //             await verificationService.sendOTP(
+    //                 user.email,
+    //                 user.name
+    //             );
+    //         } catch (error) {
+    //             console.error(
+    //                 "Failed to send verification OTP:",
+    //                 error
+    //             );
+
+    //             throw new Error(
+    //                 "Unable to send verification email. Please try again."
+    //             );
+    //         }
+    //     }
+
+    //     return {
+    //         user: {
+    //             id: user.id,
+    //             name: user.name,
+    //             phone: user.phone,
+    //             email: user.email,
+    //             role: user.role
+    //         },
+    //         accessToken,
+    //         refreshToken,
+    //     }
+    // }
+    static async signup(data: SignupInput) {
+
+        const {
+            name,
+            phone,
+            email,
+            password,
+            role,
+        } = data;
+
+        if (!email) {
+            throw new Error(
+                "Email is required for verification."
+            );
         }
 
-        const salt = await bcrypt.genSalt(10)
+        const existingUser =
+            await prisma.user.findFirst({
+                where: {
+                    OR: [
+                        { phone },
+                        { email },
+                    ],
+                },
+            });
 
-        const hashedPassword = await bcrypt.hash(password, salt)
+        if (existingUser) {
+            throw new Error(
+                "User already exists."
+            );
+        }
 
-        const user = await prisma.user.create({
-            data: {
+        const salt =
+            await bcrypt.genSalt(10);
+
+        const hashedPassword =
+            await bcrypt.hash(
+                password,
+                salt
+            );
+        const identifier = email ?? phone;
+
+        await verificationService.storePendingSignup(
+            identifier,
+            {
                 name,
                 phone,
-                email: email ?? null,
+                email,
                 password: hashedPassword,
                 role: role as UserRole,
             }
-        });
-
-        const accessToken = generateAccessToken(user.id, user.role)
-        const refreshToken = generateRefreshToken(user.id)
-
-        await RedisService.set(
-            `refresh:${user.id}`,
-            refreshToken,
-            7 * 24 * 60 * 60
         );
+       
 
-        if (user.email) {
-            await emailService.sendWelcomeEmail(
-                user.email,
-                user.name
-            )
-                .catch((error) => {
-                    console.error(
-                        "Failed to send welcome email:",
-                        error
-                    );
-                });
+        try {
+
+            await verificationService.sendOTP(
+                email,
+                name
+            );
+
+        } catch (error) {
+
+            await verificationService.deletePendingSignup(
+                email
+            );
+
+            console.error(
+                "Failed to send verification OTP:",
+                error
+            );
+
+            throw new Error(
+                "Unable to send verification email. Please try again."
+            );
 
         }
 
         return {
-            user: {
-                id: user.id,
-                name: user.name,
-                phone: user.phone,
-                email: user.email,
-                role: user.role
-            },
-            accessToken,
-            refreshToken,
-        }
-    }
 
+            success: true,
+
+            message:
+                "Verification OTP sent successfully."
+
+        };
+
+    }
     static async login(data: LoginInput) {
         const { identifier, password } = data
 
@@ -101,6 +192,11 @@ export class AuthService {
 
         if (!ispasswordValid) {
             throw new Error("Invalid Password")
+        }
+        if (!user.isVerified) {
+            throw new Error(
+                "Please verify your email before logging in."
+            );
         }
 
         const accessToken = generateAccessToken(user.id, user.role)
@@ -325,40 +421,162 @@ export class AuthService {
     }
 
     static async verifyOTP(
-        identifier: string,
-        otp: string
-    ) {
+    identifier: string,
+    otp: string
+) {
 
-        const verified =
-            await verificationService.verifyOTP(
-                identifier,
-                otp
-            );
+    const verified =
+        await verificationService.verifyOTP(
+            identifier,
+            otp
+        );
 
-        if (!verified) {
-            throw new Error(
-                "Invalid or expired OTP"
-            );
-        }
+    if (!verified) {
+        throw new Error(
+            "Invalid or expired OTP."
+        );
+    }
 
-        await prisma.user.updateMany({
+    const pendingSignup =
+        await verificationService.getPendingSignup(
+            identifier
+        );
+
+    if (!pendingSignup) {
+        throw new Error(
+            "Signup session expired. Please signup again."
+        );
+    }
+
+    const existingUser =
+        await prisma.user.findFirst({
             where: {
                 OR: [
-                    { phone: identifier },
-                    { email: identifier },
+                    { email: pendingSignup.email },
+                    { phone: pendingSignup.phone },
                 ],
-            },
-            data: {
-                isVerified: true,
             },
         });
 
-        return {
-            success: true,
-            message: "OTP verified successfully."
-        };
+    if (existingUser) {
+        throw new Error(
+            "User already exists."
+        );
+    }
+
+    const user = await prisma.$transaction(
+        async (tx) => {
+
+            const createdUser =
+                await tx.user.create({
+                    data: {
+                        name: pendingSignup.name,
+                        phone: pendingSignup.phone,
+                        email: pendingSignup.email,
+                        password: pendingSignup.password,
+                        role: pendingSignup.role,
+                        isVerified: true,
+                    },
+                });
+
+            switch (createdUser.role) {
+
+                case "WORKER":
+
+                    await tx.workerProfile.create({
+                        data: {
+                            userId: createdUser.id,
+                        },
+                    });
+
+                    break;
+
+                case "PROVIDER":
+
+                    await tx.providerProfile.create({
+                        data: {
+                            userId: createdUser.id,
+                        },
+                    });
+
+                    break;
+
+                case "AGENT":
+
+                    await tx.agentProfile.create({
+                        data: {
+                            userId: createdUser.id,
+                            agencyName: "",
+                        },
+                    });
+
+                    break;
+
+            }
+
+            return createdUser;
+
+        }
+    );
+
+    const accessToken =
+        generateAccessToken(
+            user.id,
+            user.role
+        );
+
+    const refreshToken =
+        generateRefreshToken(
+            user.id
+        );
+
+    await RedisService.set(
+        `refresh:${user.id}`,
+        refreshToken,
+        7 * 24 * 60 * 60
+    );
+
+    await verificationService.deletePendingSignup(
+        identifier
+    );
+
+    if (user.email) {
+
+        try {
+
+            await emailService.sendWelcomeEmail(
+                user.email,
+                user.name
+            );
+
+        } catch (error) {
+
+            console.error(
+                "Failed to send welcome email:",
+                error
+            );
+
+        }
 
     }
+
+    return {
+
+        user: {
+            id: user.id,
+            name: user.name,
+            phone: user.phone,
+            email: user.email,
+            role: user.role,
+        },
+
+        accessToken,
+
+        refreshToken,
+
+    };
+
+}
 
     static async resendOTP(
         identifier: string
@@ -372,5 +590,74 @@ export class AuthService {
         };
 
     }
+    static async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string
+) {
+
+    const user = await prisma.user.findUnique({
+        where: {
+            id: userId,
+        },
+    });
+
+    if (!user) {
+        throw new Error("User not found.");
+    }
+
+    const passwordMatched =
+        await bcrypt.compare(
+            currentPassword,
+            user.password
+        );
+
+    if (!passwordMatched) {
+        throw new Error(
+            "Current password is incorrect."
+        );
+    }
+
+    const hashedPassword =
+        await bcrypt.hash(
+            newPassword,
+            10
+        );
+
+    await prisma.user.update({
+        where: {
+            id: user.id,
+        },
+        data: {
+            password: hashedPassword,
+        },
+    });
+
+   
+    await RedisService.del(
+        `refresh:${user.id}`
+    );
+
+    if (user.email) {
+
+        await emailService
+            .sendPasswordChangedEmail(
+                user.email,
+                user.name
+            )
+            .catch(console.error);
+
+    }
+
+    return {
+
+        success: true,
+
+        message:
+            "Password changed successfully.",
+
+    };
+
+}
 
 }

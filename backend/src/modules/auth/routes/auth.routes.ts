@@ -12,20 +12,12 @@ router.post("/signup",rateLimiter(
     3,
     15 * 60
   ),AuthController.signup)
+
 router.post("/login", rateLimiter(
     "login",
     5,
     15 * 60
   ),AuthController.login)
-
-
-
-router.get("/authmid",authMiddleware,(req:AuthRequest,res)=>{
-    return res.json({
-        success:true,
-        user:req.user
-    })
-})
  
 
 router.get("/worker-only",authMiddleware,roleMiddleware(UserRole.WORKER),(req,res)=>{
@@ -72,5 +64,11 @@ router.post(
 router.post(
     "/resend-otp",
     AuthController.resendOTP
+);
+
+router.patch(
+    "/change-password",
+    authMiddleware,
+    AuthController.changePassword
 );
 export default router

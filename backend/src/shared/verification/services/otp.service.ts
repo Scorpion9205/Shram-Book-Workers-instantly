@@ -36,10 +36,10 @@ export class OTPService {
       await RedisService.get<string>(
         key
       );
-      console.log("KEY:", key);
-console.log("Stored OTP:", storedOTP);
-console.log("Received OTP:", otp);
-console.log("Equal:", storedOTP === otp);
+    console.log("KEY:", key);
+    console.log("Stored OTP:", storedOTP);
+    console.log("Received OTP:", otp);
+    console.log("Equal:", storedOTP === otp);
 
     if (!storedOTP) {
 
@@ -48,8 +48,8 @@ console.log("Equal:", storedOTP === otp);
     }
 
     if (String(storedOTP) !== String(otp)) {
-    return false;
-}
+      return false;
+    }
 
     await RedisService.del(
       key

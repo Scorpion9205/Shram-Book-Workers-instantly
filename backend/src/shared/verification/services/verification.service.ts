@@ -3,7 +3,8 @@ import { VerificationChannel } from "../types/verification.types.js";
 import { getVerificationChannel } from "../utils/identifier.util.js";
 import { EmailVerificationProvider } from "../providers/email-verification.provider.js";
 import { SMSVerificationProvider } from "../providers/sms-verification.provider.js";
-
+import { RedisService } from "../../services/redis/redis.service.js";
+import type { PendingSignupData } from "../types/signup.types.js";
 export class VerificationService {
 
   private emailProvider =
@@ -28,7 +29,7 @@ export class VerificationService {
     const key =
 
       channel ===
-      VerificationChannel.EMAIL
+        VerificationChannel.EMAIL
 
         ? `otp:email:${identifier}`
 
@@ -39,6 +40,10 @@ export class VerificationService {
         key
       );
 
+    console.log("📧 Identifier:", identifier);
+    console.log("👤 Name:", name);
+    console.log("🔑 OTP:", otp);
+    console.log("📨 Channel:", channel);
     if (
       channel ===
       VerificationChannel.EMAIL
@@ -86,7 +91,7 @@ export class VerificationService {
     const key =
 
       channel ===
-      VerificationChannel.EMAIL
+        VerificationChannel.EMAIL
 
         ? `otp:email:${identifier}`
 
@@ -101,5 +106,35 @@ export class VerificationService {
     );
 
   }
+  async storePendingSignup(
+  identifier: string,
+  data: PendingSignupData
+) {
 
+  await RedisService.set(
+    `signup:email:${identifier}`,
+    data,
+    600
+  );
+
+}
+
+async getPendingSignup(
+  identifier: string
+) {
+
+  return await RedisService.get<PendingSignupData>(
+    `signup:email:${identifier}`
+  );
+
+}
+async deletePendingSignup(
+  identifier: string
+) {
+
+  await RedisService.del(
+    `signup:email:${identifier}`
+  );
+
+}
 }

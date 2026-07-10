@@ -10,7 +10,6 @@ import type{ EmailMessage } from "../../queue/types/email-message.types.js";
 
 export class RabbitMQProvider
   implements EmailProvider {
-
   async sendEmail(
     data: EmailMessage
   ): Promise<void> {

@@ -71,3 +71,8 @@ export const verifyOTPSchema = z.object({
   identifier: z.string().min(1, "Identifier is required"),
   otp: z.string().length(6, "OTP must be 6 digits"),
 });
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required"),
+  newPassword: z.string().min(8, "Password must be at least 8 characters"),
+});

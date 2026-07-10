@@ -1,5 +1,5 @@
 import { emailService } from "../../email/index.js";
-import type{ VerificationProvider } from "./verification-provider.js";
+import type { VerificationProvider } from "./verification-provider.js";
 
 export class EmailVerificationProvider
   implements VerificationProvider {
@@ -19,7 +19,13 @@ export class EmailVerificationProvider
       otp
 
     );
+    console.log("📩 EmailVerificationProvider");
 
+    console.log({
+      email,
+      otp,
+      name
+    });
   }
 
 }

@@ -24,14 +24,12 @@ export class JobService {
     const skill =
       await prisma.skill.findUnique({
         where: {
-          id: data.skillId,
-        },
+          id: data.skillId
+        }
       });
 
     if (!skill) {
-      throw new Error(
-        "Skill not found"
-      );
+      throw new Error("Skill not found");
     }
 
     const job =
@@ -451,6 +449,12 @@ export class JobService {
     if (!job) {
       throw new Error(
         "Job not found"
+      );
+    }
+
+    if (job.providerId === userId) {
+      throw new Error(
+        "You cannot apply to your own job."
       );
     }
 

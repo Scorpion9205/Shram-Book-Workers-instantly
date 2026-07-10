@@ -10,6 +10,8 @@ export const createJobSchema = z.object({
     .string()
     .optional(),
 
+  
+
   skillId: z.uuid(),
 
   requiredWorkers: z

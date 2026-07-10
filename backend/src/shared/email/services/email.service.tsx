@@ -3,16 +3,16 @@ import type { EmailProvider } from "../providers/email-provider.js";
 import WelcomeEmail from "../templates/Welcome.js";
 import ForgotPassword from "../templates/ForgotPassword.js";
 import PasswordChanged
-from "../templates/PasswordChanged.js";
+  from "../templates/PasswordChanged.js";
 import OtpEmail
-from "../templates/OtpEmail.js";
+  from "../templates/OtpEmail.js";
 export class EmailService {
 
   constructor(
 
     private provider: EmailProvider
 
-  ) {}
+  ) { }
 
   async send(
 
@@ -39,61 +39,61 @@ export class EmailService {
 
   }
   async sendWelcomeEmail(
-  to: string,
-  name: string
-) {
-  await this.send(
-    to,
-    "Welcome to SHRAM 🎉",
-    <WelcomeEmail name={name} />
-  );
-}
-async sendForgotPasswordEmail(
+    to: string,
+    name: string
+  ) {
+    await this.send(
+      to,
+      "Welcome to SHRAM 🎉",
+      <WelcomeEmail name={name} />
+    );
+  }
+  async sendForgotPasswordEmail(
 
-  to: string,
+    to: string,
 
-  name: string,
+    name: string,
 
-  resetLink: string
+    resetLink: string
 
-) {
+  ) {
 
-  await this.send(
+    await this.send(
 
-    to,
+      to,
 
-    "Reset your SHRAM password",
+      "Reset your SHRAM password",
 
-    <ForgotPassword
-      name={name}
-      resetLink={resetLink}
-    />
+      <ForgotPassword
+        name={name}
+        resetLink={resetLink}
+      />
 
-  );
+    );
 
-}
-async sendPasswordChangedEmail(
+  }
+  async sendPasswordChangedEmail(
 
     to: string,
 
     name: string
 
-){
+  ) {
 
     await this.send(
 
-        to,
+      to,
 
-        "Your SHRAM password has been changed",
+      "Your SHRAM password has been changed",
 
-        <PasswordChanged
-            name={name}
-        />
+      <PasswordChanged
+        name={name}
+      />
 
     );
 
-}
-async sendOTPEmail(
+  }
+  async sendOTPEmail(
 
     to: string,
 
@@ -101,23 +101,31 @@ async sendOTPEmail(
 
     otp: string
 
-) {
+  ) {
+
+    console.log("📨 sendOTPEmail");
+
+    console.log({
+      to,
+      name,
+      otp
+    });
 
     await this.send(
 
-        to,
+      to,
 
-        "Your SHRAM Verification Code",
+      "Your SHRAM Verification Code",
 
-        <OtpEmail
+      <OtpEmail
 
-            name={name}
+        name={name}
 
-            otp={otp}
+        otp={otp}
 
-        />
+      />
 
     );
 
-}
+  }
 }

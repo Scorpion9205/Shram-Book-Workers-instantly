@@ -3,46 +3,81 @@ import { AuthService } from "../services/auth.service.js"
 import { signupSchema, loginSchema } from "../validations/auth.validation.js"
 import type { AuthRequest } from "../../../shared/middleware/auth.middleware.js"
 import { RedisService } from "../../../shared/services/redis/redis.service.js"
-import { forgotPasswordSchema, resetPasswordSchema } from "../validations/auth.validation.js"
+import { forgotPasswordSchema, resetPasswordSchema,changePasswordSchema } from "../validations/auth.validation.js"
 import {
     sendOTPSchema,
     verifyOTPSchema
 } from "../validations/auth.validation.js";
 export class AuthController {
+    // static async signup(req: Request, res: Response) {
+    //     try {
+    //         const validationResult = signupSchema.safeParse(req.body)
+
+    //         if (!validationResult.success) {
+    //             return res.status(400).json({
+    //                 success: false,
+    //                 errors:
+    //                     validationResult.error.issues
+    //             })
+    //         }
+
+    //         const result = await AuthService.signup(validationResult.data)
+
+    //         res.cookie("refreshToken", result.refreshToken, {
+    //             httpOnly: true,
+    //             secure: false,
+    //             sameSite: "lax",
+    //             maxAge: 7 * 24 * 60 * 60 * 1000
+    //         })
+
+    //         return res.status(201).json({
+    //             success: true,
+    //             message: "User registered successfully",
+    //             user: result.user,
+    //             accessToken: result.accessToken,
+    //         })
+    //     } catch (error: any) {
+    //         return res.status(400).json({
+    //             success: false,
+    //             message: error.message,
+    //         })
+    //     }
+    // }
+
     static async signup(req: Request, res: Response) {
-        try {
-            const validationResult = signupSchema.safeParse(req.body)
+    try {
 
-            if (!validationResult.success) {
-                return res.status(400).json({
-                    success: false,
-                    errors:
-                        validationResult.error.issues
-                })
-            }
+        const validationResult =
+            signupSchema.safeParse(req.body);
 
-            const result = await AuthService.signup(validationResult.data)
+        if (!validationResult.success) {
 
-            res.cookie("refreshToken", result.refreshToken, {
-                httpOnly: true,
-                secure: false,
-                sameSite: "lax",
-                maxAge: 7 * 24 * 60 * 60 * 1000
-            })
-
-            return res.status(201).json({
-                success: true,
-                message: "User registered successfully",
-                user: result.user,
-                accessToken: result.accessToken,
-            })
-        } catch (error: any) {
             return res.status(400).json({
                 success: false,
-                message: error.message,
-            })
+                errors: validationResult.error.issues,
+            });
+
         }
+
+        const result =
+            await AuthService.signup(
+                validationResult.data
+            );
+
+        return res.status(200).json({
+            success: result.success,
+            message: result.message,
+        });
+
+    } catch (error: any) {
+
+        return res.status(400).json({
+            success: false,
+            message: error.message,
+        });
+
     }
+}
 
     static async login(req: Request, res: Response) {
         try {
@@ -264,46 +299,89 @@ export class AuthController {
 
     }
 
+    // static async verifyOTP(
+    //     req: Request,
+    //     res: Response
+    // ) {
+
+    //     try {
+
+    //         const validation =
+    //             verifyOTPSchema.safeParse(req.body);
+
+    //         if (!validation.success) {
+
+    //             return res.status(400).json({
+    //                 success: false,
+    //                 errors: validation.error.issues,
+    //             });
+
+    //         }
+
+    //         const result =
+    //             await AuthService.verifyOTP(
+
+    //                 validation.data.identifier,
+
+    //                 validation.data.otp
+
+    //             );
+
+    //         return res.status(200).json(result);
+
+    //     } catch (error: any) {
+
+    //         return res.status(400).json({
+    //             success: false,
+    //             message: error.message,
+    //         });
+
+    //     }
+
+    // }
     static async verifyOTP(
-        req: Request,
-        res: Response
-    ) {
+    req: Request,
+    res: Response
+) {
+    try {
 
-        try {
+        const { identifier, otp } = req.body;
 
-            const validation =
-                verifyOTPSchema.safeParse(req.body);
-
-            if (!validation.success) {
-
-                return res.status(400).json({
-                    success: false,
-                    errors: validation.error.issues,
-                });
-
-            }
-
-            const result =
-                await AuthService.verifyOTP(
-
-                    validation.data.identifier,
-
-                    validation.data.otp
-
-                );
-
-            return res.status(200).json(result);
-
-        } catch (error: any) {
-
+        if (!identifier || !otp) {
             return res.status(400).json({
                 success: false,
-                message: error.message,
+                message: "Identifier and OTP are required.",
             });
-
         }
 
+        const result = await AuthService.verifyOTP(
+            identifier,
+            otp
+        );
+
+        res.cookie("refreshToken", result.refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: "OTP verified successfully.",
+            user: result.user,
+            accessToken: result.accessToken,
+        });
+
+    } catch (error: any) {
+
+        return res.status(400).json({
+            success: false,
+            message: error.message,
+        });
+
     }
+}
     static async resendOTP(
         req: Request,
         res: Response
@@ -340,4 +418,61 @@ export class AuthController {
         }
 
     }
+    static async changePassword(
+    req: AuthRequest,
+    res: Response
+) {
+
+    try {
+
+        const validation =
+            changePasswordSchema.safeParse(
+                req.body
+            );
+
+        if (!validation.success) {
+
+            return res.status(400).json({
+                success: false,
+                errors:
+                    validation.error.issues,
+            });
+
+        }
+
+        if (!req.user) {
+
+            return res.status(401).json({
+                success: false,
+                message: "Unauthorized",
+            });
+
+        }
+
+        const result =
+            await AuthService.changePassword(
+
+                req.user.userId,
+
+                validation.data.currentPassword,
+
+                validation.data.newPassword
+
+            );
+
+        return res.status(200).json(result);
+
+    } catch (error: any) {
+
+        return res.status(400).json({
+
+            success: false,
+
+            message: error.message,
+
+        });
+
+    }
+
+}
 }

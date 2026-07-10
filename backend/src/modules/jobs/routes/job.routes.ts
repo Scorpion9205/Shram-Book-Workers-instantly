@@ -5,7 +5,7 @@ import { roleMiddleware } from "../../../shared/middleware/role.middleware.js";
 import { rateLimiter } from "../../../shared/middleware/rateLimiter.middleware.js";
 const router = Router();
 
-router.post("/",authMiddleware,roleMiddleware("PROVIDER"),rateLimiter(
+router.post("/create-job",authMiddleware,roleMiddleware("PROVIDER"),rateLimiter(
     "job:create",
     30,
     60

@@ -1,6 +1,6 @@
 import { Resend } from "resend";
-import type{ EmailProvider } from "./email-provider.js";
-import type{ EmailOptions } from "../types/email.types.js";
+import type { EmailProvider } from "./email-provider.js";
+import type { EmailOptions } from "../types/email.types.js";
 
 export class ResendProvider
   implements EmailProvider {
@@ -26,7 +26,12 @@ export class ResendProvider
   async sendEmail(
     options: EmailOptions
   ): Promise<void> {
+    console.log("🚀 Sending Email");
 
+    console.log({
+      to: options.to,
+      subject: options.subject
+    });
     const { error } =
       await this.resend.emails.send({
 
