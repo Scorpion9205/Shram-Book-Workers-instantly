@@ -65,14 +65,17 @@ export class WorkerService {
                         },
                     },
                     skills: {
-                        include: {
+                        select: {
                             skill: true,
                         },
                     },
                 },
             });
 
-        return worker;
+        return {
+            ...worker,
+            skills: worker.skills.map((item) => item.skill),
+        };
     }
 
     static async updateProfile(

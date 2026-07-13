@@ -165,7 +165,7 @@ model Application {
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
   applicantType ApplicantType
-  estimatedDays Int?
+  
   message       String?
   agent         AgentProfile?     @relation(fields: [agentId], references: [id])
   job           Job               @relation(fields: [jobId], references: [id])

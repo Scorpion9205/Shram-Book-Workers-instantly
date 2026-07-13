@@ -54,11 +54,6 @@ export const applyJobSchema = z.object({
     .number()
     .positive(),
 
-  estimatedDays: z
-    .number()
-    .int()
-    .positive(),
-
   workerCount: z
     .number()
     .int()

@@ -138,7 +138,15 @@ export class JobService {
         });
 
       if (!location) {
-        throw new Error("Worker location not found");
+
+        return {
+
+          locationRequired: true,
+
+          jobs: [],
+
+        };
+
       }
 
       latitude = location.latitude;
@@ -229,7 +237,10 @@ export class JobService {
     }
 
     if (skillIds.length === 0) {
-      return [];
+      return {
+        locationRequired: false,
+        jobs: [],
+      };
     }
 
     const cachedJobs =
@@ -320,7 +331,7 @@ export class JobService {
 
       });
 
-    const SEARCH_RADIUS_KM = 10;
+    const SEARCH_RADIUS_KM = 25;
 
     const nearbyJobs = jobs
 
@@ -365,20 +376,30 @@ export class JobService {
       );
 
     await RedisService.set(
-
       cacheKey,
-
-      nearbyJobs,
-
+      {
+        locationRequired: false,
+        jobs: nearbyJobs,
+      },
       120
-
     );
 
-    console.log(
-      "✅ Nearby Jobs Cached"
-    );
 
-    return nearbyJobs;
+
+    console.log("Worker Skills:", skillIds);
+    console.log("Worker Location:", latitude, longitude);
+    console.log("Jobs Found:", jobs.length);
+    console.log("Nearby Jobs:", nearbyJobs);
+
+    return {
+
+      locationRequired: false,
+
+      jobs: nearbyJobs,
+
+    };
+
+
 
   }
 
@@ -408,6 +429,13 @@ export class JobService {
               phone: true,
             },
           },
+
+          _count: {
+            select: {
+              applications: true,
+              bookings: true,
+            },
+          },
         },
       });
 
@@ -426,6 +454,14 @@ export class JobService {
     data: ApplyJobInput
   ) {
 
+    console.log({
+      userId,
+      jobId,
+      data,
+    });
+   
+
+
     const worker =
       await prisma.workerProfile.findUnique({
         where: {
@@ -433,6 +469,7 @@ export class JobService {
         },
       });
 
+      console.log(worker);
     if (!worker) {
       throw new Error(
         "Worker profile not found"
@@ -445,6 +482,8 @@ export class JobService {
           id: jobId,
         },
       });
+
+      console.log(job);
 
     if (!job) {
       throw new Error(
@@ -486,7 +525,8 @@ export class JobService {
           applicantType: "WORKER",
 
           workerId: worker.id,
-
+           message: data.message ?? null,
+          workerCount: data.workerCount ?? null,
           bidAmount:
             data.bidAmount,
 

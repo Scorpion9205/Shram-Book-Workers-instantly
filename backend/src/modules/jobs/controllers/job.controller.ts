@@ -65,16 +65,13 @@ export class JobController {
 
     try {
 
-      const jobs =
-        await JobService.getAllJobs(
-          req.user!.userId
-        );
+      const result = await JobService.getAllJobs(req.user!.userId);
 
       return res.status(200).json({
         success: true,
-        jobs,
+        locationRequired: result.locationRequired,
+        jobs: result.jobs,
       });
-
     } catch (error: any) {
 
       return res.status(400).json({
@@ -124,6 +121,7 @@ export class JobController {
 
     }
 
+
   }
 
   static async applyForJob(
@@ -145,7 +143,8 @@ export class JobController {
           message: "Invalid job id",
         });
       }
-
+     
+      console.log("BODY =>", req.body);
       const validationResult =
         applyJobSchema.safeParse(
           req.body
@@ -191,187 +190,188 @@ export class JobController {
 
     }
 
+
   }
   static async getJobApplications(
-  req: AuthRequest,
-  res: Response
-) {
+    req: AuthRequest,
+    res: Response
+  ) {
 
-  try {
+    try {
 
-    const jobId =
-      req.params.jobId;
+      const jobId =
+        req.params.jobId;
 
-    if (
-      !jobId ||
-      Array.isArray(jobId)
-    ) {
+      if (
+        !jobId ||
+        Array.isArray(jobId)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid job id",
+        });
+      }
+
+      const applications =
+        await JobService.getJobApplications(
+          req.user!.userId,
+          jobId
+        );
+
+      return res.status(200).json({
+        success: true,
+        applications,
+      });
+
+    } catch (error: any) {
+
       return res.status(400).json({
         success: false,
-        message: "Invalid job id",
+        message: error.message,
       });
+
     }
 
-    const applications =
-      await JobService.getJobApplications(
-        req.user!.userId,
-        jobId
-      );
+  }
+  static async acceptApplication(
+    req: AuthRequest,
+    res: Response
+  ) {
 
-    return res.status(200).json({
-      success: true,
-      applications,
-    });
+    try {
 
-  } catch (error: any) {
+      const applicationId =
+        req.params.applicationId;
 
-    return res.status(400).json({
-      success: false,
-      message: error.message,
-    });
+      if (
+        !applicationId ||
+        Array.isArray(applicationId)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid application id",
+        });
+      }
+
+      const result =
+        await JobService.acceptApplication(
+          req.user!.userId,
+          applicationId
+        );
+
+      return res.status(200).json({
+        success: true,
+        message:
+          "Application accepted successfully",
+        data: result,
+      });
+
+    } catch (error: any) {
+
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+
+    }
 
   }
 
-}
-static async acceptApplication(
-  req: AuthRequest,
-  res: Response
-) {
+  static async rejectApplication(
+    req: AuthRequest,
+    res: Response
+  ) {
 
-  try {
+    try {
 
-    const applicationId =
-      req.params.applicationId;
+      const applicationId =
+        req.params.applicationId;
 
-    if (
-      !applicationId ||
-      Array.isArray(applicationId)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid application id",
-      });
-    }
+      if (
+        !applicationId ||
+        Array.isArray(applicationId)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid application id",
+        });
+      }
 
-    const result =
-      await JobService.acceptApplication(
+      await JobService.rejectApplication(
         req.user!.userId,
         applicationId
       );
 
-    return res.status(200).json({
-      success: true,
-      message:
-        "Application accepted successfully",
-      data: result,
-    });
+      return res.status(200).json({
+        success: true,
+        message:
+          "Application rejected successfully",
+      });
 
-  } catch (error: any) {
+    } catch (error: any) {
 
-    return res.status(400).json({
-      success: false,
-      message: error.message,
-    });
-
-  }
-
-}
-
-static async rejectApplication(
-  req: AuthRequest,
-  res: Response
-) {
-
-  try {
-
-    const applicationId =
-      req.params.applicationId;
-
-    if (
-      !applicationId ||
-      Array.isArray(applicationId)
-    ) {
       return res.status(400).json({
         success: false,
-        message: "Invalid application id",
+        message: error.message,
       });
+
     }
 
-    await JobService.rejectApplication(
-      req.user!.userId,
-      applicationId
-    );
+  }
 
-    return res.status(200).json({
-      success: true,
-      message:
-        "Application rejected successfully",
-    });
+  static async getMyApplications(
+    req: AuthRequest,
+    res: Response
+  ) {
 
-  } catch (error: any) {
+    try {
 
-    return res.status(400).json({
-      success: false,
-      message: error.message,
-    });
+      const applications =
+        await JobService.getMyApplications(
+          req.user!.userId
+        );
+
+      return res.status(200).json({
+        success: true,
+        applications,
+      });
+
+    } catch (error: any) {
+
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+
+    }
 
   }
 
-}
+  static async getProviderJobs(
+    req: AuthRequest,
+    res: Response
+  ) {
 
-static async getMyApplications(
-  req: AuthRequest,
-  res: Response
-) {
+    try {
 
-  try {
+      const jobs =
+        await JobService.getProviderJobs(
+          req.user!.userId
+        );
 
-    const applications =
-      await JobService.getMyApplications(
-        req.user!.userId
-      );
+      return res.status(200).json({
+        success: true,
+        jobs,
+      });
 
-    return res.status(200).json({
-      success: true,
-      applications,
-    });
+    } catch (error: any) {
 
-  } catch (error: any) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
 
-    return res.status(400).json({
-      success: false,
-      message: error.message,
-    });
-
-  }
-
-}
-
-static async getProviderJobs(
-  req: AuthRequest,
-  res: Response
-) {
-
-  try {
-
-    const jobs =
-      await JobService.getProviderJobs(
-        req.user!.userId
-      );
-
-    return res.status(200).json({
-      success: true,
-      jobs,
-    });
-
-  } catch (error: any) {
-
-    return res.status(400).json({
-      success: false,
-      message: error.message,
-    });
+    }
 
   }
-
-}
 }

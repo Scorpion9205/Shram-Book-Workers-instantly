@@ -58,14 +58,16 @@ export class SkillService {
             }))
         });
 
-        return await prisma.workerSkill.findMany({
+        const workerSkills = await prisma.workerSkill.findMany({
             where: {
-                workerId: worker.id
+                workerId: worker.id,
             },
             include: {
-                skill: true
-            }
+                skill: true,
+            },
         });
+
+        return workerSkills.map((item) => item.skill);
     }
 
     static async getMySkills(
@@ -82,13 +84,15 @@ export class SkillService {
                 },
             });
 
-        return await prisma.workerSkill.findMany({
+        const workerSkills = await prisma.workerSkill.findMany({
             where: {
-                workerId: worker.id
+                workerId: worker.id,
             },
             include: {
-                skill: true
-            }
+                skill: true,
+            },
         });
+
+        return workerSkills.map((item) => item.skill);
     }
 }
