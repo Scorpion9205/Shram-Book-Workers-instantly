@@ -25,6 +25,7 @@ app.use(cors({
   origin: process.env.FRONTEND_URL ?? "http://localhost:3000",
   credentials: true,
 }))
+
 app.use(morgan("dev"))
 app.use(express.json())
 app.use(express.urlencoded({extended:true}))
@@ -37,7 +38,6 @@ app.get("/api/v1/health",(_req,res)=>{
         message:"Server is running"
     })
 })
-
 
 app.use(
   "/api/v1/workers",
@@ -68,8 +68,6 @@ app.use(
   instantRequestRoutes
 );
 
-
-
 app.use(
   "/api/v1/bookings",
   bookingRoutes
@@ -81,7 +79,6 @@ app.use(
 );
 
 app.use("/api/v1/jobs",jobRoutes)
-
 
 app.use(
   "/api/v1/dashboard",

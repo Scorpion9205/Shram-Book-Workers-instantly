@@ -24,9 +24,9 @@ export const createJobSchema = z.object({
     .positive()
     .optional(),
 
-  latitude: z.number(),
+  latitude: z.number().optional(),
 
-  longitude: z.number(),
+  longitude: z.number().optional(),
 
   address: z
     .string()

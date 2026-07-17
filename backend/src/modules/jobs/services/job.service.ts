@@ -1,6 +1,6 @@
 import prisma from "../../../shared/config/prisma.js";
 import type { CreateJobInput } from "../validations/job.validation.js";
-import { calculateDistance } from "../../../shared/utils/distance.js";
+
 import type { ApplyJobInput } from "../validations/job.validation.js";
 import { RedisService } from "../../../shared/services/redis/redis.service.js";
 import { CacheInvalidationService } from "../../../shared/services/cache/cache-invalidation.service.js";
@@ -50,10 +50,10 @@ export class JobService {
             data.budget ?? null,
 
           latitude:
-            data.latitude,
+            data.latitude ?? null,
 
           longitude:
-            data.longitude,
+            data.longitude ?? null,
 
           address:
             data.address ?? null,
@@ -109,13 +109,11 @@ export class JobService {
     }
 
     let cacheKey = "";
-    let latitude = 0;
-    let longitude = 0;
     let skillIds: string[] = [];
 
     if (user.role === "WORKER") {
 
-      cacheKey = `jobs:nearby:worker:${userId}`;
+      cacheKey = `jobs:worker:${userId}`;
 
       const worker = await prisma.workerProfile.findUnique({
         where: {
@@ -130,28 +128,6 @@ export class JobService {
         throw new Error("Worker profile not found");
       }
 
-      const location =
-        await prisma.userLocation.findUnique({
-          where: {
-            userId,
-          },
-        });
-
-      if (!location) {
-
-        return {
-
-          locationRequired: true,
-
-          jobs: [],
-
-        };
-
-      }
-
-      latitude = location.latitude;
-      longitude = location.longitude;
-
       skillIds = worker.skills.map(
         (skill) => skill.skillId
       );
@@ -160,7 +136,7 @@ export class JobService {
 
     else if (user.role === "AGENT") {
 
-      cacheKey = `jobs:nearby:agent:${userId}`;
+      cacheKey = `jobs:agent:${userId}`;
 
       const agent =
         await prisma.agentProfile.findUnique({
@@ -172,20 +148,6 @@ export class JobService {
       if (!agent) {
         throw new Error("Agent profile not found");
       }
-
-      const location =
-        await prisma.userLocation.findUnique({
-          where: {
-            userId,
-          },
-        });
-
-      if (!location) {
-        throw new Error("Agent location not found");
-      }
-
-      latitude = location.latitude;
-      longitude = location.longitude;
 
       const linkedWorkers =
         await prisma.agentWorker.findMany({
@@ -238,7 +200,6 @@ export class JobService {
 
     if (skillIds.length === 0) {
       return {
-        locationRequired: false,
         jobs: [],
       };
     }
@@ -251,7 +212,7 @@ export class JobService {
     if (cachedJobs) {
 
       console.log(
-        "✅ Nearby Jobs from Redis"
+        "✅ Jobs from Redis"
       );
 
       return cachedJobs;
@@ -331,78 +292,21 @@ export class JobService {
 
       });
 
-    const SEARCH_RADIUS_KM = 25;
-
-    const nearbyJobs = jobs
-
-      .map((job) => {
-
-        const distance = calculateDistance(
-
-          latitude,
-
-          longitude,
-
-          job.latitude,
-
-          job.longitude
-
-        );
-
-        return {
-
-          ...job,
-
-          distanceKm: Number(
-            distance.toFixed(2)
-          ),
-
-        };
-
-      })
-
-      .filter(
-
-        (job) =>
-          job.distanceKm <= SEARCH_RADIUS_KM
-
-      )
-
-      .sort(
-
-        (a, b) =>
-          a.distanceKm - b.distanceKm
-
-      );
-
     await RedisService.set(
       cacheKey,
       {
-        locationRequired: false,
-        jobs: nearbyJobs,
+        jobs,
       },
       120
     );
 
-
-
-    console.log("Worker Skills:", skillIds);
-    console.log("Worker Location:", latitude, longitude);
-    console.log("Jobs Found:", jobs.length);
-    console.log("Nearby Jobs:", nearbyJobs);
-
     return {
 
-      locationRequired: false,
-
-      jobs: nearbyJobs,
+      jobs,
 
     };
 
-
-
   }
-
   static async getJobById(
     jobId: string
   ) {
@@ -459,7 +363,7 @@ export class JobService {
       jobId,
       data,
     });
-   
+
 
 
     const worker =
@@ -469,7 +373,7 @@ export class JobService {
         },
       });
 
-      console.log(worker);
+    console.log(worker);
     if (!worker) {
       throw new Error(
         "Worker profile not found"
@@ -483,7 +387,7 @@ export class JobService {
         },
       });
 
-      console.log(job);
+    console.log(job);
 
     if (!job) {
       throw new Error(
@@ -525,7 +429,7 @@ export class JobService {
           applicantType: "WORKER",
 
           workerId: worker.id,
-           message: data.message ?? null,
+          message: data.message ?? null,
           workerCount: data.workerCount ?? null,
           bidAmount:
             data.bidAmount,

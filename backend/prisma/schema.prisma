@@ -131,8 +131,8 @@ model Job {
   id              String        @id @default(uuid())
   title           String
   description     String?
-  latitude        Float
-  longitude       Float
+  latitude        Float?
+  longitude       Float?
   address         String?
   city            String?
   state           String?

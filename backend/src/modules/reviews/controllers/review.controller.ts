@@ -1,5 +1,5 @@
-import type { Request,Response } from "express";
-import type{ AuthRequest } from "../../../shared/middleware/auth.middleware.js";
+import type { Request, Response } from "express";
+import type { AuthRequest } from "../../../shared/middleware/auth.middleware.js";
 
 import { ReviewService } from "../services/review.service.js";
 
@@ -68,44 +68,109 @@ export class ReviewController {
     }
   }
   static async getWorkerRating(
-  req: Request,
-  res: Response
-) {
-  try {
+    req: Request,
+    res: Response
+  ) {
+    try {
 
-    const workerId =
-      req.params.workerId;
+      const workerId =
+        req.params.workerId;
 
-    if (
-      !workerId ||
-      Array.isArray(workerId)
-    ) {
+      if (
+        !workerId ||
+        Array.isArray(workerId)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid worker id",
+        });
+      }
+
+      const worker =
+        await ReviewService.getWorkerRating(
+          workerId
+        );
+
+      return res.status(200).json({
+        success: true,
+        worker,
+      });
+
+    } catch (error: any) {
+
       return res.status(400).json({
         success: false,
         message:
-          "Invalid worker id",
+          error.message,
       });
+
     }
-
-    const worker =
-      await ReviewService.getWorkerRating(
-        workerId
-      );
-
-    return res.status(200).json({
-      success: true,
-      worker,
-    });
-
-  } catch (error: any) {
-
-    return res.status(400).json({
-      success: false,
-      message:
-        error.message,
-    });
-
   }
-}
 
+  static async getWorkerReviews(
+    req: Request,
+    res: Response
+  ) {
+    try {
+
+      const workerId = req.params.workerId;
+
+      if (!workerId || Array.isArray(workerId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid worker id",
+        });
+      }
+
+      const worker =
+        await ReviewService.getWorkerReviews(workerId);
+
+      return res.json({
+        success: true,
+        worker,
+      });
+
+    } catch (error: any) {
+
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+
+    }
+  }
+
+  static async getProviderReviews(
+    req: Request,
+    res: Response
+  ) {
+    try {
+
+      const providerId = req.params.providerId;
+
+      if (!providerId || Array.isArray(providerId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid provider id",
+        });
+      }
+
+      const reviews =
+        await ReviewService.getProviderReviews(providerId);
+
+      return res.json({
+        success: true,
+        reviews,
+      });
+
+    } catch (error: any) {
+
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+
+    }
+  }
 }

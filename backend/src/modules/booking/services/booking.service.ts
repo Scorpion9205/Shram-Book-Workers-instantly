@@ -3,143 +3,168 @@ import prisma from "../../../shared/config/prisma.js";
 export class BookingService {
 
   static async getProviderBookings(
-  userId: string
-) {
+    userId: string
+  ) {
 
-  return await prisma.booking.findMany({
-    where: {
-      providerId: userId,
-    },
+    return await prisma.booking.findMany({
+      where: {
+        providerId: userId,
+      },
 
-    select: {
+      select: {
 
-      id: true,
+        id: true,
 
-      amount: true,
+        amount: true,
 
-      status: true,
+        status: true,
 
-      createdAt: true,
+        createdAt: true,
 
-      startedAt: true,
+        startedAt: true,
 
-      completedAt: true,
+        completedAt: true,
 
-      worker: {
-        select: {
+        worker: {
+          select: {
+            id: true,
 
-          experience: true,
+            experience: true,
 
-          rating: true,
+            rating: true,
 
-          totalJobs: true,
+            totalJobs: true,
 
-          user: {
-            select: {
-              name: true,
-              phone: true,
-              profileImage: true,
+            user: {
+              select: {
+                name: true,
+                phone: true,
+                profileImage: true,
+              },
+            },
+
+          },
+        },
+
+        instantRequest: {
+          select: {
+            id: true,
+            title: true,
+            address: true,
+          },
+        },
+
+        job: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            address: true,
+            city: true,
+            budget: true,
+            latitude: true,
+            longitude: true,
+
+            skill: {
+              select: {
+                id: true,
+                name: true,
+              },
             },
           },
-
         },
+
       },
 
-      instantRequest: {
-        select: {
-          id: true,
-          title: true,
-          address: true,
-        },
+      orderBy: {
+        createdAt: "desc",
       },
 
-      job: {
-        select: {
-          id: true,
-          title: true,
-          address: true,
-          city: true,
-        },
-      },
+    });
 
-    },
-
-    orderBy: {
-      createdAt: "desc",
-    },
-
-  });
-
-}
+  }
 
   static async getWorkerBookings(
-  userId: string
-) {
+    userId: string
+  ) {
 
-  const worker =
-    await prisma.workerProfile.findUnique({
+    const worker =
+      await prisma.workerProfile.findUnique({
+        where: {
+          userId,
+        },
+      });
+
+    if (!worker) {
+      throw new Error(
+        "Worker profile not found"
+      );
+    }
+
+    return await prisma.booking.findMany({
       where: {
-        userId,
+        workerId: worker.id,
+      },
+
+      select: {
+
+        id: true,
+
+        amount: true,
+
+        status: true,
+
+        createdAt: true,
+
+        startedAt: true,
+
+        completedAt: true,
+
+        provider: {
+          select: {
+            id: true,
+            profileImage: true,
+            name: true,
+            phone: true,
+          },
+        },
+
+        instantRequest: {
+          select: {
+            id: true,
+            title: true,
+            address: true,
+          },
+        },
+
+        job: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            address: true,
+            city: true,
+            budget: true,
+            latitude: true,
+            longitude: true,
+
+            skill: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+
+      },
+
+      orderBy: {
+        createdAt: "desc",
       },
     });
 
-  if (!worker) {
-    throw new Error(
-      "Worker profile not found"
-    );
   }
-
-  return await prisma.booking.findMany({
-    where: {
-      workerId: worker.id,
-    },
-
-    select: {
-
-      id: true,
-
-      amount: true,
-
-      status: true,
-
-      createdAt: true,
-
-      startedAt: true,
-
-      completedAt: true,
-
-      provider: {
-        select: {
-          name: true,
-          phone: true,
-        },
-      },
-
-      instantRequest: {
-        select: {
-          id: true,
-          title: true,
-          address: true,
-        },
-      },
-
-      job: {
-        select: {
-          id: true,
-          title: true,
-          address: true,
-          city: true,
-        },
-      },
-
-    },
-
-    orderBy: {
-      createdAt: "desc",
-    },
-  });
-
-}
 
   static async getBookingById(
     bookingId: string
@@ -154,24 +179,70 @@ export class BookingService {
         include: {
           provider: {
             select: {
+              id: true,
               name: true,
               phone: true,
+              profileImage: true,
             },
           },
 
           worker: {
-            include: {
+            select: {
+              id: true,
+              experience: true,
+              dailyRate: true,
+              rating: true,
+              totalJobs: true,
+
               user: {
                 select: {
+                  id: true,
                   name: true,
                   phone: true,
+                  profileImage: true,
                 },
               },
             },
           },
 
-          instantRequest: true,
-        },
+          job: {
+            select: {
+              id: true,
+              title: true,
+              description: true,
+              address: true,
+              city: true,
+              state: true,
+              pincode: true,
+              budget: true,
+              latitude: true,
+              longitude: true,
+
+              skill: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+
+          review: {
+            select: {
+              id: true,
+              rating: true,
+              comment: true
+            }
+          },
+
+          instantRequest: {
+            select: {
+              id: true,
+              title: true,
+              address: true,
+            },
+          },
+        }
       });
 
     if (!booking) {
@@ -185,211 +256,71 @@ export class BookingService {
   }
 
   static async startWork(
-  bookingId: string,
-  userId: string
-) {
-
-  const booking =
-    await prisma.booking.findUnique({
-      where: {
-        id: bookingId,
-      },
-
-      include: {
-        worker: true,
-      },
-    });
-
-  if (!booking) {
-    throw new Error(
-      "Booking not found"
-    );
-  }
-
-  if (
-    booking.worker?.userId !==
-    userId
+    bookingId: string,
+    userId: string
   ) {
-    throw new Error(
-      "Unauthorized"
-    );
-  }
 
-  if (
-    booking.status !==
-    "CONFIRMED"
-  ) {
-    throw new Error(
-      "Booking is not confirmed"
-    );
-  }
-
-  return await prisma.$transaction(
-    async (tx) => {
-
-      const updatedBooking =
-        await tx.booking.update({
-          where: {
-            id: bookingId,
-          },
-
-          data: {
-            status: "IN_PROGRESS",
-            startedAt: new Date(),
-          },
-        });
-
-      await tx.workerProfile.update({
+    const booking =
+      await prisma.booking.findUnique({
         where: {
-          id: booking.workerId!,
+          id: bookingId,
         },
 
-        data: {
-          isAvailable: false,
+        include: {
+          worker: true,
         },
       });
 
-      if (booking.jobId) {
-
-        await tx.job.update({
-          where: {
-            id: booking.jobId,
-          },
-
-          data: {
-            status: "IN_PROGRESS",
-          },
-        });
-
-      }
-
-     
-
-      return updatedBooking;
-
+    if (!booking) {
+      throw new Error(
+        "Booking not found"
+      );
     }
-  );
 
-}
-static async completeWork(
-  bookingId: string,
-  userId: string
-) {
+    if (
+      booking.worker?.userId !==
+      userId
+    ) {
+      throw new Error(
+        "Unauthorized"
+      );
+    }
 
-  const booking =
-    await prisma.booking.findUnique({
-      where: {
-        id: bookingId,
-      },
+    if (
+      booking.status !==
+      "CONFIRMED"
+    ) {
+      throw new Error(
+        "Booking is not confirmed"
+      );
+    }
 
-      include: {
-        worker: true,
-      },
-    });
+    return await prisma.$transaction(
+      async (tx) => {
 
-  if (!booking) {
-    throw new Error(
-      "Booking not found"
-    );
-  }
-
-  if (
-    booking.worker?.userId !==
-    userId
-  ) {
-    throw new Error(
-      "Unauthorized"
-    );
-  }
-
-  if (
-    booking.status !==
-    "IN_PROGRESS"
-  ) {
-    throw new Error(
-      "Booking is not in progress"
-    );
-  }
-
-  return await prisma.$transaction(
-    async (tx) => {
-
-      const updatedBooking =
-        await tx.booking.update({
-          where: {
-            id: bookingId,
-          },
-
-          data: {
-            status: "COMPLETED",
-            completedAt: new Date(),
-          },
-        });
-
-      await tx.workerProfile.update({
-        where: {
-          id: booking.workerId!,
-        },
-
-        data: {
-          totalJobs: {
-            increment: 1,
-          },
-
-          isAvailable: true,
-        },
-      });
-
-      // Instant Request
-      if (booking.instantRequestId) {
-
-        const remainingInstantBookings =
-          await tx.booking.count({
+        const updatedBooking =
+          await tx.booking.update({
             where: {
-              instantRequestId:
-                booking.instantRequestId,
-
-              status: {
-                not: "COMPLETED",
-              },
-            },
-          });
-
-        if (
-          remainingInstantBookings === 0
-        ) {
-
-          await tx.instantRequest.update({
-            where: {
-              id: booking.instantRequestId,
+              id: bookingId,
             },
 
             data: {
-              status: "COMPLETED",
+              status: "IN_PROGRESS",
+              startedAt: new Date(),
             },
           });
 
-        }
+        await tx.workerProfile.update({
+          where: {
+            id: booking.workerId!,
+          },
 
-      }
+          data: {
+            isAvailable: false,
+          },
+        });
 
-      // Job Posting
-      if (booking.jobId) {
-
-        const remainingJobBookings =
-          await tx.booking.count({
-            where: {
-              jobId: booking.jobId,
-
-              status: {
-                not: "COMPLETED",
-              },
-            },
-          });
-
-        if (
-          remainingJobBookings === 0
-        ) {
+        if (booking.jobId) {
 
           await tx.job.update({
             where: {
@@ -397,19 +328,159 @@ static async completeWork(
             },
 
             data: {
-              status: "COMPLETED",
+              status: "IN_PROGRESS",
             },
           });
 
         }
 
+
+
+        return updatedBooking;
+
       }
+    );
 
-      return updatedBooking;
+  }
+  static async completeWork(
+    bookingId: string,
+    userId: string
+  ) {
 
+    const booking =
+      await prisma.booking.findUnique({
+        where: {
+          id: bookingId,
+        },
+
+        include: {
+          worker: true,
+        },
+      });
+
+    if (!booking) {
+      throw new Error(
+        "Booking not found"
+      );
     }
-  );
 
-}
+    if (
+      booking.worker?.userId !==
+      userId
+    ) {
+      throw new Error(
+        "Unauthorized"
+      );
+    }
+
+    if (
+      booking.status !==
+      "IN_PROGRESS"
+    ) {
+      throw new Error(
+        "Booking is not in progress"
+      );
+    }
+
+    return await prisma.$transaction(
+      async (tx) => {
+
+        const updatedBooking =
+          await tx.booking.update({
+            where: {
+              id: bookingId,
+            },
+
+            data: {
+              status: "COMPLETED",
+              completedAt: new Date(),
+            },
+          });
+
+        await tx.workerProfile.update({
+          where: {
+            id: booking.workerId!,
+          },
+
+          data: {
+            totalJobs: {
+              increment: 1,
+            },
+
+            isAvailable: true,
+          },
+        });
+
+        // Instant Request
+        if (booking.instantRequestId) {
+
+          const remainingInstantBookings =
+            await tx.booking.count({
+              where: {
+                instantRequestId:
+                  booking.instantRequestId,
+
+                status: {
+                  not: "COMPLETED",
+                },
+              },
+            });
+
+          if (
+            remainingInstantBookings === 0
+          ) {
+
+            await tx.instantRequest.update({
+              where: {
+                id: booking.instantRequestId,
+              },
+
+              data: {
+                status: "COMPLETED",
+              },
+            });
+
+          }
+
+        }
+
+        // Job Posting
+        if (booking.jobId) {
+
+          const remainingJobBookings =
+            await tx.booking.count({
+              where: {
+                jobId: booking.jobId,
+
+                status: {
+                  not: "COMPLETED",
+                },
+              },
+            });
+
+          if (
+            remainingJobBookings === 0
+          ) {
+
+            await tx.job.update({
+              where: {
+                id: booking.jobId,
+              },
+
+              data: {
+                status: "COMPLETED",
+              },
+            });
+
+          }
+
+        }
+
+        return updatedBooking;
+
+      }
+    );
+
+  }
 
 }

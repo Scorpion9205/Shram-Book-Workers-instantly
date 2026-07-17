@@ -127,16 +127,41 @@ export class ReviewService {
 
         const worker =
             await prisma.workerProfile.findUnique({
+
                 where: {
-                    id: workerId,
+                    id: workerId
                 },
 
                 select: {
+
                     id: true,
+
                     rating: true,
+
                     totalReviews: true,
+
                     totalJobs: true,
-                },
+
+                    reviews: {
+                        orderBy: {
+                            createdAt: "desc"
+                        },
+                        select: {
+                            id: true,
+                            rating: true,
+                            comment: true,
+                            createdAt: true,
+
+                            provider: {
+                                select: {
+                                    name: true
+                                }
+                            }
+                        }
+                    }
+
+                }
+
             });
 
         if (!worker) {
@@ -148,6 +173,106 @@ export class ReviewService {
         return worker;
     }
 
+    static async getWorkerReviews(
+        workerId: string
+    ) {
+        const worker =
+            await prisma.workerProfile.findUnique({
+                where: {
+                    id: workerId,
+                },
 
+                select: {
+                    id: true,
+                    rating: true,
+                    totalReviews: true,
+                    totalJobs: true,
 
+                    reviews: {
+                        orderBy: {
+                            createdAt: "desc",
+                        },
+
+                        select: {
+                            id: true,
+                            rating: true,
+                            comment: true,
+                            createdAt: true,
+
+                            provider: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                },
+                            },
+
+                            booking: {
+                                select: {
+                                    id: true,
+
+                                    job: {
+                                        select: {
+                                            title: true,
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+        if (!worker) {
+            throw new Error("Worker not found");
+        }
+
+        return worker;
+    }
+
+    static async getProviderReviews(
+        providerId: string
+    ) {
+        return await prisma.review.findMany({
+
+            where: {
+                providerId,
+            },
+
+            orderBy: {
+                createdAt: "desc",
+            },
+
+            select: {
+                id: true,
+                rating: true,
+                comment: true,
+                createdAt: true,
+
+                worker: {
+                    select: {
+                        id: true,
+
+                        user: {
+                            select: {
+                                name: true,
+                                profileImage: true,
+                            },
+                        },
+                    },
+                },
+
+                booking: {
+                    select: {
+                        id: true,
+
+                        job: {
+                            select: {
+                                title: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+    }
 }

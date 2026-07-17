@@ -19,4 +19,14 @@ router.get(
   "/worker/:workerId/rating",
   ReviewController.getWorkerRating
 );
+
+router.get(
+  "/worker/:workerId",
+  ReviewController.getWorkerReviews
+);
+
+router.get(
+  "/provider/:providerId",
+  ReviewController.getProviderReviews
+);
 export default router;

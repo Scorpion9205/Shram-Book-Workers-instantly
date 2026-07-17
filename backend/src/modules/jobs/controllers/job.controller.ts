@@ -65,11 +65,12 @@ export class JobController {
 
     try {
 
+
+
       const result = await JobService.getAllJobs(req.user!.userId);
 
       return res.status(200).json({
         success: true,
-        locationRequired: result.locationRequired,
         jobs: result.jobs,
       });
     } catch (error: any) {
@@ -143,7 +144,7 @@ export class JobController {
           message: "Invalid job id",
         });
       }
-     
+
       console.log("BODY =>", req.body);
       const validationResult =
         applyJobSchema.safeParse(
