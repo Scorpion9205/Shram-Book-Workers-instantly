@@ -13,7 +13,7 @@ const initialState: AuthState = {
   user: null,
   accessToken: null,
   isAuthenticated: false,
-  loading: true, // true until we've checked persisted session
+  loading: true, 
 };
 
 interface SetCredentialsPayload {

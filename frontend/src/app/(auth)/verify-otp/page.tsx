@@ -44,10 +44,10 @@ function VerifyOtpInner() {
         setCredentials({
           user: result.user,
           accessToken: result.accessToken,
-          refreshToken: result.refreshToken,
+          
         })
       );
-      toast.success("Phone verified successfully!");
+      toast.success("Email verified successfully!");
       router.push(dashboardPathForRole(result.user.role));
     } catch {
       toast.error("Invalid or expired code. Please try again.");

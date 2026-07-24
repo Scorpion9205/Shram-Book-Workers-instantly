@@ -25,13 +25,42 @@ import {
   useGetMyWorkerProfileQuery,
   useUpdateAvailabilityMutation,
 } from "@/features/worker/workerApi";
+import {
+  useGetNearbyInstantRequestsQuery,
+  useAcceptInstantRequestItemMutation,
+  type NearbyInstantRequest,
+} from "@/features/instantRequests/instantRequestApi";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
 export default function WorkerDashboardPage() {
+  const router = useRouter();
   const user = useAppSelector((s) => s.auth.user);
   const { data: dashboard, isLoading, isError, refetch } = useGetWorkerDashboardQuery();
   const { data: profile } = useGetMyWorkerProfileQuery();
   const [updateAvailability, { isLoading: isToggling }] = useUpdateAvailabilityMutation();
+
+  // REST fallback for instant requests — the socket push (newInstantRequest)
+  // is the primary path, but this keeps the list populated even if the
+  // socket connection drops or hasn't joined the skill rooms yet.
+  const {
+    data: nearbyRequests,
+    isLoading: isNearbyLoading,
+  } = useGetNearbyInstantRequestsQuery(undefined, {
+    skip: !profile?.isAvailable,
+    pollingInterval: 15000,
+  });
+  const [acceptItem, { isLoading: isAccepting }] = useAcceptInstantRequestItemMutation();
+
+  async function handleAcceptNearby(itemId: string) {
+    try {
+      const result = await acceptItem(itemId).unwrap();
+      toast.success("Request accepted!");
+      router.push(`/worker/booking/${result.bookingId}`);
+    } catch (err: any) {
+      toast.error(err?.data?.message || "Couldn't accept this request — it may already be filled.");
+    }
+  }
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -139,7 +168,7 @@ export default function WorkerDashboardPage() {
             ) : dashboard?.currentBooking ? (
               <div className="flex items-center gap-4 rounded-2xl border border-border p-4">
                 <Avatar className="size-12">
-                  <AvatarImage src={dashboard.currentBooking.provider?.avatarUrl} />
+                  <AvatarImage src={dashboard.currentBooking.provider?.profileImage} />
                   <AvatarFallback>{dashboard.currentBooking.provider?.name?.[0]}</AvatarFallback>
                 </Avatar>
                 <div className="flex-1">
@@ -190,7 +219,59 @@ export default function WorkerDashboardPage() {
         </Card>
       </div>
 
-      {/* Upcoming Jobs + Reviews */}
+      {/* Nearby Instant Requests (REST fallback alongside the live socket popup) */}
+      {profile?.isAvailable && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Instant Requests Near You</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isNearbyLoading ? (
+              <ListSkeleton count={2} />
+            ) : nearbyRequests?.length ? (
+              <div className="space-y-3">
+                {nearbyRequests.map((req: NearbyInstantRequest) =>
+                  req.items.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between rounded-xl border border-border p-3"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">
+                          {item.skill.name} · {req.title}
+                        </p>
+                        <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <MapPin className="size-3" /> {req.address || "Location shared on accept"} ·{" "}
+                          {req.distanceKm.toFixed(1)} km away
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.acceptedWorkers}/{item.requiredWorkers} workers accepted
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-end gap-2">
+                        <span className="text-sm font-semibold text-primary">₹{req.amount}</span>
+                        <Button
+                          size="sm"
+                          disabled={isAccepting || item.acceptedWorkers >= item.requiredWorkers}
+                          onClick={() => handleAcceptNearby(item.id)}
+                        >
+                          Accept
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : (
+              <EmptyState
+                icon={Clock}
+                title="No instant requests right now"
+                description="You'll be notified here and via popup when a nearby provider needs your skill."
+              />
+            )}
+          </CardContent>
+        </Card>
+      )}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -213,7 +294,7 @@ export default function WorkerDashboardPage() {
                         <MapPin className="size-3" /> {job.address}
                       </p>
                     </div>
-                    <span className="text-sm font-semibold text-primary">₹{job.salary}</span>
+                    <span className="text-sm font-semibold text-primary">₹{job.budget}</span>
                   </Link>
                 ))}
               </div>
@@ -235,7 +316,7 @@ export default function WorkerDashboardPage() {
                 {dashboard.recentReviews.map((r) => (
                   <div key={r.id} className="rounded-xl border border-border p-3">
                     <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium">{r.reviewerName || "Anonymous"}</p>
+                      <p className="text-sm font-medium">{r.provider?.name || "Anonymous"}</p>
                       <div className="flex items-center gap-0.5 text-accent">
                         <Star className="size-3.5 fill-current" />
                         <span className="text-xs font-semibold">{r.rating}</span>

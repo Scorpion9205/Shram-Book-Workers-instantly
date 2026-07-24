@@ -8,6 +8,7 @@ import { useAppDispatch, useAppSelector } from "@/hooks/redux";
 import { showIncomingInstantRequest } from "@/store/uiSlice";
 import { notificationReceived } from "@/store/notificationSlice";
 import { apiSlice } from "@/services/api/apiSlice";
+import { useGetMyWorkerProfileQuery } from "@/features/worker/workerApi";
 import type { AppNotification, Booking, InstantRequest } from "@/types";
 
 interface SocketContextValue {
@@ -29,6 +30,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const socketRef = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
 
+  // Only fetch worker profile for workers — used purely to know which
+  // skill rooms this socket should join so instant-request pushes for
+  // those skills reach it.
+  const { data: workerProfile } = useGetMyWorkerProfileQuery(undefined, {
+    skip: !isAuthenticated || role !== "worker",
+  });
+
   useEffect(() => {
     if (!isAuthenticated || !accessToken) {
       socketRef.current?.disconnect();
@@ -46,7 +54,12 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     });
     socketRef.current = socket;
 
-    socket.on("connect", () => setConnected(true));
+    socket.on("connect", () => {
+      setConnected(true);
+      if (role === "worker") {
+        workerProfile?.skills?.forEach((s) => socket.emit("join_skill_room", s.id));
+      }
+    });
     socket.on("disconnect", () => setConnected(false));
 
     // --- Instant Requests (worker side) ---
@@ -65,7 +78,15 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     // --- Booking lifecycle updates ---
     socket.on("bookingUpdated", (booking: Booking) => {
-      dispatch(apiSlice.util.invalidateTags([{ type: "Booking", id: booking.id }, "Booking"]));
+      dispatch(
+        apiSlice.util.invalidateTags([
+          { type: "Booking", id: booking.id },
+          "Booking",
+          "InstantRequest",
+          "DashboardWorker",
+          "DashboardProvider",
+        ])
+      );
       const statusMessages: Record<string, string> = {
         accepted: "Worker accepted the booking",
         started: "Worker has started the job",
@@ -101,6 +122,19 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       setConnected(false);
     };
   }, [isAuthenticated, accessToken, role, dispatch]);
+
+  // Re-join skill rooms if the worker's skill list loads or changes
+  // after the socket already connected (e.g. profile fetch finishes late).
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket || !connected || role !== "worker" || !workerProfile?.skills) return;
+
+    workerProfile.skills.forEach((s) => socket.emit("join_skill_room", s.id));
+
+    return () => {
+      workerProfile.skills?.forEach((s) => socket.emit("leave_skill_room", s.id));
+    };
+  }, [workerProfile, role, connected]);
 
   return (
     <SocketContext.Provider value={{ socket: socketRef.current, connected }}>

@@ -45,7 +45,7 @@ export default function LoginPage() {
         setCredentials({
           user: result.user,
           accessToken: result.accessToken,
-          refreshToken: result.refreshToken,
+          
         })
       );
       toast.success(`Welcome back, ${result.user.name.split(" ")[0]}!`);

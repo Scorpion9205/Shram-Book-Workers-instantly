@@ -37,6 +37,31 @@ interface InstantRequestsResponse {
   requests: InstantRequest[];
 }
 
+// /instant-requests/nearby actually returns this richer, per-skill-item
+// shape (see InstantRequestService.getNearbyRequests on the backend) —
+// NOT the flat InstantRequest type used by the create/socket flow.
+export interface NearbyInstantRequest {
+  id: string;
+  title: string;
+  description?: string | null;
+  amount: number;
+  address?: string | null;
+  distanceKm: number;
+  createdAt: string;
+  provider?: { name?: string | null };
+  items: {
+    id: string;
+    requiredWorkers: number;
+    acceptedWorkers: number;
+    skill: { id: string; name: string };
+  }[];
+}
+
+interface NearbyInstantRequestsResponse {
+  success: boolean;
+  requests: NearbyInstantRequest[];
+}
+
 interface BackendFareResponse {
   success: boolean;
   fare: {
@@ -73,9 +98,9 @@ export const instantRequestApi = apiSlice.injectEndpoints({
         response.request,
       invalidatesTags: ["InstantRequest", "DashboardProvider"],
     }),
-    getNearbyInstantRequests: builder.query<InstantRequest[], void>({
+    getNearbyInstantRequests: builder.query<NearbyInstantRequest[], void>({
       query: () => "/instant-requests/nearby",
-      transformResponse: (response: InstantRequestsResponse) =>
+      transformResponse: (response: NearbyInstantRequestsResponse) =>
         response.requests,
       providesTags: ["InstantRequest"],
     }),
@@ -102,6 +127,9 @@ export const instantRequestApi = apiSlice.injectEndpoints({
     }),
     acceptInstantRequestItem: builder.mutation<{ bookingId: string }, string>({
       query: (itemId) => ({ url: `/instant-requests/items/${itemId}/accept`, method: "POST" }),
+      transformResponse: (response: { success: boolean; data: { bookingId: string } }) => ({
+        bookingId: response.data.bookingId,
+      }),
       invalidatesTags: ["InstantRequest", "Booking", "DashboardWorker"],
     }),
     getMyInstantRequests: builder.query<InstantRequest[], void>({
