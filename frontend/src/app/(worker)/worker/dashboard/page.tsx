@@ -40,9 +40,7 @@ export default function WorkerDashboardPage() {
   const { data: profile } = useGetMyWorkerProfileQuery();
   const [updateAvailability, { isLoading: isToggling }] = useUpdateAvailabilityMutation();
 
-  // REST fallback for instant requests — the socket push (newInstantRequest)
-  // is the primary path, but this keeps the list populated even if the
-  // socket connection drops or hasn't joined the skill rooms yet.
+  
   const {
     data: nearbyRequests,
     isLoading: isNearbyLoading,

@@ -122,11 +122,11 @@ export default function ProviderDashboardPage() {
                 {dashboard.recentApplicants.map((a) => (
                   <div key={a.id} className="flex items-center gap-3 rounded-xl border border-border p-3">
                     <Avatar className="size-9">
-                      <AvatarImage src={a.worker?.avatarUrl} />
-                      <AvatarFallback>{a.worker?.name?.[0]}</AvatarFallback>
+                      <AvatarImage src={a.worker?.user?.profileImage} />
+                      <AvatarFallback>{a.worker?.user?.name?.[0]}</AvatarFallback>
                     </Avatar>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{a.worker?.name}</p>
+                      <p className="truncate text-sm font-medium">{a.worker?.user?.name}</p>
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
                         <Star className="size-3 fill-accent text-accent" /> {a.worker?.rating ?? "—"}
                       </div>
@@ -160,11 +160,11 @@ export default function ProviderDashboardPage() {
                   className="flex items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:bg-secondary"
                 >
                   <Avatar className="size-10">
-                    <AvatarImage src={b.worker?.avatarUrl} />
-                    <AvatarFallback>{b.worker?.name?.[0]}</AvatarFallback>
+                    <AvatarImage src={b.worker?.user?.profileImage} />
+                    <AvatarFallback>{b.worker?.user?.name?.[0]}</AvatarFallback>
                   </Avatar>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{b.worker?.name}</p>
+                    <p className="truncate text-sm font-medium">{b.worker?.user?.name}</p>
                     <Badge variant="outline" className="mt-0.5 capitalize">
                       {b.status}
                     </Badge>
