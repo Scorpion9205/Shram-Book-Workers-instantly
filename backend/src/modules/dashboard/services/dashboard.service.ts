@@ -35,24 +35,17 @@ export class DashboardService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const weekStart = new Date();
-    weekStart.setDate(
-      weekStart.getDate() - 7
-    );
-
-    const monthStart = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      1
-    );
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
 
     const [
       todayBookings,
-      weekBookings,
-      monthBookings,
       pendingBookings,
-      inProgressBookings,
-      completedBookings
+      completedBookings,
+      currentBooking,
+      upcomingBookings,
+      recentReviews,
+      trendBookings,
     ] = await Promise.all([
 
       prisma.booking.aggregate({
@@ -67,40 +60,6 @@ export class DashboardService {
         _sum: {
           amount: true,
         },
-
-        _count: true,
-      }),
-
-      prisma.booking.aggregate({
-        where: {
-          workerId: worker.id,
-          status: "COMPLETED",
-          completedAt: {
-            gte: weekStart,
-          },
-        },
-
-        _sum: {
-          amount: true,
-        },
-
-        _count: true,
-      }),
-
-      prisma.booking.aggregate({
-        where: {
-          workerId: worker.id,
-          status: "COMPLETED",
-          completedAt: {
-            gte: monthStart,
-          },
-        },
-
-        _sum: {
-          amount: true,
-        },
-
-        _count: true,
       }),
 
       prisma.booking.count({
@@ -113,56 +72,196 @@ export class DashboardService {
       prisma.booking.count({
         where: {
           workerId: worker.id,
-          status: "IN_PROGRESS",
+          status: "COMPLETED",
         },
       }),
 
-      prisma.booking.count({
+      // The booking currently in progress (if any) — shown as the
+      // worker's "active job" card on the dashboard.
+      prisma.booking.findFirst({
+        where: {
+          workerId: worker.id,
+          status: "IN_PROGRESS",
+        },
+        orderBy: {
+          startedAt: "desc",
+        },
+        include: {
+          job: {
+            include: {
+              skill: {
+                select: { id: true, name: true },
+              },
+            },
+          },
+          provider: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+              profileImage: true,
+            },
+          },
+        },
+      }),
+
+      // Confirmed bookings not yet started — the worker's upcoming jobs.
+      prisma.booking.findMany({
+        where: {
+          workerId: worker.id,
+          status: "CONFIRMED",
+          jobId: { not: null },
+        },
+        take: 5,
+        orderBy: {
+          createdAt: "desc",
+        },
+        include: {
+          job: {
+            include: {
+              skill: {
+                select: { id: true, name: true },
+              },
+              provider: {
+                select: { id: true, name: true },
+              },
+            },
+          },
+        },
+      }),
+
+      prisma.review.findMany({
+        where: {
+          workerId: worker.id,
+        },
+        take: 5,
+        orderBy: {
+          createdAt: "desc",
+        },
+        include: {
+          provider: {
+            select: { id: true, name: true },
+          },
+        },
+      }),
+
+      // Daily completed earnings for the last 7 days, used to draw the
+      // earnings trend sparkline on the dashboard.
+      prisma.booking.findMany({
         where: {
           workerId: worker.id,
           status: "COMPLETED",
+          completedAt: {
+            gte: sevenDaysAgo,
+          },
+        },
+        select: {
+          amount: true,
+          completedAt: true,
         },
       }),
 
     ]);
 
+    const earningsTrend =
+      Array.from({ length: 7 }).map((_, i) => {
+
+        const day = new Date(sevenDaysAgo);
+        day.setDate(sevenDaysAgo.getDate() + i);
+
+        const dayTotal = trendBookings
+          .filter((b) =>
+            b.completedAt &&
+            b.completedAt.toDateString() === day.toDateString()
+          )
+          .reduce((sum, b) => sum + b.amount, 0);
+
+        return {
+          label: day.toLocaleDateString("en-IN", { weekday: "short" }),
+          value: dayTotal,
+        };
+      });
+
     const dashboard = {
 
-      todayEarnings:
+      todaysEarnings:
         todayBookings._sum.amount ?? 0,
 
-      thisWeekEarnings:
-        weekBookings._sum.amount ?? 0,
+      completedJobs:
+        completedBookings,
 
-      thisMonthEarnings:
-        monthBookings._sum.amount ?? 0,
-
-      todayJobs:
-        todayBookings._count,
-
-      thisWeekJobs:
-        weekBookings._count,
-
-      thisMonthJobs:
-        monthBookings._count,
-
-      pendingBookings,
-
-      inProgressBookings,
-
-      completedBookings,
+      pendingRequests:
+        pendingBookings,
 
       rating:
         worker.rating,
 
-      totalReviews:
-        worker.totalReviews,
+      currentBooking: currentBooking
+        ? {
+            id: currentBooking.id,
+            amount: currentBooking.amount,
+            status: currentBooking.status,
+            createdAt: currentBooking.createdAt,
+            startedAt: currentBooking.startedAt ?? undefined,
+            completedAt: currentBooking.completedAt ?? undefined,
+            job: currentBooking.job
+              ? {
+                  id: currentBooking.job.id,
+                  title: currentBooking.job.title,
+                  description: currentBooking.job.description ?? undefined,
+                  address: currentBooking.job.address ?? undefined,
+                  city: currentBooking.job.city ?? undefined,
+                  state: currentBooking.job.state ?? undefined,
+                  pincode: currentBooking.job.pincode ?? undefined,
+                  budget: currentBooking.job.budget ?? undefined,
+                  latitude: currentBooking.job.latitude ?? undefined,
+                  longitude: currentBooking.job.longitude ?? undefined,
+                  skill: currentBooking.job.skill ?? undefined,
+                }
+              : undefined,
+            provider: currentBooking.provider
+              ? {
+                  id: currentBooking.provider.id,
+                  name: currentBooking.provider.name,
+                  phone: currentBooking.provider.phone ?? undefined,
+                  profileImage: currentBooking.provider.profileImage ?? undefined,
+                }
+              : undefined,
+          }
+        : null,
 
-      totalJobs:
-        worker.totalJobs,
+      upcomingJobs: upcomingBookings
+        .filter((b) => b.job)
+        .map((b) => ({
+          id: b.job!.id,
+          title: b.job!.title,
+          description: b.job!.description ?? undefined,
+          budget: b.job!.budget ?? undefined,
+          requiredWorkers: b.job!.requiredWorkers,
+          latitude: b.job!.latitude ?? 0,
+          longitude: b.job!.longitude ?? 0,
+          address: b.job!.address ?? undefined,
+          city: b.job!.city ?? undefined,
+          state: b.job!.state ?? undefined,
+          pincode: b.job!.pincode ?? undefined,
+          status: b.job!.status,
+          createdAt: b.job!.createdAt,
+          skill: b.job!.skill ?? undefined,
+          provider: b.job!.provider ?? undefined,
+        })),
 
-      activeBooking:
-        inProgressBookings > 0,
+      recentReviews: recentReviews.map((r) => ({
+        id: r.id,
+        bookingId: r.bookingId,
+        rating: r.rating,
+        comment: r.comment ?? undefined,
+        createdAt: r.createdAt,
+        provider: r.provider
+          ? { id: r.provider.id, name: r.provider.name }
+          : undefined,
+      })),
+
+      earningsTrend,
 
     };
     await RedisService.set(
