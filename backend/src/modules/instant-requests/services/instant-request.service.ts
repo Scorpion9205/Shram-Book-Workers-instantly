@@ -87,6 +87,12 @@ export class InstantRequestService {
             },
 
             include: {
+              provider: {
+                select: {
+                  name: true,
+                },
+              },
+
               items: {
                 include: {
                   skill: true,
@@ -103,6 +109,9 @@ export class InstantRequestService {
 
         const io = getIO();
 
+        // Event name + payload shape must match what
+        // frontend/src/providers/SocketProvider.tsx listens for:
+        // socket.on("newInstantRequest", (payload: { itemId, request: InstantRequest }) => ...)
         for (
           const item of createdRequest.items
         ) {
@@ -110,22 +119,37 @@ export class InstantRequestService {
           io.to(
             `skill:${item.skillId}`
           ).emit(
-            "instant_request_created",
+            "newInstantRequest",
             {
-              requestId:
-                createdRequest.id,
+              itemId: item.id,
 
-              itemId:
-                item.id,
+              request: {
+                id: createdRequest.id,
 
-              title:
-                createdRequest.title,
+                providerId:
+                  createdRequest.providerId,
 
-              skillId:
-                item.skillId,
+                providerName:
+                  createdRequest.provider.name,
 
-              requiredWorkers:
-                item.requiredWorkers,
+                workerType:
+                  item.skill.name,
+
+                address:
+                  createdRequest.address ?? "",
+
+                amount:
+                  createdRequest.amount,
+
+                notes:
+                  createdRequest.description ?? undefined,
+
+                workersNeeded:
+                  item.requiredWorkers,
+
+                createdAt:
+                  createdRequest.createdAt,
+              },
             }
           );
 
@@ -424,7 +448,7 @@ export class InstantRequestService {
               },
             });
 
-          await tx.booking.create({
+          const booking = await tx.booking.create({
             data: {
               providerId: item.request.providerId,
 
@@ -527,6 +551,7 @@ export class InstantRequestService {
             item: finalItem,
             providerUserId: item.request.providerId,
             workerUserId: worker.userId,
+            bookingId: booking.id,
           };
         }
       );
@@ -537,16 +562,24 @@ export class InstantRequestService {
 
       const io = getIO();
 
-      io.emit(
-        "worker_accepted",
+      // Targeted to the provider's own room (backend/src/socket/socket.ts
+      // joins every authenticated socket to `user:${userId}` on connect)
+      // instead of io.emit(), which broadcast to every connected user.
+      io.to(`user:${result.providerUserId}`).emit(
+        "bookingUpdated",
         {
+          id: result.bookingId,
+          status: "accepted",
           workerId: worker.id,
           requestId: result.item?.requestId,
           itemId,
         }
       );
 
-      return result.item;
+      return {
+        ...result.item,
+        bookingId: result.bookingId,
+      };
     }
     finally {
 

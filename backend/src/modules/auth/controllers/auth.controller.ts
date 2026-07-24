@@ -6,43 +6,10 @@ import { RedisService } from "../../../shared/services/redis/redis.service.js"
 import { forgotPasswordSchema, resetPasswordSchema,changePasswordSchema } from "../validations/auth.validation.js"
 import {
     sendOTPSchema,
-    verifyOTPSchema
+    
 } from "../validations/auth.validation.js";
 export class AuthController {
-    // static async signup(req: Request, res: Response) {
-    //     try {
-    //         const validationResult = signupSchema.safeParse(req.body)
-
-    //         if (!validationResult.success) {
-    //             return res.status(400).json({
-    //                 success: false,
-    //                 errors:
-    //                     validationResult.error.issues
-    //             })
-    //         }
-
-    //         const result = await AuthService.signup(validationResult.data)
-
-    //         res.cookie("refreshToken", result.refreshToken, {
-    //             httpOnly: true,
-    //             secure: false,
-    //             sameSite: "lax",
-    //             maxAge: 7 * 24 * 60 * 60 * 1000
-    //         })
-
-    //         return res.status(201).json({
-    //             success: true,
-    //             message: "User registered successfully",
-    //             user: result.user,
-    //             accessToken: result.accessToken,
-    //         })
-    //     } catch (error: any) {
-    //         return res.status(400).json({
-    //             success: false,
-    //             message: error.message,
-    //         })
-    //     }
-    // }
+    
 
     static async signup(req: Request, res: Response) {
     try {
@@ -299,46 +266,6 @@ export class AuthController {
 
     }
 
-    // static async verifyOTP(
-    //     req: Request,
-    //     res: Response
-    // ) {
-
-    //     try {
-
-    //         const validation =
-    //             verifyOTPSchema.safeParse(req.body);
-
-    //         if (!validation.success) {
-
-    //             return res.status(400).json({
-    //                 success: false,
-    //                 errors: validation.error.issues,
-    //             });
-
-    //         }
-
-    //         const result =
-    //             await AuthService.verifyOTP(
-
-    //                 validation.data.identifier,
-
-    //                 validation.data.otp
-
-    //             );
-
-    //         return res.status(200).json(result);
-
-    //     } catch (error: any) {
-
-    //         return res.status(400).json({
-    //             success: false,
-    //             message: error.message,
-    //         });
-
-    //     }
-
-    // }
     static async verifyOTP(
     req: Request,
     res: Response
