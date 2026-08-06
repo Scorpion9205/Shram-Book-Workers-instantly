@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   Wallet,
@@ -19,8 +20,16 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { StatCard } from "@/components/cards/StatCard";
 import { EmptyState } from "@/components/cards/EmptyState";
 import { StatGridSkeleton, ListSkeleton } from "@/components/loaders/Skeletons";
+import { TrendChart } from "@/components/charts/TrendChart";
 import { useAppSelector } from "@/hooks/redux";
 import { useGetWorkerDashboardQuery } from "@/features/dashboard/dashboardApi";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   useGetMyWorkerProfileQuery,
   useUpdateAvailabilityMutation,
@@ -36,7 +45,15 @@ import { useRouter } from "next/navigation";
 export default function WorkerDashboardPage() {
   const router = useRouter();
   const user = useAppSelector((s) => s.auth.user);
-  const { data: dashboard, isLoading, isError, refetch } = useGetWorkerDashboardQuery();
+  const [range, setRange] = useState<string>("7days");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
+
+  const { data: dashboard, isLoading, isError, refetch } = useGetWorkerDashboardQuery({
+    range,
+    startDate: range === "custom" && startDate ? startDate : undefined,
+    endDate: range === "custom" && endDate ? endDate : undefined,
+  });
   const { data: profile } = useGetMyWorkerProfileQuery();
   const [updateAvailability, { isLoading: isToggling }] = useUpdateAvailabilityMutation();
 
@@ -153,6 +170,48 @@ export default function WorkerDashboardPage() {
           />
         </div>
       )}
+
+      <Card>
+        <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 space-y-0 pb-4">
+          <CardTitle>Earnings Analytics</CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            {range === "custom" && (
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="h-9 rounded-lg border border-border bg-card px-2.5 py-1 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                />
+                <span className="text-xs text-muted-foreground">to</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="h-9 rounded-lg border border-border bg-card px-2.5 py-1 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                />
+              </div>
+            )}
+            <Select value={range} onValueChange={setRange}>
+              <SelectTrigger className="h-9 w-[130px] rounded-lg">
+                <SelectValue placeholder="Select range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7days">Last 7 days</SelectItem>
+                <SelectItem value="1month">Last 1 month</SelectItem>
+                <SelectItem value="custom">Custom range</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {dashboard?.earningsTrend?.length ? (
+            <TrendChart data={dashboard.earningsTrend} color="var(--color-primary)" />
+          ) : (
+            <EmptyState title="No data yet" description="Your earnings trend will appear once you complete bookings." />
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Current Booking */}

@@ -280,23 +280,56 @@ export interface Review {
 }
 export interface DashboardWorker {
   todaysEarnings: number;
-  completedJobs: number;
-  rating: number;
-  pendingRequests: number;
-  currentBooking?: Booking | null;
-  upcomingJobs?: Job[];
-  recentReviews?: Review[];
-  earningsTrend?: { label: string; value: number }[];
-}
 
+  weekEarnings: number;
+
+  monthEarnings: number;
+
+  completedJobs: number;
+
+  pendingRequests: number;
+
+  rating: number;
+
+  currentBooking: Booking | null;
+
+  upcomingJobs: Job[];
+
+  recentReviews: Review[];
+
+  earningsTrend: {
+    label: string;
+    value: number;
+  }[];
+
+  acceptanceRate: number;
+
+  completionRate: number;
+}
 export interface DashboardProvider {
+  // Stats
   activeJobs: number;
   completedJobs: number;
+  activeBookings: number;
+  completedBookings: number;
+  pendingApplications: number;
   workersHired: number;
-  moneySpent: number;
-  recentBookings?: Booking[];
-  recentApplicants?: JobApplication[];
-  analyticsTrend?: { label: string; value: number }[];
+
+  // Spending
+  todaySpent: number;
+  thisWeekSpent: number;
+  thisMonthSpent: number;
+
+  // Charts
+  analyticsTrend: {
+    label: string;
+    value: number;
+  }[];
+
+  // Lists
+  recentBookings: Booking[];
+
+  recentApplicants: JobApplication[];
 }
 
 export interface DashboardAgent {

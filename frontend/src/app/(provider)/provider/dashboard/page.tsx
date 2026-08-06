@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
@@ -22,10 +23,25 @@ import { StatGridSkeleton, ListSkeleton } from "@/components/loaders/Skeletons";
 import { TrendChart } from "@/components/charts/TrendChart";
 import { useAppSelector } from "@/hooks/redux";
 import { useGetProviderDashboardQuery } from "@/features/dashboard/dashboardApi";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function ProviderDashboardPage() {
   const user = useAppSelector((s) => s.auth.user);
-  const { data: dashboard, isLoading, isError, refetch } = useGetProviderDashboardQuery();
+  const [range, setRange] = useState<string>("7days");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
+
+  const { data: dashboard, isLoading, isError, refetch } = useGetProviderDashboardQuery({
+    range,
+    startDate: range === "custom" && startDate ? startDate : undefined,
+    endDate: range === "custom" && endDate ? endDate : undefined,
+  });
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -76,8 +92,14 @@ export default function ProviderDashboardPage() {
           </Button>
         </Card>
       ) : (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <StatCard label="Active Jobs" value={dashboard?.activeJobs ?? 0} icon={Briefcase} accent="primary" />
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+          <StatCard
+            label="Active Jobs"
+            value={dashboard?.activeJobs ?? 0}
+            icon={Briefcase}
+            accent="primary"
+          />
+
           <StatCard
             label="Completed Jobs"
             value={dashboard?.completedJobs ?? 0}
@@ -85,21 +107,74 @@ export default function ProviderDashboardPage() {
             accent="success"
             delay={0.05}
           />
-          <StatCard label="Workers Hired" value={dashboard?.workersHired ?? 0} icon={Users} accent="accent" delay={0.1} />
+
           <StatCard
-            label="Money Spent"
-            value={`₹${dashboard?.moneySpent ?? 0}`}
+            label="Workers Hired"
+            value={dashboard?.workersHired ?? 0}
+            icon={Users}
+            accent="accent"
+            delay={0.1}
+          />
+
+          <StatCard
+            label="Today's Spend"
+            value={`₹${dashboard?.todaySpent ?? 0}`}
             icon={Wallet}
             accent="destructive"
             delay={0.15}
+          />
+
+          <StatCard
+            label="Week Spend"
+            value={`₹${dashboard?.thisWeekSpent ?? 0}`}
+            icon={Wallet}
+            accent="primary"
+            delay={0.2}
+          />
+
+          <StatCard
+            label="Month Spend"
+            value={`₹${dashboard?.thisMonthSpent ?? 0}`}
+            icon={Wallet}
+            accent="success"
+            delay={0.25}
           />
         </div>
       )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <CardHeader>
+          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 space-y-0 pb-4">
             <CardTitle>Spending Analytics</CardTitle>
+            <div className="flex flex-wrap items-center gap-2">
+              {range === "custom" && (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="h-9 rounded-lg border border-border bg-card px-2.5 py-1 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                  />
+                  <span className="text-xs text-muted-foreground">to</span>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="h-9 rounded-lg border border-border bg-card px-2.5 py-1 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                  />
+                </div>
+              )}
+              <Select value={range} onValueChange={setRange}>
+                <SelectTrigger className="h-9 w-[130px] rounded-lg">
+                  <SelectValue placeholder="Select range" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="7days">Last 7 days</SelectItem>
+                  <SelectItem value="1month">Last 1 month</SelectItem>
+                  <SelectItem value="custom">Custom range</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </CardHeader>
           <CardContent>
             {dashboard?.analyticsTrend?.length ? (
@@ -122,13 +197,28 @@ export default function ProviderDashboardPage() {
                 {dashboard.recentApplicants.map((a) => (
                   <div key={a.id} className="flex items-center gap-3 rounded-xl border border-border p-3">
                     <Avatar className="size-9">
-                      <AvatarImage src={a.worker?.user?.profileImage} />
-                      <AvatarFallback>{a.worker?.user?.name?.[0]}</AvatarFallback>
+                      <AvatarImage
+                        src={
+                          a.worker?.user?.profileImage ??
+                          a.agent?.user?.profileImage
+                        }
+                      />
+
+                      <AvatarFallback>
+                        {(a.worker?.user?.name ??
+                          a.agent?.user?.name)?.[0]}
+                      </AvatarFallback>
                     </Avatar>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{a.worker?.user?.name}</p>
+                      <p className="truncate text-sm font-medium">
+                        {a.worker?.user?.name ??
+                          a.agent?.user?.name}
+                      </p>
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Star className="size-3 fill-accent text-accent" /> {a.worker?.rating ?? "—"}
+                        <Star className="size-3 fill-accent text-accent" />
+                        {a.worker?.rating ??
+                          a.agent?.rating ??
+                          "—"}
                       </div>
                     </div>
                     <Badge variant="outline" className="capitalize">
