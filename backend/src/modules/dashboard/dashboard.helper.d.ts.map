@@ -1,0 +1,1 @@
+{"version":3,"file":"dashboard.helper.d.ts","sourceRoot":"","sources":["dashboard.helper.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,cAAc,EAAE,MAAM,sBAAsB,CAAC;AAEtD,MAAM,WAAW,eAAe;IAC9B,SAAS,EAAE,IAAI,CAAC;IAChB,MAAM,EAAE,MAAM,EAAE,CAAC;IACjB,OAAO,EAAE,MAAM,GAAG,KAAK,GAAG,MAAM,GAAG,OAAO,CAAC;CAC5C;AAED,eAAO,MAAM,kBAAkB,GAC7B,OAAO,cAAc,KACpB,eA+GF,CAAC"}

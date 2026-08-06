@@ -1,0 +1,1 @@
+{"version":3,"file":"rabbitmq.connection.d.ts","sourceRoot":"","sources":["rabbitmq.connection.ts"],"names":[],"mappings":"AAAA,OAAO,IAAI,MAAM,SAAS,CAAC;AAM3B,cAAM,kBAAkB;IAEpB,OAAO,CAAC,UAAU,CACT;IAET,OAAO,CAAC,OAAO,CACN;IAEH,OAAO;IAmFb,UAAU;CAcb;AAED,eAAO,MAAM,QAAQ,oBACO,CAAC"}

@@ -545,6 +545,7 @@ export class JobService {
             include: {
               job: true,
               worker: true,
+              agent: true,
             },
           });
 
@@ -554,10 +555,18 @@ export class JobService {
           );
         }
 
-        if (!application.worker?.userId) {
-          throw new Error(
-            "Worker user not found"
-          );
+        if (application.applicantType === "WORKER") {
+          if (!application.worker?.userId) {
+            throw new Error(
+              "Worker user not found"
+            );
+          }
+        } else if (application.applicantType === "AGENT") {
+          if (!application.agent?.userId) {
+            throw new Error(
+              "Agent user not found"
+            );
+          }
         }
 
         if (
@@ -608,6 +617,9 @@ export class JobService {
             workerId:
               application.workerId,
 
+            agentId:
+              application.agentId,
+
             amount:
               application.bidAmount ?? 0,
 
@@ -616,6 +628,11 @@ export class JobService {
 
           },
         });
+
+        const decrementAmount =
+          application.applicantType === "AGENT"
+            ? (application.workerCount ?? 1)
+            : 1;
 
         const updatedJob =
           await tx.job.update({
@@ -626,13 +643,13 @@ export class JobService {
 
             data: {
               requiredWorkers: {
-                decrement: 1,
+                decrement: decrementAmount,
               },
             },
           });
 
         if (
-          updatedJob.requiredWorkers === 0
+          updatedJob.requiredWorkers <= 0
         ) {
 
           await tx.job.update({
@@ -644,6 +661,7 @@ export class JobService {
             data: {
               status:
                 "ASSIGNED",
+              requiredWorkers: 0,
             },
           });
 
@@ -665,13 +683,15 @@ export class JobService {
         }
         return {
           success: true,
-          workerUserId: application.worker.userId,
+          workerUserId: application.worker?.userId ?? null,
+          agentUserId: application.agent?.userId ?? null,
         };
       }
     );
     await CacheInvalidationService.afterJobAccepted(
       userId,
-      result.workerUserId
+      result.workerUserId,
+      result.agentUserId
     );
 
     return {

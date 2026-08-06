@@ -22,24 +22,29 @@ export class CacheInvalidationService {
 
   static async afterJobAccepted(
     providerUserId: string,
-    workerUserId: string
+    workerUserId?: string | null,
+    agentUserId?: string | null
   ) {
 
-    await Promise.all([
-
+    const promises: Promise<any>[] = [
       RedisService.del(
         `dashboard:provider:${providerUserId}`
-      ),
-
-      RedisService.del(
-        `dashboard:worker:${workerUserId}`
       ),
 
       RedisService.deletePattern(
         "jobs:nearby:*"
       )
+    ];
 
-    ]);
+    if (workerUserId) {
+      promises.push(
+        RedisService.del(
+          `dashboard:worker:${workerUserId}`
+        )
+      );
+    }
+
+    await Promise.all(promises);
 
   }
 

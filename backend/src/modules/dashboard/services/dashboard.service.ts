@@ -3,10 +3,14 @@ import { RedisService } from "../../../shared/services/redis/redis.service.js";
 export class DashboardService {
 
   static async getWorkerDashboard(
-    userId: string
+    userId: string,
+    range?: string,
+    startDateStr?: string,
+    endDateStr?: string
   ) {
+    const activeRange = range || "7days";
     const cacheKey =
-      `dashboard:worker:${userId}`;
+      `dashboard:worker:${userId}:${activeRange}:${startDateStr || ""}:${endDateStr || ""}`;
 
     const cachedDashboard =
       await RedisService.get(cacheKey);
@@ -35,8 +39,20 @@ export class DashboardService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const sevenDaysAgo = new Date(today);
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    let trendStart = new Date(today);
+    trendStart.setDate(today.getDate() - 6);
+    let trendEnd = new Date(today);
+    trendEnd.setDate(today.getDate() + 1);
+
+    if (activeRange === "1month") {
+      trendStart = new Date(today);
+      trendStart.setDate(today.getDate() - 29);
+    } else if (activeRange === "custom" && startDateStr && endDateStr) {
+      trendStart = new Date(startDateStr);
+      trendStart.setHours(0, 0, 0, 0);
+      trendEnd = new Date(endDateStr);
+      trendEnd.setHours(23, 59, 59, 999);
+    }
 
     const [
       todayBookings,
@@ -152,7 +168,8 @@ export class DashboardService {
           workerId: worker.id,
           status: "COMPLETED",
           completedAt: {
-            gte: sevenDaysAgo,
+            gte: trendStart,
+            lte: trendEnd,
           },
         },
         select: {
@@ -163,24 +180,40 @@ export class DashboardService {
 
     ]);
 
-    const earningsTrend =
-      Array.from({ length: 7 }).map((_, i) => {
+    const earningsTrend = [];
+    const diffTime = Math.abs(trendEnd.getTime() - trendStart.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const daysToProcess = Math.min(diffDays, 100);
 
-        const day = new Date(sevenDaysAgo);
-        day.setDate(sevenDaysAgo.getDate() + i);
+    for (let i = 0; i < daysToProcess; i++) {
+      const current = new Date(trendStart);
+      current.setDate(trendStart.getDate() + i);
+      current.setHours(0, 0, 0, 0);
 
-        const dayTotal = trendBookings
-          .filter((b) =>
-            b.completedAt &&
-            b.completedAt.toDateString() === day.toDateString()
-          )
-          .reduce((sum, b) => sum + b.amount, 0);
+      const next = new Date(current);
+      next.setDate(current.getDate() + 1);
 
-        return {
-          label: day.toLocaleDateString("en-IN", { weekday: "short" }),
-          value: dayTotal,
-        };
+      const total = trendBookings
+        .filter(
+          booking =>
+            booking.completedAt &&
+            booking.completedAt >= current &&
+            booking.completedAt < next
+        )
+        .reduce(
+          (sum, booking) => sum + booking.amount,
+          0
+        );
+
+      earningsTrend.push({
+        label: current.toLocaleDateString("en-IN", {
+          month: "numeric",
+          day: "numeric",
+          ...(activeRange === "7days" ? { weekday: "short" } : {}),
+        }),
+        value: total,
       });
+    }
 
     const dashboard = {
 
@@ -198,36 +231,36 @@ export class DashboardService {
 
       currentBooking: currentBooking
         ? {
-            id: currentBooking.id,
-            amount: currentBooking.amount,
-            status: currentBooking.status,
-            createdAt: currentBooking.createdAt,
-            startedAt: currentBooking.startedAt ?? undefined,
-            completedAt: currentBooking.completedAt ?? undefined,
-            job: currentBooking.job
-              ? {
-                  id: currentBooking.job.id,
-                  title: currentBooking.job.title,
-                  description: currentBooking.job.description ?? undefined,
-                  address: currentBooking.job.address ?? undefined,
-                  city: currentBooking.job.city ?? undefined,
-                  state: currentBooking.job.state ?? undefined,
-                  pincode: currentBooking.job.pincode ?? undefined,
-                  budget: currentBooking.job.budget ?? undefined,
-                  latitude: currentBooking.job.latitude ?? undefined,
-                  longitude: currentBooking.job.longitude ?? undefined,
-                  skill: currentBooking.job.skill ?? undefined,
-                }
-              : undefined,
-            provider: currentBooking.provider
-              ? {
-                  id: currentBooking.provider.id,
-                  name: currentBooking.provider.name,
-                  phone: currentBooking.provider.phone ?? undefined,
-                  profileImage: currentBooking.provider.profileImage ?? undefined,
-                }
-              : undefined,
-          }
+          id: currentBooking.id,
+          amount: currentBooking.amount,
+          status: currentBooking.status,
+          createdAt: currentBooking.createdAt,
+          startedAt: currentBooking.startedAt ?? undefined,
+          completedAt: currentBooking.completedAt ?? undefined,
+          job: currentBooking.job
+            ? {
+              id: currentBooking.job.id,
+              title: currentBooking.job.title,
+              description: currentBooking.job.description ?? undefined,
+              address: currentBooking.job.address ?? undefined,
+              city: currentBooking.job.city ?? undefined,
+              state: currentBooking.job.state ?? undefined,
+              pincode: currentBooking.job.pincode ?? undefined,
+              budget: currentBooking.job.budget ?? undefined,
+              latitude: currentBooking.job.latitude ?? undefined,
+              longitude: currentBooking.job.longitude ?? undefined,
+              skill: currentBooking.job.skill ?? undefined,
+            }
+            : undefined,
+          provider: currentBooking.provider
+            ? {
+              id: currentBooking.provider.id,
+              name: currentBooking.provider.name,
+              phone: currentBooking.provider.phone ?? undefined,
+              profileImage: currentBooking.provider.profileImage ?? undefined,
+            }
+            : undefined,
+        }
         : null,
 
       upcomingJobs: upcomingBookings
@@ -276,10 +309,14 @@ export class DashboardService {
 
   }
   static async getProviderDashboard(
-    userId: string
+    userId: string,
+    range?: string,
+    startDateStr?: string,
+    endDateStr?: string
   ) {
+    const activeRange = range || "7days";
     const cacheKey =
-      `dashboard:provider:${userId}`;
+      `dashboard:provider:${userId}:${activeRange}:${startDateStr || ""}:${endDateStr || ""}`;
 
     const cachedDashboard =
       await RedisService.get(cacheKey);
@@ -295,16 +332,34 @@ export class DashboardService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const weekStart = new Date();
+    const weekStart = new Date(today);
+
     weekStart.setDate(
-      weekStart.getDate() - 7
+      today.getDate() - 6
     );
+
+    weekStart.setHours(0, 0, 0, 0);
 
     const monthStart = new Date(
       today.getFullYear(),
       today.getMonth(),
       1
     );
+
+    let trendStart = new Date(today);
+    trendStart.setDate(today.getDate() - 6);
+    let trendEnd = new Date(today);
+    trendEnd.setDate(today.getDate() + 1);
+
+    if (activeRange === "1month") {
+      trendStart = new Date(today);
+      trendStart.setDate(today.getDate() - 29);
+    } else if (activeRange === "custom" && startDateStr && endDateStr) {
+      trendStart = new Date(startDateStr);
+      trendStart.setHours(0, 0, 0, 0);
+      trendEnd = new Date(endDateStr);
+      trendEnd.setHours(23, 59, 59, 999);
+    }
 
     const [
       activeJobs,
@@ -320,12 +375,17 @@ export class DashboardService {
       monthSpent,
 
       totalWorkersHired,
+
+      recentBookings,
+
+      recentApplicants,
+
+      analyticsBookings,
     ] = await Promise.all([
 
       prisma.job.count({
         where: {
           providerId: userId,
-
           status: {
             in: [
               "OPEN",
@@ -346,7 +406,6 @@ export class DashboardService {
       prisma.booking.count({
         where: {
           providerId: userId,
-
           status: {
             in: [
               "CONFIRMED",
@@ -368,7 +427,6 @@ export class DashboardService {
           job: {
             providerId: userId,
           },
-
           status: "PENDING",
         },
       }),
@@ -376,14 +434,11 @@ export class DashboardService {
       prisma.booking.aggregate({
         where: {
           providerId: userId,
-
           status: "COMPLETED",
-
           completedAt: {
             gte: today,
           },
         },
-
         _sum: {
           amount: true,
         },
@@ -392,14 +447,11 @@ export class DashboardService {
       prisma.booking.aggregate({
         where: {
           providerId: userId,
-
           status: "COMPLETED",
-
           completedAt: {
             gte: weekStart,
           },
         },
-
         _sum: {
           amount: true,
         },
@@ -408,14 +460,11 @@ export class DashboardService {
       prisma.booking.aggregate({
         where: {
           providerId: userId,
-
           status: "COMPLETED",
-
           completedAt: {
             gte: monthStart,
           },
         },
-
         _sum: {
           amount: true,
         },
@@ -424,12 +473,135 @@ export class DashboardService {
       prisma.booking.count({
         where: {
           providerId: userId,
-
           status: "COMPLETED",
         },
       }),
 
+      prisma.booking.findMany({
+        where: {
+          providerId: userId,
+        },
+        take: 5,
+        orderBy: {
+          createdAt: "desc",
+        },
+        include: {
+          worker: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  phone: true,
+                  profileImage: true,
+                },
+              },
+            },
+          },
+          review: {
+            select: {
+              id: true,
+              rating: true,
+              comment: true,
+            },
+          },
+        },
+      }),
+
+      prisma.application.findMany({
+        where: {
+          job: {
+            providerId: userId,
+          },
+        },
+        take: 5,
+        orderBy: {
+          createdAt: "desc",
+        },
+        include: {
+          job: {
+            select: {
+              id: true,
+              title: true,
+            },
+          },
+          worker: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  phone: true,
+                  profileImage: true,
+                },
+              },
+            },
+          },
+          agent: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  phone: true,
+                  profileImage: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+
+      prisma.booking.findMany({
+        where: {
+          providerId: userId,
+          status: "COMPLETED",
+          completedAt: {
+            gte: trendStart,
+            lte: trendEnd,
+          },
+        },
+        select: {
+          amount: true,
+          completedAt: true,
+        },
+      }),
+
     ]);
+    const analyticsTrend = [];
+    const diffTime = Math.abs(trendEnd.getTime() - trendStart.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const daysToProcess = Math.min(diffDays, 100);
+
+    for (let i = 0; i < daysToProcess; i++) {
+      const current = new Date(trendStart);
+      current.setDate(trendStart.getDate() + i);
+      current.setHours(0, 0, 0, 0);
+
+      const next = new Date(current);
+      next.setDate(current.getDate() + 1);
+
+      const total = analyticsBookings
+        .filter(
+          booking =>
+            booking.completedAt &&
+            booking.completedAt >= current &&
+            booking.completedAt < next
+        )
+        .reduce(
+          (sum, booking) => sum + booking.amount,
+          0
+        );
+
+      analyticsTrend.push({
+        label: current.toLocaleDateString("en-US", {
+          month: "numeric",
+          day: "numeric",
+          ...(activeRange === "7days" ? { weekday: "short" } : {}),
+        }),
+        value: total,
+      });
+    }
 
     const dashboard = {
 
@@ -443,17 +615,19 @@ export class DashboardService {
 
       pendingApplications,
 
-      workersHired:
-        totalWorkersHired,
+      workersHired: totalWorkersHired,
 
-      todaySpent:
-        todaySpent._sum.amount ?? 0,
+      todaySpent: todaySpent._sum.amount ?? 0,
 
-      thisWeekSpent:
-        weekSpent._sum.amount ?? 0,
+      thisWeekSpent: weekSpent._sum.amount ?? 0,
 
-      thisMonthSpent:
-        monthSpent._sum.amount ?? 0,
+      thisMonthSpent: monthSpent._sum.amount ?? 0,
+
+      analyticsTrend,
+
+      recentBookings,
+
+      recentApplicants,
 
     };
 

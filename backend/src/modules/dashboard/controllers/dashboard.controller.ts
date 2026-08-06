@@ -12,10 +12,14 @@ export class DashboardController {
   ) {
 
     try {
+      const { range, startDate, endDate } = req.query;
 
       const dashboard =
         await DashboardService.getWorkerDashboard(
-          req.user!.userId
+          req.user!.userId,
+          range as string,
+          startDate as string,
+          endDate as string
         );
 
       return res.status(200).json({
@@ -40,10 +44,14 @@ export class DashboardController {
 ) {
 
   try {
+    const { range, startDate, endDate } = req.query;
 
     const dashboard =
       await DashboardService.getProviderDashboard(
-        req.user!.userId
+        req.user!.userId,
+        range as string,
+        startDate as string,
+        endDate as string
       );
 
     return res.status(200).json({
