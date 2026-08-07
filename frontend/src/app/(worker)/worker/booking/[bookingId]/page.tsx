@@ -12,6 +12,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { BookingTimeline } from "@/components/cards/BookingTimeline";
 import { ReviewDialog } from "@/components/dialogs/ReviewDialog";
 import { EmptyState } from "@/components/cards/EmptyState";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   useGetBookingByIdQuery,
   useStartBookingMutation,
@@ -24,13 +26,19 @@ export default function WorkerBookingDetailPage({ params }: { params: Promise<{ 
   const [startBooking, { isLoading: isStarting }] = useStartBookingMutation();
   const [completeBooking, { isLoading: isCompleting }] = useCompleteBookingMutation();
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [otp, setOtp] = useState("");
 
   async function handleStart() {
+    if (booking?.startOtp && !otp.trim()) {
+      toast.error("Please enter the OTP shared by the provider");
+      return;
+    }
     try {
-      await startBooking(bookingId).unwrap();
+      await startBooking({ bookingId, otp }).unwrap();
       toast.success("Job started!");
-    } catch {
-      toast.error("Couldn't start the job.");
+    } catch (err: unknown) {
+      const message = (err as { data?: { message?: string } })?.data?.message || "Couldn't start the job.";
+      toast.error(message);
     }
   }
 
@@ -38,8 +46,9 @@ export default function WorkerBookingDetailPage({ params }: { params: Promise<{ 
     try {
       await completeBooking(bookingId).unwrap();
       toast.success("Job marked as completed!");
-    } catch {
-      toast.error("Couldn't complete the job.");
+    } catch (err: unknown) {
+      const message = (err as { data?: { message?: string } })?.data?.message || "Couldn't complete the job.";
+      toast.error(message);
     }
   }
 
@@ -165,13 +174,15 @@ export default function WorkerBookingDetailPage({ params }: { params: Promise<{ 
         </h3>
 
         <p className="mt-2">
-          {booking.job?.address}
+          {booking.job?.address || booking.instantRequest?.address}
         </p>
 
-        <p className="text-muted-foreground">
-          {booking.job?.city}
-          {booking.job?.state && `, ${booking.job.state}`}
-        </p>
+        {booking.job && (
+          <p className="text-muted-foreground">
+            {booking.job.city}
+            {booking.job.state && `, ${booking.job.state}`}
+          </p>
+        )}
 
       </div>
 
@@ -180,6 +191,23 @@ export default function WorkerBookingDetailPage({ params }: { params: Promise<{ 
   </CardContent>
 </Card>
       
+
+      {booking.status === "CONFIRMED" && booking.startOtp && (
+        <Card>
+          <CardContent className="pt-6 space-y-2">
+            <Label htmlFor="start-otp">Enter Start OTP shared by Provider:</Label>
+            <Input
+              id="start-otp"
+              type="text"
+              placeholder="e.g. 1234"
+              value={otp}
+              onChange={(e) => setOtp(e.target.value)}
+              className="text-center font-bold text-lg tracking-wider"
+              maxLength={4}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex gap-3">
         {booking.status === "CONFIRMED" && (

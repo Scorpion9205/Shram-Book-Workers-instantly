@@ -37,11 +37,15 @@ export const bookingApi = apiSlice.injectEndpoints({
         response.booking,
       providesTags: (result, error, bookingId) => [{ type: "Booking", id: bookingId }],
     }),
-    startBooking: builder.mutation<Booking, string>({
-      query: (bookingId) => ({ url: `/bookings/${bookingId}/start`, method: "PATCH" }),
+    startBooking: builder.mutation<Booking, { bookingId: string; otp?: string }>({
+      query: ({ bookingId, otp }) => ({
+        url: `/bookings/${bookingId}/start`,
+        method: "PATCH",
+        body: { otp },
+      }),
       transformResponse: (response: BookingResponse) =>
         response.booking,
-      async onQueryStarted(bookingId, { dispatch, queryFulfilled }) {
+      async onQueryStarted({ bookingId }, { dispatch, queryFulfilled }) {
         const patch = dispatch(
           bookingApi.util.updateQueryData("getBookingById", bookingId, (draft) => {
             draft.status = "IN_PROGRESS";
@@ -54,7 +58,7 @@ export const bookingApi = apiSlice.injectEndpoints({
           patch.undo();
         }
       },
-      invalidatesTags: (result, error, bookingId) => [
+      invalidatesTags: (result, error, { bookingId }) => [
         { type: "Booking", id: bookingId },
         "DashboardWorker",
         "DashboardProvider",

@@ -10,6 +10,8 @@ export interface CreateInstantRequestPayload {
   lat?: number;
   lng?: number;
   title?: string;
+  bookingMode: "DIRECT" | "BIDDING";
+  quoteId: string;
 }
 
 export interface FareCalculationPayload {
@@ -21,10 +23,9 @@ export interface FareCalculationPayload {
 
 export interface FareCalculationResult {
   estimatedFare: number;
-  minFare: number;
-  maxFare: number;
-  distanceKm: number;
-  estimatedMinutes: number;
+  subtotal: number;
+  platformFee: number;
+  quoteId: string;
 }
 
 interface InstantRequestResponse {
@@ -37,9 +38,6 @@ interface InstantRequestsResponse {
   requests: InstantRequest[];
 }
 
-// /instant-requests/nearby actually returns this richer, per-skill-item
-// shape (see InstantRequestService.getNearbyRequests on the backend) —
-// NOT the flat InstantRequest type used by the create/socket flow.
 export interface NearbyInstantRequest {
   id: string;
   title: string;
@@ -64,11 +62,10 @@ interface NearbyInstantRequestsResponse {
 
 interface BackendFareResponse {
   success: boolean;
-  fare: {
-    subtotal: number;
-    platformFee: number;
-    total: number;
-  };
+  estimatedFare: number;
+  subtotal: number;
+  platformFee: number;
+  quoteId: string;
 }
 
 export const instantRequestApi = apiSlice.injectEndpoints({
@@ -86,6 +83,8 @@ export const instantRequestApi = apiSlice.injectEndpoints({
           longitude: body.lng ?? 77.209,
           address: body.address,
           amount: body.amount,
+          bookingMode: body.bookingMode,
+          quoteId: body.quoteId,
           items: [
             {
               skillId: body.workerType,
@@ -118,11 +117,10 @@ export const instantRequestApi = apiSlice.injectEndpoints({
         },
       }),
       transformResponse: (response: BackendFareResponse) => ({
-        estimatedFare: response.fare.total,
-        minFare: response.fare.subtotal,
-        maxFare: response.fare.total,
-        distanceKm: 0,
-        estimatedMinutes: 0,
+        estimatedFare: response.estimatedFare,
+        subtotal: response.subtotal,
+        platformFee: response.platformFee,
+        quoteId: response.quoteId,
       }),
     }),
     acceptInstantRequestItem: builder.mutation<{ bookingId: string }, string>({

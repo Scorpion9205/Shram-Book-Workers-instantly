@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useEffect } from "react";
 import { ArrowLeft, Phone, MapPin, Star } from "lucide-react";
 import Link from "next/link";
 
@@ -12,11 +12,25 @@ import { BookingTimeline } from "@/components/cards/BookingTimeline";
 import { ReviewDialog } from "@/components/dialogs/ReviewDialog";
 import { EmptyState } from "@/components/cards/EmptyState";
 import { useGetBookingByIdQuery } from "@/features/booking/bookingApi";
+import { useSocket } from "@/providers/SocketProvider";
 
 export default function ProviderBookingDetailPage({ params }: { params: Promise<{ bookingId: string }> }) {
   const { bookingId } = use(params);
-  const { data: booking, isLoading, isError } = useGetBookingByIdQuery(bookingId);
+  const { data: booking, isLoading, isError, refetch } = useGetBookingByIdQuery(bookingId);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const { socket } = useSocket();
+
+  useEffect(() => {
+    if (!socket) return;
+    socket.on("bookingStatusUpdated", (data: { bookingId: string; status: string }) => {
+      if (data.bookingId === bookingId) {
+        refetch();
+      }
+    });
+    return () => {
+      socket.off("bookingStatusUpdated");
+    };
+  }, [socket, bookingId, refetch]);
 
   if (isLoading) {
     return (
@@ -45,6 +59,15 @@ export default function ProviderBookingDetailPage({ params }: { params: Promise<
           <BookingTimeline status={booking.status} />
         </CardContent>
       </Card>
+
+      {booking.status === "CONFIRMED" && booking.startOtp && (
+        <Card className="bg-primary/5 border-primary/20">
+          <CardContent className="pt-6 flex flex-col items-center justify-center text-center space-y-2">
+            <p className="text-sm text-muted-foreground font-semibold">Share this OTP with the worker when they arrive to start the job:</p>
+            <div className="text-3xl font-extrabold tracking-wider text-primary">{booking.startOtp}</div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent className="space-y-5 pt-6">
@@ -75,24 +98,30 @@ export default function ProviderBookingDetailPage({ params }: { params: Promise<
 
             <Avatar className="size-16">
               <AvatarImage
-                src={booking.provider?.profileImage}
+                src={booking.worker?.user?.profileImage}
               />
               <AvatarFallback>
-                {booking.provider?.name?.[0]}
+                {booking.worker?.user?.name?.[0] || "W"}
               </AvatarFallback>
             </Avatar>
 
           </div>
 
-          <div>
+          <div className="flex items-center justify-between">
 
-            <p className="font-semibold">
-              {booking.provider?.name}
-            </p>
+            <div>
+              <p className="font-semibold">
+                {booking.worker?.user?.name || "Assigning worker..."}
+              </p>
+            </div>
 
-            <p className="text-sm text-muted-foreground">
-              {booking.provider?.phone}
-            </p>
+            {booking.worker?.user?.phone && (
+              <Button asChild variant="outline" size="icon">
+                <a href={`tel:${booking.worker.user.phone}`}>
+                  <Phone className="size-4" />
+                </a>
+              </Button>
+            )}
 
           </div>
 

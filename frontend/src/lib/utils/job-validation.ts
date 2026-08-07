@@ -3,7 +3,7 @@ import { z } from "zod";
 export const instantHireSchema = z.object({
   workerType: z.string().min(1, "Select a worker type"),
   address: z.string().min(5, "Enter a valid address"),
-  amount: z.coerce.number().min(50, "Minimum amount is ₹50"),
+  amount: z.number().optional(),
   notes: z.string().optional(),
   workersNeeded: z.coerce.number().min(1).max(20),
 });

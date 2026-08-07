@@ -41,7 +41,7 @@ export default function ProviderBookingsPage() {
                   <AvatarFallback>{booking.worker?.user?.name?.[0]}</AvatarFallback>
                 </Avatar>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{booking.worker?.user?.name?.[0]}</p>
+                  <p className="truncate font-medium">{booking.worker?.user?.name || "Assigning worker..."}</p>
                   <p className="text-xs text-muted-foreground">
                     {new Date(booking.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                   </p>

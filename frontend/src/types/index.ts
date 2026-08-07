@@ -168,6 +168,7 @@ export interface Booking {
   startedAt?: string;
 
   completedAt?: string;
+  startOtp?: string;
 
   job?: {
     id: string;
@@ -185,6 +186,11 @@ export interface Booking {
       id: string;
       name: string;
     };
+  };
+  instantRequest?: {
+    id: string;
+    title: string;
+    address?: string;
   };
 
   provider?: {

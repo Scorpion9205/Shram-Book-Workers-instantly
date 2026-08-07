@@ -72,8 +72,9 @@ export default function WorkerDashboardPage() {
       const result = await acceptItem(itemId).unwrap();
       toast.success("Request accepted!");
       router.push(`/worker/booking/${result.bookingId}`);
-    } catch (err: any) {
-      toast.error(err?.data?.message || "Couldn't accept this request — it may already be filled.");
+    } catch (err: unknown) {
+      const message = (err as { data?: { message?: string } })?.data?.message || "Couldn't accept this request — it may already be filled.";
+      toast.error(message);
     }
   }
 
@@ -276,59 +277,7 @@ export default function WorkerDashboardPage() {
         </Card>
       </div>
 
-      {/* Nearby Instant Requests (REST fallback alongside the live socket popup) */}
-      {profile?.isAvailable && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Instant Requests Near You</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isNearbyLoading ? (
-              <ListSkeleton count={2} />
-            ) : nearbyRequests?.length ? (
-              <div className="space-y-3">
-                {nearbyRequests.map((req: NearbyInstantRequest) =>
-                  req.items.map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between rounded-xl border border-border p-3"
-                    >
-                      <div>
-                        <p className="text-sm font-medium">
-                          {item.skill.name} · {req.title}
-                        </p>
-                        <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <MapPin className="size-3" /> {req.address || "Location shared on accept"} ·{" "}
-                          {req.distanceKm.toFixed(1)} km away
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {item.acceptedWorkers}/{item.requiredWorkers} workers accepted
-                        </p>
-                      </div>
-                      <div className="flex flex-col items-end gap-2">
-                        <span className="text-sm font-semibold text-primary">₹{req.amount}</span>
-                        <Button
-                          size="sm"
-                          disabled={isAccepting || item.acceptedWorkers >= item.requiredWorkers}
-                          onClick={() => handleAcceptNearby(item.id)}
-                        >
-                          Accept
-                        </Button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            ) : (
-              <EmptyState
-                icon={Clock}
-                title="No instant requests right now"
-                description="You'll be notified here and via popup when a nearby provider needs your skill."
-              />
-            )}
-          </CardContent>
-        </Card>
-      )}
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
