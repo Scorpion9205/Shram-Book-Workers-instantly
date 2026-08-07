@@ -6,6 +6,11 @@ export declare const createInstantRequestSchema: z.ZodObject<{
     longitude: z.ZodNumber;
     address: z.ZodOptional<z.ZodString>;
     amount: z.ZodOptional<z.ZodNumber>;
+    bookingMode: z.ZodEnum<{
+        DIRECT: "DIRECT";
+        BIDDING: "BIDDING";
+    }>;
+    quoteId: z.ZodString;
     items: z.ZodArray<z.ZodObject<{
         skillId: z.ZodUUID;
         requiredWorkers: z.ZodNumber;

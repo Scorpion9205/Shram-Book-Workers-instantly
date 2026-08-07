@@ -381,6 +381,8 @@ export class DashboardService {
       recentApplicants,
 
       analyticsBookings,
+      activeInstantRequests,
+      completedInstantRequests,
     ] = await Promise.all([
 
       prisma.job.count({
@@ -567,6 +569,22 @@ export class DashboardService {
         },
       }),
 
+      prisma.instantRequest.count({
+        where: {
+          providerId: userId,
+          status: {
+            in: ["OPEN", "FILLED"]
+          }
+        }
+      }),
+
+      prisma.instantRequest.count({
+        where: {
+          providerId: userId,
+          status: "COMPLETED"
+        }
+      })
+
     ]);
     const analyticsTrend = [];
     const diffTime = Math.abs(trendEnd.getTime() - trendStart.getTime());
@@ -605,9 +623,9 @@ export class DashboardService {
 
     const dashboard = {
 
-      activeJobs,
+      activeJobs: activeJobs + activeInstantRequests,
 
-      completedJobs,
+      completedJobs: completedJobs + completedInstantRequests,
 
       activeBookings,
 

@@ -1,4 +1,5 @@
 import prisma from "../../../shared/config/prisma.js";
+import { RedisService } from "../../../shared/services/redis/redis.service.js";
 
 import type { CreateWorkerProfileInput } from "../validations/worker.validation.js";
 
@@ -128,6 +129,26 @@ export class WorkerService {
                     isAvailable: data.isAvailable,
                 },
             });
+
+        // Sync Redis GEO
+        const workerWithSkills = await prisma.workerProfile.findUnique({
+            where: { userId },
+            include: { skills: true, user: { include: { location: true } } }
+        });
+        if (workerWithSkills) {
+            for (const skill of workerWithSkills.skills) {
+                if (data.isAvailable && workerWithSkills.user.isActive && workerWithSkills.user.location) {
+                    await RedisService.geoAdd(
+                        `geo:instant-workers:${skill.skillId}`,
+                        workerWithSkills.user.location.longitude,
+                        workerWithSkills.user.location.latitude,
+                        workerWithSkills.id
+                    );
+                } else {
+                    await RedisService.geoRemove(`geo:instant-workers:${skill.skillId}`, workerWithSkills.id);
+                }
+            }
+        }
 
         return updatedWorker;
     }

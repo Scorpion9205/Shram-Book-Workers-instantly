@@ -24,6 +24,9 @@ export const createInstantRequestSchema = z.object({
 
   
 
+  bookingMode: z.enum(["DIRECT", "BIDDING"]),
+  quoteId: z.string().uuid("Invalid quote ID"),
+
   items: z
     .array(
       z.object({

@@ -1,1 +1,1 @@
-{"version":3,"file":"fare.service.d.ts","sourceRoot":"","sources":["fare.service.ts"],"names":[],"mappings":"AACA,qBAAa,WAAW;WAET,oBAAoB,CAC/B,KAAK,EAAE;QACL,OAAO,EAAE,MAAM,CAAC;QAChB,eAAe,EAAE,MAAM,CAAC;KACzB,EAAE;;;;;CAqCN"}
+{"version":3,"file":"fare.service.d.ts","sourceRoot":"","sources":["fare.service.ts"],"names":[],"mappings":"AACA,qBAAa,WAAW;WAET,oBAAoB,CAC/B,KAAK,EAAE;QACL,OAAO,EAAE,MAAM,CAAC;QAChB,eAAe,EAAE,MAAM,CAAC;KACzB,EAAE;;;;;CAsCN"}

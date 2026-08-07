@@ -130,8 +130,9 @@ export declare class BookingService {
         completedAt: Date | null;
         instantRequestId: string | null;
         instantRequestResponseId: string | null;
+        startOtp: string | null;
     }>;
-    static startWork(bookingId: string, userId: string): Promise<{
+    static startWork(bookingId: string, userId: string, otp?: string): Promise<{
         id: string;
         createdAt: Date;
         updatedAt: Date;
@@ -145,6 +146,7 @@ export declare class BookingService {
         completedAt: Date | null;
         instantRequestId: string | null;
         instantRequestResponseId: string | null;
+        startOtp: string | null;
     }>;
     static completeWork(bookingId: string, userId: string): Promise<{
         id: string;
@@ -160,6 +162,7 @@ export declare class BookingService {
         completedAt: Date | null;
         instantRequestId: string | null;
         instantRequestResponseId: string | null;
+        startOtp: string | null;
     }>;
 }
 //# sourceMappingURL=booking.service.d.ts.map

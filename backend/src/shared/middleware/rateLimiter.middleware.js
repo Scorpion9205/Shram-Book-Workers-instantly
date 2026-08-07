@@ -9,7 +9,7 @@ export const rateLimiter = (prefix, maxRequests, windowSeconds) => {
                     req.user.userId;
             }
             else {
-                const body = req.body;
+                const body = (req.body || {});
                 const loginIdentifier = body.identifier ||
                     body.phone ||
                     body.email ||

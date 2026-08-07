@@ -6,5 +6,8 @@ export declare class RedisService {
     static acquireLock(key: string, ttlSeconds?: number): Promise<string | null>;
     static releaseLock(key: string, token: string): Promise<void>;
     static deletePattern(pattern: string): Promise<void>;
+    static geoAdd(key: string, longitude: number, latitude: number, member: string): Promise<void>;
+    static geoRemove(key: string, member: string): Promise<void>;
+    static geoSearch(key: string, longitude: number, latitude: number, radiusKm: number): Promise<string[]>;
 }
 //# sourceMappingURL=redis.service.d.ts.map

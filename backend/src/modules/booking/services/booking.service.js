@@ -1,4 +1,5 @@
 import prisma from "../../../shared/config/prisma.js";
+import { getIO } from "../../../socket/socket.js";
 export class BookingService {
     static async getProviderBookings(userId) {
         return await prisma.booking.findMany({
@@ -189,7 +190,7 @@ export class BookingService {
         }
         return booking;
     }
-    static async startWork(bookingId, userId) {
+    static async startWork(bookingId, userId, otp) {
         const booking = await prisma.booking.findUnique({
             where: {
                 id: bookingId,
@@ -209,8 +210,11 @@ export class BookingService {
             "CONFIRMED") {
             throw new Error("Booking is not confirmed");
         }
-        return await prisma.$transaction(async (tx) => {
-            const updatedBooking = await tx.booking.update({
+        if (booking.startOtp && booking.startOtp !== otp) {
+            throw new Error("Invalid start OTP");
+        }
+        const updatedBooking = await prisma.$transaction(async (tx) => {
+            const updated = await tx.booking.update({
                 where: {
                     id: bookingId,
                 },
@@ -237,8 +241,19 @@ export class BookingService {
                     },
                 });
             }
-            return updatedBooking;
+            return updated;
         });
+        // Socket.IO notify provider
+        try {
+            getIO().to(`user:${booking.providerId}`).emit("bookingStatusUpdated", {
+                bookingId,
+                status: "IN_PROGRESS"
+            });
+        }
+        catch (e) {
+            console.error("Socket emit failed", e);
+        }
+        return updatedBooking;
     }
     static async completeWork(bookingId, userId) {
         const booking = await prisma.booking.findUnique({
@@ -260,8 +275,8 @@ export class BookingService {
             "IN_PROGRESS") {
             throw new Error("Booking is not in progress");
         }
-        return await prisma.$transaction(async (tx) => {
-            const updatedBooking = await tx.booking.update({
+        const updatedBooking = await prisma.$transaction(async (tx) => {
+            const updated = await tx.booking.update({
                 where: {
                     id: bookingId,
                 },
@@ -323,8 +338,19 @@ export class BookingService {
                     });
                 }
             }
-            return updatedBooking;
+            return updated;
         });
+        // Socket.IO notify provider
+        try {
+            getIO().to(`user:${booking.providerId}`).emit("bookingStatusUpdated", {
+                bookingId,
+                status: "COMPLETED"
+            });
+        }
+        catch (e) {
+            console.error("Socket emit failed", e);
+        }
+        return updatedBooking;
     }
 }
 //# sourceMappingURL=booking.service.js.map

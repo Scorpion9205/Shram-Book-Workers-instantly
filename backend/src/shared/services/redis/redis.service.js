@@ -60,5 +60,14 @@ export class RedisService {
             }
         } while (cursor !== "0");
     }
+    static async geoAdd(key, longitude, latitude, member) {
+        await redis.geoadd(key, longitude, latitude, member);
+    }
+    static async geoRemove(key, member) {
+        await redis.zrem(key, member);
+    }
+    static async geoSearch(key, longitude, latitude, radiusKm) {
+        return await redis.geosearch(key, "FROMLONLAT", longitude, latitude, "BYRADIUS", radiusKm, "km");
+    }
 }
 //# sourceMappingURL=redis.service.js.map

@@ -9,5 +9,7 @@ router.get("/nearby", authMiddleware, roleMiddleware("WORKER"), InstantRequestCo
 router.post("/calculate-fare", authMiddleware, roleMiddleware("PROVIDER"), InstantRequestController.calculateFare);
 router.post("/items/:itemId/accept", authMiddleware, roleMiddleware("WORKER"), InstantRequestController.acceptRequest);
 router.get("/my-requests", authMiddleware, roleMiddleware("PROVIDER"), InstantRequestController.getMyRequests);
+router.post("/:id/bids", authMiddleware, roleMiddleware("WORKER"), InstantRequestController.submitBid);
+router.post("/:id/bids/:bidId/select", authMiddleware, roleMiddleware("PROVIDER"), InstantRequestController.selectBid);
 export default router;
 //# sourceMappingURL=instant-request.routes.js.map

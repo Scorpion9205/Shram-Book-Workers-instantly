@@ -45,4 +45,18 @@ router.get(
   InstantRequestController.getMyRequests
 );
 
+router.post(
+  "/:id/bids",
+  authMiddleware,
+  roleMiddleware("WORKER"),
+  InstantRequestController.submitBid
+);
+
+router.post(
+  "/:id/bids/:bidId/select",
+  authMiddleware,
+  roleMiddleware("PROVIDER"),
+  InstantRequestController.selectBid
+);
+
 export default router;

@@ -140,4 +140,33 @@ static async deletePattern(
 
 }
 
+  static async geoAdd(
+    key: string,
+    longitude: number,
+    latitude: number,
+    member: string
+  ) {
+    await redis.geoadd(key, longitude, latitude, member);
+  }
+
+  static async geoRemove(key: string, member: string) {
+    await redis.zrem(key, member);
+  }
+
+  static async geoSearch(
+    key: string,
+    longitude: number,
+    latitude: number,
+    radiusKm: number
+  ): Promise<string[]> {
+    return await redis.geosearch(
+      key,
+      "FROMLONLAT",
+      longitude,
+      latitude,
+      "BYRADIUS",
+      radiusKm,
+      "km"
+    ) as string[];
+  }
 }

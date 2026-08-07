@@ -1,4 +1,5 @@
 import prisma from "../../../shared/config/prisma.js";
+import { getIO } from "../../../socket/socket.js";
 
 export class BookingService {
 
@@ -257,7 +258,8 @@ export class BookingService {
 
   static async startWork(
     bookingId: string,
-    userId: string
+    userId: string,
+    otp?: string
   ) {
 
     const booking =
@@ -295,10 +297,14 @@ export class BookingService {
       );
     }
 
-    return await prisma.$transaction(
+    if (booking.startOtp && booking.startOtp !== otp) {
+      throw new Error("Invalid start OTP");
+    }
+
+    const updatedBooking = await prisma.$transaction(
       async (tx) => {
 
-        const updatedBooking =
+        const updated =
           await tx.booking.update({
             where: {
               id: bookingId,
@@ -334,14 +340,23 @@ export class BookingService {
 
         }
 
-
-
-        return updatedBooking;
-
+        return updated;
       }
     );
 
+    // Socket.IO notify provider
+    try {
+      getIO().to(`user:${booking.providerId}`).emit("bookingStatusUpdated", {
+        bookingId,
+        status: "IN_PROGRESS"
+      });
+    } catch (e) {
+      console.error("Socket emit failed", e);
+    }
+
+    return updatedBooking;
   }
+
   static async completeWork(
     bookingId: string,
     userId: string
@@ -382,10 +397,10 @@ export class BookingService {
       );
     }
 
-    return await prisma.$transaction(
+    const updatedBooking = await prisma.$transaction(
       async (tx) => {
 
-        const updatedBooking =
+        const updated =
           await tx.booking.update({
             where: {
               id: bookingId,
@@ -476,11 +491,21 @@ export class BookingService {
 
         }
 
-        return updatedBooking;
-
+        return updated;
       }
     );
 
+    // Socket.IO notify provider
+    try {
+      getIO().to(`user:${booking.providerId}`).emit("bookingStatusUpdated", {
+        bookingId,
+        status: "COMPLETED"
+      });
+    } catch (e) {
+      console.error("Socket emit failed", e);
+    }
+
+    return updatedBooking;
   }
 
 }

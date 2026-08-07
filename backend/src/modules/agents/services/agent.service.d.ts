@@ -174,6 +174,7 @@ export declare class AgentService {
         completedAt: Date | null;
         instantRequestId: string | null;
         instantRequestResponseId: string | null;
+        startOtp: string | null;
     })[]>;
 }
 //# sourceMappingURL=agent.service.d.ts.map

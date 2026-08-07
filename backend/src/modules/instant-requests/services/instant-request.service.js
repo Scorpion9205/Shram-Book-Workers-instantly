@@ -4,6 +4,7 @@ import { getIO } from "../../../socket/socket.js";
 import { calculateDistance } from "../../../shared/utils/distance.js";
 import { RedisService } from "../../../shared/services/redis/redis.service.js";
 import { CacheInvalidationService } from "../../../shared/services/cache/cache-invalidation.service.js";
+import { InstantMatchingService } from "./instant-matching.service.js";
 export class InstantRequestService {
     static async createInstantRequest(userId, data) {
         await prisma.providerProfile.upsert({
@@ -15,7 +16,7 @@ export class InstantRequestService {
                 userId,
             },
         });
-        const { title, description, latitude, longitude, address, amount, items, } = data;
+        const { title, description, latitude, longitude, address, amount, items, bookingMode, } = data;
         return await prisma.$transaction(async (tx) => {
             const fare = await FareService.calculateInstantFare(items);
             const request = await tx.instantRequest.create({
@@ -27,6 +28,8 @@ export class InstantRequestService {
                     longitude,
                     address: address ?? null,
                     amount: amount ?? fare.total,
+                    bookingMode,
+                    skillId: items[0]?.skillId || null,
                     expiresAt: new Date(Date.now() +
                         30 * 60 * 1000),
                 },
@@ -58,26 +61,10 @@ export class InstantRequestService {
             if (!createdRequest) {
                 throw new Error("Request not found");
             }
-            const io = getIO();
-            // Event name + payload shape must match what
-            // frontend/src/providers/SocketProvider.tsx listens for:
-            // socket.on("newInstantRequest", (payload: { itemId, request: InstantRequest }) => ...)
-            for (const item of createdRequest.items) {
-                io.to(`skill:${item.skillId}`).emit("newInstantRequest", {
-                    itemId: item.id,
-                    request: {
-                        id: createdRequest.id,
-                        providerId: createdRequest.providerId,
-                        providerName: createdRequest.provider.name,
-                        workerType: item.skill.name,
-                        address: createdRequest.address ?? "",
-                        amount: createdRequest.amount,
-                        notes: createdRequest.description ?? undefined,
-                        workersNeeded: item.requiredWorkers,
-                        createdAt: createdRequest.createdAt,
-                    },
-                });
-            }
+            // Start asynchronous radius expansion matching
+            InstantMatchingService.startMatching(createdRequest.id).catch(err => {
+                console.error("Async matching orchestrator error:", err);
+            });
             return createdRequest;
         });
     }
@@ -193,6 +180,9 @@ export class InstantRequestService {
         if (!worker) {
             throw new Error("Worker profile not found");
         }
+        if (!worker.isAvailable) {
+            throw new Error("Worker is not available for bookings");
+        }
         const lockKey = `lock:instant-item:${itemId}`;
         const lockToken = await RedisService.acquireLock(lockKey, 15);
         if (!lockToken) {
@@ -210,6 +200,9 @@ export class InstantRequestService {
                 });
                 if (!item) {
                     throw new Error("Request item not found");
+                }
+                if (item.request.bookingMode !== "DIRECT") {
+                    throw new Error("This request does not support direct accept");
                 }
                 if (item.request.status !== "OPEN") {
                     throw new Error("Request is closed");
@@ -238,16 +231,27 @@ export class InstantRequestService {
                         status: "ACCEPTED",
                     },
                 });
+                const startOtp = Math.floor(1000 + Math.random() * 9000).toString();
                 const booking = await tx.booking.create({
                     data: {
                         providerId: item.request.providerId,
                         workerId: worker.id,
                         instantRequestId: item.request.id,
                         instantRequestResponseId: response.id,
-                        amount: 0,
+                        amount: item.request.amount,
                         status: "CONFIRMED",
+                        startOtp,
                     },
                 });
+                // Mark worker as unavailable
+                await tx.workerProfile.update({
+                    where: { id: worker.id },
+                    data: { isAvailable: false }
+                });
+                // Remove from Redis GEO list
+                for (const s of worker.skills) {
+                    await RedisService.geoRemove(`geo:instant-workers:${s.skillId}`, worker.id);
+                }
                 const updateResult = await tx.instantRequestItem.updateMany({
                     where: {
                         id: itemId,
@@ -313,9 +317,6 @@ export class InstantRequestService {
             });
             await CacheInvalidationService.afterInstantRequestAccepted(result.providerUserId, result.workerUserId);
             const io = getIO();
-            // Targeted to the provider's own room (backend/src/socket/socket.ts
-            // joins every authenticated socket to `user:${userId}` on connect)
-            // instead of io.emit(), which broadcast to every connected user.
             io.to(`user:${result.providerUserId}`).emit("bookingUpdated", {
                 id: result.bookingId,
                 status: "accepted",
@@ -323,6 +324,8 @@ export class InstantRequestService {
                 requestId: result.item?.requestId,
                 itemId,
             });
+            // Notify worker of confirmation
+            io.to(`user:${result.workerUserId}`).emit("instant-request:matched");
             return {
                 ...result.item,
                 bookingId: result.bookingId,
@@ -384,6 +387,168 @@ export class InstantRequestService {
             },
         });
         return requests;
+    }
+    static async submitBid(userId, requestId, bidAmount) {
+        const worker = await prisma.workerProfile.findUnique({
+            where: { userId },
+            include: { skills: true, user: true }
+        });
+        if (!worker) {
+            throw new Error("Worker profile not found");
+        }
+        if (!worker.isAvailable || !worker.user.isActive) {
+            throw new Error("Worker is not available to place bids");
+        }
+        const request = await prisma.instantRequest.findUnique({
+            where: { id: requestId }
+        });
+        if (!request) {
+            throw new Error("Instant request not found");
+        }
+        if (request.bookingMode !== "BIDDING") {
+            throw new Error("This request does not support bidding");
+        }
+        if (request.status !== "OPEN") {
+            throw new Error("Bidding for this request is closed");
+        }
+        if (request.expiresAt < new Date()) {
+            throw new Error("Bidding for this request has expired");
+        }
+        // Enforce 20% max discount rule
+        const minBid = 0.80 * request.amount;
+        const maxBid = request.amount;
+        if (bidAmount < minBid || bidAmount > maxBid) {
+            throw new Error(`Bid amount must be between ₹${Math.round(minBid)} and ₹${maxBid}`);
+        }
+        const bid = await prisma.$transaction(async (tx) => {
+            return await tx.instantRequestBid.upsert({
+                where: {
+                    instantRequestId_workerId: {
+                        instantRequestId: requestId,
+                        workerId: worker.id
+                    }
+                },
+                create: {
+                    instantRequestId: requestId,
+                    workerId: worker.id,
+                    bidAmount,
+                    status: "ACTIVE"
+                },
+                update: {
+                    bidAmount,
+                    status: "ACTIVE"
+                },
+                include: {
+                    worker: {
+                        include: {
+                            user: true
+                        }
+                    }
+                }
+            });
+        });
+        // Notify provider of the live bid via Socket.IO
+        const io = getIO();
+        io.to(`user:${request.providerId}`).emit("instant-bidding:bid-submitted", {
+            bidId: bid.id,
+            instantRequestId: bid.instantRequestId,
+            bidAmount: bid.bidAmount,
+            workerName: bid.worker.user.name,
+            rating: 4.8, // Mocked rating profile
+            experience: bid.worker.experience,
+            totalJobs: 12, // Mocked jobs completed
+        });
+        return bid;
+    }
+    static async selectBid(userId, requestId, bidId) {
+        const lockKey = `lock:instant-bid-select:${requestId}`;
+        const lockToken = await RedisService.acquireLock(lockKey, 15);
+        if (!lockToken) {
+            throw new Error("Another transaction is processing this request selection.");
+        }
+        try {
+            const result = await prisma.$transaction(async (tx) => {
+                const request = await tx.instantRequest.findUnique({
+                    where: { id: requestId }
+                });
+                if (!request) {
+                    throw new Error("Instant request not found");
+                }
+                if (request.providerId !== userId) {
+                    throw new Error("You are not authorized to manage this request");
+                }
+                if (request.status !== "OPEN") {
+                    throw new Error("This request is no longer open for selection");
+                }
+                const bid = await tx.instantRequestBid.findUnique({
+                    where: { id: bidId },
+                    include: { worker: { include: { user: true } } }
+                });
+                if (!bid || bid.instantRequestId !== requestId) {
+                    throw new Error("Bid not found or doesn't belong to this request");
+                }
+                if (bid.status !== "ACTIVE") {
+                    throw new Error("This bid is no longer active");
+                }
+                // Recheck worker availability
+                if (!bid.worker.isAvailable || !bid.worker.user.isActive) {
+                    throw new Error("This worker is no longer available");
+                }
+                const startOtp = Math.floor(1000 + Math.random() * 9000).toString();
+                // Create booking with selected bid amount
+                const booking = await tx.booking.create({
+                    data: {
+                        providerId: request.providerId,
+                        workerId: bid.workerId,
+                        instantRequestId: request.id,
+                        amount: bid.bidAmount,
+                        status: "CONFIRMED",
+                        startOtp
+                    }
+                });
+                // Set statuses
+                await tx.instantRequestBid.update({
+                    where: { id: bidId },
+                    data: { status: "SELECTED" }
+                });
+                await tx.instantRequestBid.updateMany({
+                    where: {
+                        instantRequestId: requestId,
+                        id: { not: bidId }
+                    },
+                    data: { status: "REJECTED" }
+                });
+                await tx.instantRequest.update({
+                    where: { id: requestId },
+                    data: { status: "FILLED" }
+                });
+                // Mark worker unavailable
+                await tx.workerProfile.update({
+                    where: { id: bid.workerId },
+                    data: { isAvailable: false }
+                });
+                // Sync Redis availability removal
+                const workerSkills = await tx.workerSkill.findMany({
+                    where: { workerId: bid.workerId }
+                });
+                for (const ws of workerSkills) {
+                    await RedisService.geoRemove(`geo:instant-workers:${ws.skillId}`, bid.workerId);
+                }
+                return {
+                    bookingId: booking.id,
+                    providerUserId: request.providerId,
+                    workerUserId: bid.worker.userId
+                };
+            });
+            // Socket notifies
+            const io = getIO();
+            io.to(`user:${result.providerUserId}`).emit("instant-bidding:closed");
+            io.to(`user:${result.workerUserId}`).emit("instant-request:matched");
+            return result;
+        }
+        finally {
+            await RedisService.releaseLock(lockKey, lockToken);
+        }
     }
 }
 //# sourceMappingURL=instant-request.service.js.map

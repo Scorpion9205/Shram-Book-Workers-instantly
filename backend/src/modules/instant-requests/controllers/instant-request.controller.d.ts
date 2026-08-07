@@ -6,5 +6,7 @@ export declare class InstantRequestController {
     static calculateFare(req: AuthRequest, res: Response): Promise<Response<any, Record<string, any>>>;
     static acceptRequest(req: AuthRequest, res: Response): Promise<Response<any, Record<string, any>>>;
     static getMyRequests(req: AuthRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+    static submitBid(req: AuthRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+    static selectBid(req: AuthRequest, res: Response): Promise<Response<any, Record<string, any>>>;
 }
 //# sourceMappingURL=instant-request.controller.d.ts.map

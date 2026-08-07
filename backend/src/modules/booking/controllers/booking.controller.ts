@@ -94,10 +94,12 @@ export class BookingController {
                     message: "Invalid booking id",
                 });
             }
+            const { otp } = req.body;
             const booking =
                 await BookingService.startWork(
                     bookingId,
-                    req.user!.userId
+                    req.user!.userId,
+                    otp
                 );
             return res.status(200).json({
                 success: true,

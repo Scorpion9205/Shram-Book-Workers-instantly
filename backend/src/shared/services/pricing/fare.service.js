@@ -11,8 +11,9 @@ export class FareService {
             if (!skill) {
                 throw new Error("Skill not found");
             }
+            const rate = skill.baseRate || 400;
             subtotal +=
-                skill.baseRate *
+                rate *
                     item.requiredWorkers;
         }
         const platformFee = subtotal * 0.10;

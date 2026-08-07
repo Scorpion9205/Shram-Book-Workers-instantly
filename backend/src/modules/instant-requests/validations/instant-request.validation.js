@@ -15,6 +15,8 @@ export const createInstantRequestSchema = z.object({
         .number()
         .positive("Amount must be greater than 0")
         .optional(),
+    bookingMode: z.enum(["DIRECT", "BIDDING"]),
+    quoteId: z.string().uuid("Invalid quote ID"),
     items: z
         .array(z.object({
         skillId: z.uuid("Invalid skill id"),

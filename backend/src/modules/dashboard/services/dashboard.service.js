@@ -266,7 +266,7 @@ export class DashboardService {
             trendEnd = new Date(endDateStr);
             trendEnd.setHours(23, 59, 59, 999);
         }
-        const [activeJobs, completedJobs, activeBookings, completedBookings, pendingApplications, todaySpent, weekSpent, monthSpent, totalWorkersHired, recentBookings, recentApplicants, analyticsBookings,] = await Promise.all([
+        const [activeJobs, completedJobs, activeBookings, completedBookings, pendingApplications, todaySpent, weekSpent, monthSpent, totalWorkersHired, recentBookings, recentApplicants, analyticsBookings, activeInstantRequests, completedInstantRequests,] = await Promise.all([
             prisma.job.count({
                 where: {
                     providerId: userId,
@@ -439,6 +439,20 @@ export class DashboardService {
                     completedAt: true,
                 },
             }),
+            prisma.instantRequest.count({
+                where: {
+                    providerId: userId,
+                    status: {
+                        in: ["OPEN", "FILLED"]
+                    }
+                }
+            }),
+            prisma.instantRequest.count({
+                where: {
+                    providerId: userId,
+                    status: "COMPLETED"
+                }
+            })
         ]);
         const analyticsTrend = [];
         const diffTime = Math.abs(trendEnd.getTime() - trendStart.getTime());
@@ -465,8 +479,8 @@ export class DashboardService {
             });
         }
         const dashboard = {
-            activeJobs,
-            completedJobs,
+            activeJobs: activeJobs + activeInstantRequests,
+            completedJobs: completedJobs + completedInstantRequests,
             activeBookings,
             completedBookings,
             pendingApplications,

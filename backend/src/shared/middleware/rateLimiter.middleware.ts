@@ -28,7 +28,7 @@ export const rateLimiter = (
 
         
         const body =
-          req.body as {
+          (req.body || {}) as {
             identifier?: string;
             phone?: string;
             email?: string;

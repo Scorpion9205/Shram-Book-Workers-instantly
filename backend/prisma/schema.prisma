@@ -62,6 +62,7 @@ model WorkerProfile {
   reviews                 Review[]
   user                    User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
   skills                  WorkerSkill[]
+  instantBids             InstantRequestBid[]
 }
 
 model ProviderProfile {
@@ -204,6 +205,7 @@ model Booking {
   instantRequestId         String?
   instantRequestResponseId String?                 @unique
   updatedAt                DateTime                @updatedAt
+  startOtp                 String?
   agent                    AgentProfile?           @relation(fields: [agentId], references: [id])
   instantRequest           InstantRequest?         @relation(fields: [instantRequestId], references: [id])
   response                 InstantRequestResponse? @relation(fields: [instantRequestResponseId], references: [id])
@@ -265,6 +267,8 @@ model InstantRequest {
   provider    User                 @relation(fields: [providerId], references: [id])
   skill       Skill?               @relation(fields: [skillId], references: [id])
   items       InstantRequestItem[]
+  bookingMode BookingMode          @default(DIRECT)
+  bids        InstantRequestBid[]
 
   @@index([providerId])
   @@index([status])
@@ -348,4 +352,33 @@ enum InstantResponseStatus {
 enum ApplicantType {
   WORKER
   AGENT
+}
+
+enum BookingMode {
+  DIRECT
+  BIDDING
+}
+
+enum InstantBidStatus {
+  ACTIVE
+  SELECTED
+  REJECTED
+  WITHDRAWN
+  EXPIRED
+}
+
+model InstantRequestBid {
+  id               String           @id @default(uuid())
+  instantRequestId String
+  workerId         String
+  bidAmount        Float
+  status           InstantBidStatus @default(ACTIVE)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  instantRequest   InstantRequest   @relation(fields: [instantRequestId], references: [id], onDelete: Cascade)
+  worker           WorkerProfile    @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@unique([instantRequestId, workerId])
+  @@index([instantRequestId])
+  @@index([status])
 }

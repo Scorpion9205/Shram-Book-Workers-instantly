@@ -63,7 +63,8 @@ export class BookingController {
                     message: "Invalid booking id",
                 });
             }
-            const booking = await BookingService.startWork(bookingId, req.user.userId);
+            const { otp } = req.body;
+            const booking = await BookingService.startWork(bookingId, req.user.userId, otp);
             return res.status(200).json({
                 success: true,
                 message: "Work started successfully",
