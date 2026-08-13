@@ -3,8 +3,8 @@ export interface PricingContext {
   latitude: number;
   longitude: number;
   durationHours: number;
-  workerLatitude?: number;
-  workerLongitude?: number;
+  workerLatitude?: number | undefined;
+  workerLongitude?: number | undefined;
 }
 
 export interface IPricingStrategy {
