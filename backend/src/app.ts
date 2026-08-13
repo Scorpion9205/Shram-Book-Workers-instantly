@@ -17,6 +17,7 @@ import reviewRoutes
 
 import jobRoutes from "./modules/jobs/routes/job.routes.js"
 import dashboardRoutes from "./modules/dashboard/routes/dashboard.routes.js"
+import pricingRoutes from "./modules/pricing/routes/pricing.routes.js"
 import { notFoundHandler } from "./middleware/notFound.middleware.js"
 import { globalErrorHandler } from "./middleware/error.middleware.js"
 
@@ -86,6 +87,11 @@ app.use("/api/v1/jobs",jobRoutes)
 app.use(
   "/api/v1/dashboard",
   dashboardRoutes
+);
+
+app.use(
+  "/api/v1/pricing",
+  pricingRoutes
 );
 
 // Fallback handlers
