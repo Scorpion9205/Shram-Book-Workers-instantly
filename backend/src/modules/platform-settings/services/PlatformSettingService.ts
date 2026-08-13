@@ -1,7 +1,7 @@
-import { PlatformSetting } from '@prisma/client';
+import type { PlatformSetting } from '@prisma/client';
 import { BaseService } from '../../../core/base/BaseService.js';
-import { IPlatformSettingRepository } from '../interfaces/IPlatformSettingRepository.js';
-import { ICacheService } from '../../../core/interfaces/ICacheService.js';
+import type { IPlatformSettingRepository } from '../interfaces/IPlatformSettingRepository.js';
+import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import { CacheKeys } from '../../../infrastructure/cache/cacheKeys.js';
 import { NotFoundException } from '../../../core/exceptions/index.js';
 

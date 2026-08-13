@@ -2,7 +2,7 @@ import { Booking, BookingStatus } from '@prisma/client';
 
 export interface TransitionMeta {
   changedBy: string;
-  reason?: string;
+  reason?: string | undefined;
 }
 
 export interface IBookingStateService {

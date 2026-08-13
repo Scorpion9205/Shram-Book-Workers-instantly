@@ -22,7 +22,7 @@ export class BookingStatusHistoryRepository extends BaseRepository<BookingStatus
           fromStatus: data.fromStatus,
           toStatus: data.toStatus,
           changedBy: data.changedBy,
-          reason: data.reason,
+          reason: data.reason ?? null,
         },
       });
     } catch (err) {

@@ -1,4 +1,4 @@
-import amqp from 'amqplib';
+import * as amqp from 'amqplib';
 import { env } from '../../config/env.js';
 import { Logger } from '../../core/logger/Logger.js';
 import { ExchangeNames, QueueNames } from '../queue/queue.constants.js';
@@ -49,7 +49,7 @@ export async function bootstrapRabbitMQ(): Promise<amqp.Connection> {
 
     await channel.close();
     logger.info('RabbitMQ bootstrap completed successfully');
-    return connection;
+    return connection as any;
   } catch (err) {
     logger.error('Failed to bootstrap RabbitMQ queues/exchanges', err);
     throw err;

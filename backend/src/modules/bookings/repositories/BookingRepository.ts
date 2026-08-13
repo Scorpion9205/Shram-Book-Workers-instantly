@@ -89,7 +89,7 @@ export class BookingRepository extends BaseRepository<Booking> implements IBooki
 
   async update(
     id: string,
-    data: Partial<Booking>,
+    data: any,
     tx?: Prisma.TransactionClient,
   ): Promise<Booking> {
     const client = tx ?? this.prisma.client;
@@ -108,15 +108,15 @@ export class BookingRepository extends BaseRepository<Booking> implements IBooki
     try {
       return await client.booking.create({
         data: {
-          jobId: data.jobId,
+          jobId: data.jobId ?? null,
           providerId: data.providerId,
-          workerId: data.workerId,
-          agentId: data.agentId,
+          workerId: data.workerId ?? null,
+          agentId: data.agentId ?? null,
           amount: data.amount,
           estimatedFare: data.estimatedFare,
           status: data.status || BookingStatus.CREATED,
           type: data.type as any,
-          address: data.address,
+          address: data.address ?? null,
         },
       });
     } catch (err) {

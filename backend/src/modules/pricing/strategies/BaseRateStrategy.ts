@@ -1,4 +1,4 @@
-import { IPricingStrategy, PricingContext, ISkillRepository } from '../interfaces/IPricingStrategy.js';
+import type { IPricingStrategy, PricingContext, ISkillRepository } from '../interfaces/IPricingStrategy.js';
 import { NotFoundException } from '../../../core/exceptions/index.js';
 import { RateUnit } from '@prisma/client';
 

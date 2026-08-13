@@ -1,7 +1,7 @@
 import { BaseRepository } from '../../../core/base/BaseRepository.js';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { DatabaseException } from '../../../core/exceptions/index.js';
-import { ISkillRepository } from '../interfaces/IPricingStrategy.js';
+import type { ISkillRepository } from '../interfaces/IPricingStrategy.js';
 
 export class SkillRepository extends BaseRepository<any> implements ISkillRepository {
   constructor(private readonly prisma: PrismaService) {

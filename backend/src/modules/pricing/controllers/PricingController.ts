@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { BaseController } from '../../../core/base/BaseController.js';
-import { IFareCalculator } from '../interfaces/IPricingStrategy.js';
+import type { IFareCalculator } from '../interfaces/IPricingStrategy.js';
 import { PricingEstimateSchema } from '../dto/PricingEstimate.dto.js';
 
 export class PricingController extends BaseController {

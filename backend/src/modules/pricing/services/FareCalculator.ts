@@ -1,6 +1,6 @@
-import { IFareCalculator, IPricingStrategy, PricingContext } from '../interfaces/IPricingStrategy.js';
-import { IPlatformSettingRepository } from '../../platform-settings/interfaces/IPlatformSettingRepository.js';
-import { ICacheService } from '../../../core/interfaces/ICacheService.js';
+import type { IFareCalculator, IPricingStrategy, PricingContext } from '../interfaces/IPricingStrategy.js';
+import type { IPlatformSettingRepository } from '../../platform-settings/interfaces/IPlatformSettingRepository.js';
+import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import { CacheKeys } from '../../../infrastructure/cache/cacheKeys.js';
 import { Logger } from '../../../core/logger/Logger.js';
 

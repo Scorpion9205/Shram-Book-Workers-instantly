@@ -1,6 +1,6 @@
-import { IPricingStrategy, PricingContext } from '../interfaces/IPricingStrategy.js';
-import { IPlatformSettingRepository } from '../../platform-settings/interfaces/IPlatformSettingRepository.js';
-import { ICacheService } from '../../../core/interfaces/ICacheService.js';
+import type { IPricingStrategy, PricingContext } from '../interfaces/IPricingStrategy.js';
+import type { IPlatformSettingRepository } from '../../platform-settings/interfaces/IPlatformSettingRepository.js';
+import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import { CacheKeys } from '../../../infrastructure/cache/cacheKeys.js';
 
 export class WeatherStrategy implements IPricingStrategy {

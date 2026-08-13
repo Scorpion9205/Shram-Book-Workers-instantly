@@ -1,4 +1,4 @@
-import { IPricingStrategy, PricingContext } from '../interfaces/IPricingStrategy.js';
+import type { IPricingStrategy, PricingContext } from '../interfaces/IPricingStrategy.js';
 
 export class DurationStrategy implements IPricingStrategy {
   async calculate(ctx: PricingContext): Promise<number> {

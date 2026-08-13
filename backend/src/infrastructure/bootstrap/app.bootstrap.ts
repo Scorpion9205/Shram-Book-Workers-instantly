@@ -1,7 +1,7 @@
-import amqp from 'amqplib';
+import * as amqp from 'amqplib';
 import { PrismaService } from '../../database/prisma/PrismaService.js';
-import { ICacheService } from '../../core/interfaces/ICacheService.js';
-import { IEventPublisher } from '../../core/interfaces/IEventPublisher.js';
+import type { ICacheService } from '../../core/interfaces/ICacheService.js';
+import type { IEventPublisher } from '../../core/interfaces/IEventPublisher.js';
 import { CacheService } from '../cache/CacheService.js';
 import { RabbitMQEventPublisher } from '../queue/RabbitMQEventPublisher.js';
 import { Logger } from '../../core/logger/Logger.js';

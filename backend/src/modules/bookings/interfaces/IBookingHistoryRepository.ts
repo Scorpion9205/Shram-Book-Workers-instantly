@@ -5,7 +5,7 @@ export interface AppendHistoryInput {
   fromStatus: BookingStatus;
   toStatus: BookingStatus;
   changedBy: string;
-  reason?: string;
+  reason?: string | undefined;
 }
 
 export interface IBookingHistoryRepository {

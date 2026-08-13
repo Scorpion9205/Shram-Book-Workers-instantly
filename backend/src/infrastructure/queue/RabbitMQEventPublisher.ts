@@ -1,4 +1,4 @@
-import amqp from 'amqplib';
+import * as amqp from 'amqplib';
 import type { IEventPublisher } from '../../core/interfaces/IEventPublisher.js';
 import { Logger } from '../../core/logger/Logger.js';
 import { ExchangeNames } from './queue.constants.js';
@@ -15,7 +15,7 @@ export class RabbitMQEventPublisher implements IEventPublisher {
 
   async init(): Promise<void> {
     try {
-      this.channel = await this.connection.createChannel();
+      this.channel = await (this.connection as any).createChannel();
       this.channel.on('error', (err) => this.logger.error('RabbitMQ channel error', err));
       this.channel.on('close', () => this.logger.warn('RabbitMQ channel closed'));
       this.logger.info('RabbitMQ Event Publisher channel initialized');

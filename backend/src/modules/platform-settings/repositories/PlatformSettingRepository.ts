@@ -1,4 +1,4 @@
-import { PlatformSetting, Prisma } from '@prisma/client';
+import type { PlatformSetting, Prisma } from '@prisma/client';
 import { BaseRepository } from '../../../core/base/BaseRepository.js';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { DatabaseException } from '../../../core/exceptions/index.js';

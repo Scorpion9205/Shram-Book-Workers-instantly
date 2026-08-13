@@ -4,7 +4,7 @@ export { BookingStateService } from './services/BookingStateService.js';
 export { BookingRepository } from './repositories/BookingRepository.js';
 export { BookingStatusHistoryRepository } from './repositories/BookingStatusHistoryRepository.js';
 export { BookingPolicy } from './policies/BookingPolicy.js';
-export { BookingMapper } from './mappers/Booking.mapper.ts';
+export { BookingMapper } from './mappers/Booking.mapper.js';
 export { BookingEvents } from './events/booking.events.js';
 export { VALID_TRANSITIONS } from './constants/booking-transitions.constants.js';
 export { CancelReason } from './enums/CancelReason.js';

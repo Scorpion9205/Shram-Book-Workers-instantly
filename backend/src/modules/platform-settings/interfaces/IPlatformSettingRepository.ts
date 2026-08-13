@@ -1,4 +1,4 @@
-import { PlatformSetting, Prisma } from '@prisma/client';
+import type { PlatformSetting, Prisma } from '@prisma/client';
 
 export interface IPlatformSettingRepository {
   get(key: string, tx?: Prisma.TransactionClient): Promise<PlatformSetting | null>;

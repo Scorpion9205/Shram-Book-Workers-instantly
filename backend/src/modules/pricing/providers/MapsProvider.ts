@@ -1,4 +1,4 @@
-import { IMapsProvider } from '../interfaces/IPricingStrategy.js';
+import type { IMapsProvider } from '../interfaces/IPricingStrategy.js';
 import { Logger } from '../../../core/logger/Logger.js';
 
 export class MapsProvider implements IMapsProvider {

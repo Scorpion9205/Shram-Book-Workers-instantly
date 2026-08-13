@@ -15,7 +15,7 @@ export class BookingController extends BaseController {
   }
 
   getBookingById = async (req: Request, res: Response): Promise<void> => {
-    const bookingId = req.params.id;
+    const bookingId = req.params.id as string;
     const user = (req as any).user;
 
     const booking = await this.bookingService.getBookingById(bookingId);
@@ -68,7 +68,7 @@ export class BookingController extends BaseController {
   };
 
   cancelBooking = async (req: Request, res: Response): Promise<void> => {
-    const bookingId = req.params.id;
+    const bookingId = req.params.id as string;
     const user = (req as any).user;
     const dto = this.validate(CancelBookingSchema, req.body);
 

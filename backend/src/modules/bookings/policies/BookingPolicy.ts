@@ -1,4 +1,4 @@
-import { Booking, BookingStatus } from '@prisma/client';
+import { BookingStatus } from '@prisma/client';
 import { UserRole } from '../../../core/enums/Role.js';
 
 /**
@@ -6,16 +6,16 @@ import { UserRole } from '../../../core/enums/Role.js';
  * Decouples controllers and services from hardcoded role permissions checks.
  */
 export class BookingPolicy {
-  static canView(booking: Booking, user: { id: string; role: string }): boolean {
+  static canView(booking: any, user: { id: string; role: string }): boolean {
     if (user.role === UserRole.ADMIN) return true;
     return booking.providerId === user.id || booking.worker?.userId === user.id || booking.agentId === user.id;
   }
 
-  static canCancel(booking: Booking, user: { id: string; role: string }): boolean {
+  static canCancel(booking: any, user: { id: string; role: string }): boolean {
     if (user.role === UserRole.ADMIN) return true;
 
     // Cancellations can only happen before work actually starts
-    const allowedCancelStates = [
+    const allowedCancelStates: BookingStatus[] = [
       BookingStatus.CREATED,
       BookingStatus.PAYMENT_PENDING,
       BookingStatus.PAYMENT_CONFIRMED,
@@ -30,7 +30,7 @@ export class BookingPolicy {
     return booking.providerId === user.id || booking.worker?.userId === user.id;
   }
 
-  static canReview(booking: Booking, user: { id: string; role: string }): boolean {
+  static canReview(booking: any, user: { id: string; role: string }): boolean {
     // Reviews can only be submitted after work completes
     if (booking.status !== BookingStatus.WORK_COMPLETED && booking.status !== BookingStatus.PAYMENT_SETTLED) {
       return false;
