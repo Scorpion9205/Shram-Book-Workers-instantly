@@ -11,12 +11,15 @@ import providerRoutes from "./modules/providers/routes/provider.routes.js";
 import agentRoutes from "./modules/agents/routes/agent.routes.js";
 import skillRoutes from "./modules/skills/routes/skill.routes.js"
 import instantRequestRoutes from "./modules/instant-requests/routes/instant-request.routes.js";
-import bookingRoutes from "./modules/booking/routes/booking.routes.js"
+import bookingRoutes from "./modules/bookings/routes/booking.routes.js"
 import reviewRoutes
   from "./modules/reviews/routes/review.routes.js";
 
-  import jobRoutes from "./modules/jobs/routes/job.routes.js"
-  import dashboardRoutes from "./modules/dashboard/routes/dashboard.routes.js"
+import jobRoutes from "./modules/jobs/routes/job.routes.js"
+import dashboardRoutes from "./modules/dashboard/routes/dashboard.routes.js"
+import { notFoundHandler } from "./middleware/notFound.middleware.js"
+import { globalErrorHandler } from "./middleware/error.middleware.js"
+
 const app = express();
 
 
@@ -85,6 +88,11 @@ app.use(
   dashboardRoutes
 );
 
+// Fallback handlers
+app.use(notFoundHandler);
+app.use(globalErrorHandler);
+
 export default app;
+
 
 

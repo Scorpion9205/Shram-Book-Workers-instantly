@@ -1,74 +1,63 @@
-import {Router} from "express"
-import { AuthController } from "../controllers/auth.controller.js"
-import { authMiddleware, type AuthRequest } from "../../../shared/middleware/auth.middleware.js"
-import { roleMiddleware } from "../../../shared/middleware/role.middleware.js"
-import { UserRole } from "@prisma/client"
-import { rateLimiter } from "../../../shared/middleware/rateLimiter.middleware.js"
+import { Router } from 'express';
+import { AuthController } from '../controllers/AuthController.js';
+import { AuthService } from '../services/AuthService.js';
+import { AuthRepository } from '../repositories/AuthRepository.js';
+import { OTPRepository } from '../repositories/OTPRepository.js';
+import { OTPService } from '../services/OTPService.js';
+import { TokenService } from '../services/TokenService.js';
+import { PrismaService } from '../../../database/prisma/PrismaService.js';
+import { CacheService } from '../../../infrastructure/cache/CacheService.js';
+import { redis } from '../../../shared/config/redis.js';
+import { authenticate } from '../middleware/authenticate.middleware.js';
+import { authorize } from '../middleware/role.middleware.js';
+import { UserRole } from '../../../core/enums/Role.js';
 
+// Resolve dependencies manually to maintain compatibility with existing route imports in app.ts
+const prisma = PrismaService.getInstance();
+const cache = (global as any).deps?.cache || new CacheService(redis);
+const userRepo = new AuthRepository(prisma);
+const otpRepo = new OTPRepository(prisma);
 
-const router = Router()
-router.post("/signup",rateLimiter(
-    "signup",
-    3,
-    15 * 60
-  ),AuthController.signup)
+// Simple providers for Phase 3 stubbing (replaced fully in Phase 8)
+const emailProvider = {
+  send: async (to: string, subject: string, body: string) => {
+    console.log(`[Email Mock] To: ${to} | Subject: ${subject} | Body: ${body}`);
+  },
+  sendBatch: async (messages: any) => {
+    console.log(`[Email Mock] Batch send requested`, messages);
+  },
+};
 
-router.post("/login", rateLimiter(
-    "login",
-    5,
-    15 * 60
-  ),AuthController.login)
- 
+const smsProvider = {
+  send: async (to: string, body: string) => {
+    console.log(`[SMS Mock] To: ${to} | Body: ${body}`);
+  },
+};
 
-router.get("/worker-only",authMiddleware,roleMiddleware(UserRole.WORKER),(req,res)=>{
-    return res.status(200).json({
-        success:true,
-        message:"Welcome Worker"
-    })
-})
+const otpService = new OTPService(otpRepo, cache, emailProvider, smsProvider);
+const tokenService = new TokenService(cache);
+const authService = new AuthService(userRepo, otpService, tokenService, cache, prisma);
+const controller = new AuthController(authService, cache);
 
-router.post(
-  "/refresh-token",
-  rateLimiter(
-    "signup",
-    3,
-    15 * 60
-  ),
-  AuthController.refreshToken
-);
+const router = Router();
 
-router.post(
-  "/logout",
-  authMiddleware,
-  AuthController.logout
-);
-router.post(
-  "/forgot-password",
-  AuthController.forgotPassword
-);
+// OTP Authentication (Provider/Worker)
+router.post('/signup', controller.requestOTP);
+router.post('/login', controller.verifyOTP);
+router.post('/send-otp', controller.requestOTP);
+router.post('/verify-otp', controller.verifyOTP);
 
-router.post(
-  "/reset-password",
-  AuthController.resetPassword
-);
-router.post(
-    "/send-otp",
-    AuthController.sendOTP
-);
+// Google OAuth
+router.post('/google', controller.googleAuth);
 
-router.post(
-    "/verify-otp",
-    AuthController.verifyOTP
-);
+// Admin/Agent Hashed Password Authentication
+router.post('/admin/login', controller.adminLogin);
 
-router.post(
-    "/resend-otp",
-    AuthController.resendOTP
-);
+// Token Management
+router.post('/refresh-token', controller.refreshToken);
+router.post('/logout', authenticate, controller.logout);
 
-router.patch(
-    "/change-password",
-    authMiddleware,
-    AuthController.changePassword
-);
-export default router
+// Password Management (Admin/Agent)
+router.patch('/change-password', authenticate, authorize(UserRole.ADMIN, UserRole.AGENT), controller.changePassword);
+
+export default router;

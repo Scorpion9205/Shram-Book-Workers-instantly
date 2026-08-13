@@ -1,0 +1,5 @@
+export enum OTPPurpose {
+  LOGIN = 'LOGIN',
+  WORK_START = 'WORK_START',
+  RESET_PASSWORD = 'RESET_PASSWORD',
+}

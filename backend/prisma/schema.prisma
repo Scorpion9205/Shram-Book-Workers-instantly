@@ -6,15 +6,121 @@ datasource db {
   provider = "postgresql"
 }
 
+enum UserRole {
+  ADMIN
+  WORKER
+  PROVIDER
+  AGENT
+}
+
+enum JobStatus {
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ApplicationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum BookingStatus {
+  CREATED
+  PAYMENT_PENDING
+  PAYMENT_CONFIRMED
+  WORKER_ASSIGNED
+  WORKER_EN_ROUTE
+  OTP_VERIFIED
+  WORK_STARTED
+  WORK_COMPLETED
+  PAYMENT_SETTLED
+  REVIEWED
+  CLOSED
+  CANCELLED_BY_PROVIDER
+  CANCELLED_BY_WORKER
+  EXPIRED
+  DISPUTED
+}
+
+enum BookingType {
+  NORMAL_JOB
+  INSTANT_REQUEST
+  INSTANT_BIDDING
+}
+
+enum ProviderType {
+  INDIVIDUAL
+  COMPANY
+}
+
+enum InstantRequestStatus {
+  OPEN
+  FILLED
+  EXPIRED
+  CANCELLED
+  COMPLETED
+}
+
+enum InstantResponseStatus {
+  ACCEPTED
+  REJECTED
+}
+
+enum ApplicantType {
+  WORKER
+  AGENT
+}
+
+enum BookingMode {
+  DIRECT
+  BIDDING
+}
+
+enum InstantBidStatus {
+  ACTIVE
+  SELECTED
+  REJECTED
+  WITHDRAWN
+  EXPIRED
+}
+
+enum OtpPurpose {
+  LOGIN
+  WORK_START
+  RESET_PASSWORD
+}
+
+enum OtpChannel {
+  EMAIL
+  SMS
+}
+
+enum RateUnit {
+  HOURLY
+  DAILY
+  FIXED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
 model User {
   id                 String           @id @default(uuid())
   name               String
   phone              String           @unique
   email              String?          @unique
-  password           String
+  passwordHash       String?          // Optional: only for ADMIN / AGENT passwords
+  googleId           String?          @unique
   role               UserRole
   isVerified         Boolean          @default(false)
-  refreshToken       String?
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
   address            String?
@@ -23,6 +129,7 @@ model User {
   city               String?
   pincode            String?
   state              String?
+  deletedAt          DateTime?        // Soft delete support
   agentProfile       AgentProfile?
   bookingsAsProvider Booking[]        @relation("ProviderBookings")
   instantRequests    InstantRequest[]
@@ -30,18 +137,7 @@ model User {
   notifications      Notification[]
   providerProfile    ProviderProfile?
   providerReviews    Review[]         @relation("ProviderReviews")
-  location           UserLocation?
   workerProfile      WorkerProfile?
-}
-
-model UserLocation {
-  id        String   @id @default(uuid())
-  userId    String   @unique
-  latitude  Float
-  longitude Float
-  updatedAt DateTime @updatedAt
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model WorkerProfile {
@@ -49,11 +145,13 @@ model WorkerProfile {
   userId                  String                   @unique
   bio                     String?
   experience              Int                      @default(0)
-  dailyRate               Float?
+  dailyRate               Decimal?
   isAvailable             Boolean                  @default(true)
   rating                  Float                    @default(0)
   totalJobs               Int                      @default(0)
   totalReviews            Int                      @default(0)
+  latitude                Decimal?
+  longitude               Decimal?
   agentLinks              AgentWorker[]
   applications            Application[]
   bookings                Booking[]
@@ -97,7 +195,8 @@ model AgentProfile {
 model Skill {
   id                  String               @id @default(uuid())
   name                String               @unique
-  baseRate            Float                @default(0)
+  baseRate            Decimal
+  rateUnit            RateUnit             @default(HOURLY)
   instantRequests     InstantRequest[]
   instantRequestItems InstantRequestItem[]
   jobs                Job[]
@@ -138,7 +237,7 @@ model Job {
   city            String?
   state           String?
   pincode         String?
-  budget          Float?
+  budget          Decimal?
   requiredWorkers Int
   status          JobStatus     @default(OPEN)
   providerId      String
@@ -160,13 +259,12 @@ model Application {
   jobId         String
   workerId      String?
   agentId       String?
-  bidAmount     Float?
+  bidAmount     Decimal?
   workerCount   Int?
   status        ApplicationStatus @default(PENDING)
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
   applicantType ApplicantType
-  
   message       String?
   agent         AgentProfile?     @relation(fields: [agentId], references: [id])
   job           Job               @relation(fields: [jobId], references: [id])
@@ -197,8 +295,8 @@ model Booking {
   providerId               String
   workerId                 String?
   agentId                  String?
-  amount                   Float
-  status                   BookingStatus           @default(PENDING)
+  amount                   Decimal
+  status                   BookingStatus           @default(CREATED)
   startedAt                DateTime?
   completedAt              DateTime?
   createdAt                DateTime                @default(now())
@@ -206,6 +304,16 @@ model Booking {
   instantRequestResponseId String?                 @unique
   updatedAt                DateTime                @updatedAt
   startOtp                 String?
+  type                     BookingType             @default(NORMAL_JOB)
+  estimatedFare            Decimal                 @default(0.00)
+  finalFare                Decimal?
+  scheduledAt              DateTime?
+  durationHours            Decimal?
+  latitude                 Decimal?
+  longitude                Decimal?
+  address                  Json?
+  notes                    String?
+  deletedAt                DateTime?
   agent                    AgentProfile?           @relation(fields: [agentId], references: [id])
   instantRequest           InstantRequest?         @relation(fields: [instantRequestId], references: [id])
   response                 InstantRequestResponse? @relation(fields: [instantRequestResponseId], references: [id])
@@ -214,6 +322,9 @@ model Booking {
   worker                   WorkerProfile?          @relation(fields: [workerId], references: [id])
   bookingWorkers           BookingWorker[]
   review                   Review?
+  otps                     Otp[]
+  statusHistory            BookingStatusHistory[]
+  chatThread               ChatThread?
 
   @@index([providerId])
   @@index([workerId])
@@ -221,6 +332,31 @@ model Booking {
   @@index([jobId])
   @@index([instantRequestId])
   @@index([status])
+}
+
+model BookingStatusHistory {
+  id         String        @id @default(uuid())
+  bookingId  String
+  booking    Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  fromStatus BookingStatus
+  toStatus   BookingStatus
+  changedBy  String
+  reason     String?
+  changedAt  DateTime      @default(now())
+}
+
+model Otp {
+  id          String      @id @default(uuid())
+  purpose     OtpPurpose
+  channel     OtpChannel
+  identifier  String
+  codeHash    String
+  attempts    Int         @default(0)
+  consumedAt  DateTime?
+  expiresAt   DateTime
+  bookingId   String?
+  booking     Booking?    @relation(fields: [bookingId], references: [id])
+  createdAt   DateTime    @default(now())
 }
 
 model Review {
@@ -258,7 +394,7 @@ model InstantRequest {
   latitude    Float
   longitude   Float
   address     String?
-  amount      Float
+  amount      Decimal
   status      InstantRequestStatus @default(OPEN)
   expiresAt   DateTime
   createdAt   DateTime             @default(now())
@@ -301,77 +437,11 @@ model InstantRequestItem {
   @@index([skillId])
 }
 
-enum UserRole {
-  ADMIN
-  WORKER
-  PROVIDER
-  AGENT
-}
-
-enum JobStatus {
-  OPEN
-  ASSIGNED
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
-}
-
-enum ApplicationStatus {
-  PENDING
-  ACCEPTED
-  REJECTED
-  WITHDRAWN
-}
-
-enum BookingStatus {
-  PENDING
-  CONFIRMED
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
-}
-
-enum ProviderType {
-  INDIVIDUAL
-  COMPANY
-}
-
-enum InstantRequestStatus {
-  OPEN
-  FILLED
-  EXPIRED
-  CANCELLED
-  COMPLETED
-}
-
-enum InstantResponseStatus {
-  ACCEPTED
-  REJECTED
-}
-
-enum ApplicantType {
-  WORKER
-  AGENT
-}
-
-enum BookingMode {
-  DIRECT
-  BIDDING
-}
-
-enum InstantBidStatus {
-  ACTIVE
-  SELECTED
-  REJECTED
-  WITHDRAWN
-  EXPIRED
-}
-
 model InstantRequestBid {
   id               String           @id @default(uuid())
   instantRequestId String
   workerId         String
-  bidAmount        Float
+  bidAmount        Decimal
   status           InstantBidStatus @default(ACTIVE)
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
@@ -381,4 +451,41 @@ model InstantRequestBid {
   @@unique([instantRequestId, workerId])
   @@index([instantRequestId])
   @@index([status])
+}
+
+model NotificationTemplate {
+  id        String   @id @default(uuid())
+  type      String
+  channel   String
+  locale    String   @default("en")
+  subject   String?
+  body      String
+  variables Json?
+  updatedAt DateTime @updatedAt
+
+  @@unique([type, channel, locale])
+}
+
+model PlatformSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model ChatThread {
+  id        String        @id @default(uuid())
+  bookingId String        @unique
+  booking   Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  messages  ChatMessage[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model ChatMessage {
+  id        String     @id @default(uuid())
+  threadId  String
+  thread    ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  senderId  String
+  content   String
+  createdAt DateTime   @default(now())
 }

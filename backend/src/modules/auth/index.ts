@@ -1,0 +1,14 @@
+export { AuthController } from './controllers/AuthController.js';
+export { AuthService } from './services/AuthService.js';
+export { OTPService } from './services/OTPService.js';
+export { TokenService } from './services/TokenService.js';
+export { AuthRepository } from './repositories/AuthRepository.js';
+export { OTPRepository } from './repositories/OTPRepository.js';
+export type { IAuthService } from './interfaces/IAuthService.js';
+export type { IAuthRepository } from './interfaces/IAuthRepository.js';
+export type { ITokenPayload } from './interfaces/ITokenPayload.js';
+export { OTPPurpose, OTPChannel, TokenType } from './enums/index.js';
+export { OTP_CONSTANTS } from './constants/otp.constants.js';
+export { authenticate } from './middleware/authenticate.middleware.js';
+export { authorize } from './middleware/role.middleware.js';
+export { default as authRouter } from './routes/auth.routes.js';
