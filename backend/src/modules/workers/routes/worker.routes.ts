@@ -1,39 +1,50 @@
-import { Router } from "express";
+import { Router } from 'express';
+import { WorkerController } from '../controllers/WorkerController.js';
+import { WorkerService } from '../services/WorkerService.js';
+import { WorkerRepository } from '../repositories/WorkerRepository.js';
+import { PrismaService } from '../../../database/prisma/PrismaService.js';
+import { CacheService } from '../../../infrastructure/cache/CacheService.js';
+import { redis } from '../../../shared/config/redis.js';
+import { authenticate } from '../../auth/middleware/authenticate.middleware.js';
+import { authorize } from '../../auth/middleware/role.middleware.js';
+import { UserRole } from '../../../core/enums/Role.js';
 
-import { authMiddleware } from "../../../shared/middleware/auth.middleware.js";
-import { roleMiddleware } from "../../../shared/middleware/role.middleware.js";
+// Dependency wiring fallback
+const prisma = PrismaService.getInstance();
+const cache = (global as any).deps?.cache || new CacheService(redis);
 
-import { WorkerController } from "../controllers/worker.controller.js";
+const workerRepo = new WorkerRepository(prisma);
+const workerService = new WorkerService(workerRepo, cache);
+const controller = new WorkerController(workerService);
 
 const router = Router();
 
 router.post(
-  "/profile",
-  authMiddleware,
-  roleMiddleware("WORKER"),
-  WorkerController.createProfile
+  '/profile',
+  authenticate,
+  authorize(UserRole.WORKER),
+  controller.createProfile,
 );
 
 router.get(
-  "/me",
-  authMiddleware,
-  roleMiddleware("WORKER"),
-  WorkerController.getMyProfile
+  '/me',
+  authenticate,
+  authorize(UserRole.WORKER),
+  controller.getMyProfile,
 );
 
 router.patch(
-  "/me",
-  authMiddleware,
-  roleMiddleware("WORKER"),
-  WorkerController.updateProfile
+  '/me',
+  authenticate,
+  authorize(UserRole.WORKER),
+  controller.updateProfile,
 );
 
 router.patch(
-  "/availability",
-  authMiddleware,
-  roleMiddleware("WORKER"),
-  WorkerController.updateAvailability
+  '/availability',
+  authenticate,
+  authorize(UserRole.WORKER),
+  controller.updateAvailability,
 );
-
 
 export default router;
