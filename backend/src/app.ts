@@ -84,6 +84,10 @@ app.use("/api/v1/admin", (req, res, next) => {
   (global as any).deps.adminRouter(req, res, next);
 });
 
+app.use("/api/v1/notifications", (req, res, next) => {
+  (global as any).deps.notificationRouter(req, res, next);
+});
+
 // Fallback handlers
 app.use(notFoundHandler);
 app.use(globalErrorHandler);

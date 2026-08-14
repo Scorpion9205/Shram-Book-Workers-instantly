@@ -19,6 +19,26 @@ import { WalletRepository, TransactionRepository, WalletService, WalletControlle
 import { AdminService, AdminController, createAdminRouter } from '../../modules/admin/index.js';
 import { BookingRepository, BookingStatusHistoryRepository, BookingStateService } from '../../modules/bookings/index.js';
 
+// Notifications Module Imports
+import {
+  NotificationTemplateRepository,
+  NotificationRepository,
+  NotificationDispatcher,
+  NotificationController,
+  createNotificationRouter,
+} from '../../modules/notifications/index.js';
+
+// Infrastructure Providers
+import { ResendProvider } from '../providers/email/ResendProvider.js';
+import { ExotelProvider } from '../providers/sms/ExotelProvider.js';
+import { FirebaseProvider } from '../providers/push/FirebaseProvider.js';
+import { S3Provider } from '../providers/storage/S3Provider.js';
+
+// Queue Consumers
+import { NotificationConsumer } from '../queue/consumers/NotificationConsumer.js';
+import { WalletConsumer } from '../queue/consumers/WalletConsumer.js';
+import { CleanupConsumer } from '../queue/consumers/CleanupConsumer.js';
+
 const logger = new Logger('AppBootstrap');
 
 export interface AppDependencies {
@@ -36,6 +56,7 @@ export interface AppDependencies {
   paymentRouter: Router;
   walletRouter: Router;
   adminRouter: Router;
+  notificationRouter: Router;
 }
 
 /**
@@ -69,9 +90,15 @@ export async function wireModules(
   const transactionRepo = new TransactionRepository(prismaService);
   const bookingRepo = new BookingRepository(prismaService);
   const bookingHistoryRepo = new BookingStatusHistoryRepository(prismaService);
+  const notificationTemplateRepo = new NotificationTemplateRepository(prismaService);
+  const notificationRepo = new NotificationRepository(prismaService);
 
   // 3. Providers
   const razorpayProvider = new RazorpayProvider(env.RAZORPAY_KEY_ID!, env.RAZORPAY_KEY_SECRET!);
+  const emailProvider = new ResendProvider(env.RESEND_API_KEY, env.EMAIL_FROM);
+  const smsProvider = new ExotelProvider(env.EXOTEL_API_KEY, env.EXOTEL_API_TOKEN, env.EXOTEL_SID, env.EXOTEL_FROM);
+  const pushProvider = new FirebaseProvider(env.FIREBASE_SERVICE_ACCOUNT);
+  const s3Provider = new S3Provider(env.AWS_S3_BUCKET, env.AWS_REGION, env.AWS_ACCESS_KEY_ID, env.AWS_SECRET_ACCESS_KEY);
 
   // 4. Services
   const bookingStateService = new BookingStateService(
@@ -126,6 +153,15 @@ export async function wireModules(
     prismaService,
     cacheService,
   );
+  const notificationDispatcher = new NotificationDispatcher(
+    notificationTemplateRepo,
+    userRepo,
+    notificationRepo,
+    emailProvider,
+    smsProvider,
+    pushProvider,
+    cacheService,
+  );
 
   // 5. Controllers
   const userController = new UserController(userService);
@@ -136,6 +172,7 @@ export async function wireModules(
   const paymentController = new PaymentController(paymentService);
   const walletController = new WalletController(walletService);
   const adminController = new AdminController(adminService);
+  const notificationController = new NotificationController(notificationRepo);
 
   // 6. Routers
   const userRouter = createUserRouter(userController);
@@ -146,6 +183,26 @@ export async function wireModules(
   const paymentRouter = createPaymentRouter(paymentController);
   const walletRouter = createWalletRouter(walletController);
   const adminRouter = createAdminRouter(adminController);
+  const notificationRouter = createNotificationRouter(notificationController);
+
+  // 7. Start Queue Consumers
+  try {
+    const channel = await (rabbitConnection as any).createChannel();
+    
+    const notificationConsumer = new NotificationConsumer(channel, notificationDispatcher);
+    await notificationConsumer.start();
+    
+    const walletConsumer = new WalletConsumer(channel, walletService, bookingRepo);
+    await walletConsumer.start();
+    
+    const cleanupConsumer = new CleanupConsumer(channel, prismaService);
+    await cleanupConsumer.start();
+    
+    logger.info('All background queue consumers started successfully');
+  } catch (err) {
+    logger.error('Failed to start queue consumers', err);
+    throw err;
+  }
 
   logger.info('Module wiring completed successfully');
 
@@ -162,5 +219,6 @@ export async function wireModules(
     paymentRouter,
     walletRouter,
     adminRouter,
+    notificationRouter,
   };
 }
