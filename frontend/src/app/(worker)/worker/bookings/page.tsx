@@ -9,13 +9,25 @@ import { EmptyState } from "@/components/cards/EmptyState";
 import { ListSkeleton } from "@/components/loaders/Skeletons";
 import { useGetWorkerBookingsQuery } from "@/features/booking/bookingApi";
 
-const statusVariant = {
-  PENDING: "outline",
-  CONFIRMED: "default",
-  IN_PROGRESS: "default",
-  COMPLETED: "success",
-  CANCELLED: "destructive",
-} as const;
+import type { BookingStatus } from "@/types";
+
+const statusVariant: Record<BookingStatus, "outline" | "default" | "success" | "destructive"> = {
+  CREATED: "outline",
+  PAYMENT_PENDING: "outline",
+  PAYMENT_CONFIRMED: "default",
+  WORKER_ASSIGNED: "default",
+  WORKER_EN_ROUTE: "default",
+  OTP_VERIFIED: "default",
+  WORK_STARTED: "default",
+  WORK_COMPLETED: "success",
+  PAYMENT_SETTLED: "success",
+  REVIEWED: "success",
+  CLOSED: "outline",
+  CANCELLED_BY_PROVIDER: "destructive",
+  CANCELLED_BY_WORKER: "destructive",
+  EXPIRED: "destructive",
+  DISPUTED: "destructive",
+};
 
 export default function WorkerBookingsPage() {
   const { data, isLoading } = useGetWorkerBookingsQuery();

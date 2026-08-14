@@ -150,11 +150,21 @@ export interface JobApplication {
   job?: Job;
 }
 export type BookingStatus =
-  | "PENDING"
-  | "CONFIRMED"
-  | "IN_PROGRESS"
-  | "COMPLETED"
-  | "CANCELLED";
+  | "CREATED"
+  | "PAYMENT_PENDING"
+  | "PAYMENT_CONFIRMED"
+  | "WORKER_ASSIGNED"
+  | "WORKER_EN_ROUTE"
+  | "OTP_VERIFIED"
+  | "WORK_STARTED"
+  | "WORK_COMPLETED"
+  | "PAYMENT_SETTLED"
+  | "REVIEWED"
+  | "CLOSED"
+  | "CANCELLED_BY_PROVIDER"
+  | "CANCELLED_BY_WORKER"
+  | "EXPIRED"
+  | "DISPUTED";
 
 export interface Booking {
   id: string;

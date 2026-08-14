@@ -6,39 +6,43 @@ import { cn } from "@/lib/utils";
 import type { BookingStatus } from "@/types";
 
 const steps = [
-{
-key:"PENDING",
-label:"Pending",
-icon:Clock
-},
-{
-key:"CONFIRMED",
-label:"Confirmed",
-icon:Check
-},
-{
-key:"IN_PROGRESS",
-label:"In Progress",
-icon:PlayCircle
-},
-{
-key:"COMPLETED",
-label:"Completed",
-icon:CheckCircle2
-}
+  {
+    key: "CREATED",
+    keys: ["CREATED", "PAYMENT_PENDING", "PAYMENT_CONFIRMED"],
+    label: "Created",
+    icon: Clock
+  },
+  {
+    key: "ASSIGNED",
+    keys: ["WORKER_ASSIGNED", "WORKER_EN_ROUTE", "OTP_VERIFIED"],
+    label: "Assigned",
+    icon: Check
+  },
+  {
+    key: "IN_PROGRESS",
+    keys: ["WORK_STARTED"],
+    label: "In Progress",
+    icon: PlayCircle
+  },
+  {
+    key: "COMPLETED",
+    keys: ["WORK_COMPLETED", "PAYMENT_SETTLED", "REVIEWED", "CLOSED"],
+    label: "Completed",
+    icon: CheckCircle2
+  }
 ];
 
 export function BookingTimeline({ status }: { status: BookingStatus }) {
- if(status==="CANCELLED"){
+  if (["CANCELLED_BY_PROVIDER", "CANCELLED_BY_WORKER", "EXPIRED", "DISPUTED"].includes(status)) {
     return (
       <div className="flex items-center gap-2 rounded-2xl border border-destructive/20 bg-destructive/5 p-4 text-destructive">
         <XCircle className="size-5" />
-        <span className="font-medium">This booking was cancelled</span>
+        <span className="font-medium">This booking was cancelled or expired</span>
       </div>
     );
   }
 
-  const currentIdx = steps.findIndex((s) => s.key === status);
+  const currentIdx = steps.findIndex((s) => s.keys.includes(status));
 
   return (
     <div className="flex items-center justify-between">

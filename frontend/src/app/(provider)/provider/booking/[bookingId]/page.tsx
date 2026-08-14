@@ -60,7 +60,7 @@ export default function ProviderBookingDetailPage({ params }: { params: Promise<
         </CardContent>
       </Card>
 
-      {booking.status === "CONFIRMED" && booking.startOtp && (
+      {booking.status !== "WORK_STARTED" && booking.status !== "WORK_COMPLETED" && booking.status !== "PAYMENT_SETTLED" && booking.status !== "REVIEWED" && booking.status !== "CLOSED" && booking.startOtp && (
         <Card className="bg-primary/5 border-primary/20">
           <CardContent className="pt-6 flex flex-col items-center justify-center text-center space-y-2">
             <p className="text-sm text-muted-foreground font-semibold">Share this OTP with the worker when they arrive to start the job:</p>
@@ -183,7 +183,7 @@ export default function ProviderBookingDetailPage({ params }: { params: Promise<
         </div>
 
       </div>
-      {booking.status === "COMPLETED" && !booking.review && (
+      {(booking.status === "WORK_COMPLETED" || booking.status === "PAYMENT_SETTLED") && !booking.review && (
         <Button className="w-full" size="lg" variant="outline" onClick={() => setReviewOpen(true)}>
           <Star className="size-4" /> Rate this Worker
         </Button>

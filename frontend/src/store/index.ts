@@ -4,6 +4,7 @@ import { apiSlice } from "@/services/api/apiSlice";
 import authReducer from "./authSlice";
 import uiReducer from "./uiSlice";
 import notificationReducer from "./notificationSlice";
+import chatReducer from "./chatSlice";
 
 export const makeStore = () => {
   const store = configureStore({
@@ -11,6 +12,7 @@ export const makeStore = () => {
       auth: authReducer,
       ui: uiReducer,
       notifications: notificationReducer,
+      chat: chatReducer,
       [apiSlice.reducerPath]: apiSlice.reducer,
     },
     middleware: (getDefaultMiddleware) =>

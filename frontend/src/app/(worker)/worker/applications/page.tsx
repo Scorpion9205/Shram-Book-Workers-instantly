@@ -11,9 +11,9 @@ import { useGetMyApplicationsQuery } from "@/features/jobs/jobsApi";
 import type { ApplicationStatus } from "@/types";
 
 const statusVariant: Record<ApplicationStatus, "default" | "success" | "destructive"> = {
-  pending: "default",
-  accepted: "success",
-  rejected: "destructive",
+  PENDING: "default",
+  ACCEPTED: "success",
+  REJECTED: "destructive",
 };
 
 export default function WorkerApplicationsPage() {
@@ -32,9 +32,9 @@ export default function WorkerApplicationsPage() {
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         <TabsList>
           <TabsTrigger value="all">All</TabsTrigger>
-          <TabsTrigger value="pending">Pending</TabsTrigger>
-          <TabsTrigger value="accepted">Accepted</TabsTrigger>
-          <TabsTrigger value="rejected">Rejected</TabsTrigger>
+          <TabsTrigger value="PENDING">Pending</TabsTrigger>
+          <TabsTrigger value="ACCEPTED">Accepted</TabsTrigger>
+          <TabsTrigger value="REJECTED">Rejected</TabsTrigger>
         </TabsList>
         <TabsContent value={tab}>
           {isLoading ? (
@@ -50,7 +50,7 @@ export default function WorkerApplicationsPage() {
                     <p className="text-xs text-muted-foreground">{app.job?.address}</p>
                   </div>
                   <Badge variant={statusVariant[app.status]} className="shrink-0 capitalize">
-                    {app.status}
+                    {app.status.toLowerCase()}
                   </Badge>
                 </Card>
               ))}
