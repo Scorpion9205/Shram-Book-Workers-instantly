@@ -1,13 +1,13 @@
-import { User } from '@prisma/client';
+import type { User } from '@prisma/client';
 import { UserRole } from '../../../core/enums/Role.js';
 
 export interface CreateUserInput {
   name: string;
   phone: string;
-  email?: string;
+  email?: string | null | undefined;
   role: UserRole;
-  googleId?: string;
-  passwordHash?: string;
+  googleId?: string | null | undefined;
+  passwordHash?: string | null | undefined;
   isVerified?: boolean;
 }
 

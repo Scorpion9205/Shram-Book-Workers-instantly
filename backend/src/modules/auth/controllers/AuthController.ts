@@ -1,13 +1,12 @@
 import type { Request, Response } from 'express';
 import { BaseController } from '../../../core/base/BaseController.js';
-import { IAuthService } from '../interfaces/IAuthService.js';
-import { ICacheService } from '../../../core/interfaces/ICacheService.js';
+import type { IAuthService } from '../interfaces/IAuthService.js';
+import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import { RequestOTPSchema } from '../dto/RequestOTP.dto.js';
 import { VerifyOTPSchema } from '../dto/VerifyOTP.dto.js';
 import { AdminLoginSchema } from '../dto/AdminLogin.dto.js';
 import { GoogleAuthSchema } from '../dto/GoogleAuth.dto.js';
 import { RefreshTokenSchema } from '../dto/RefreshToken.dto.js';
-import { ChangePasswordSchema } from '../validations/auth.validation.js'; // Will adjust / import
 import { z } from 'zod';
 
 export class AuthController extends BaseController {

@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { BaseController } from '../../../core/base/BaseController.js';
-import { IBookingService } from '../interfaces/IBookingService.js';
+import type { IBookingService } from '../interfaces/IBookingService.js';
 import { BookingPolicy } from '../policies/BookingPolicy.js';
 import { BookingMapper } from '../mappers/Booking.mapper.js';
 import { CreateBookingSchema } from '../dto/CreateBooking.dto.js';

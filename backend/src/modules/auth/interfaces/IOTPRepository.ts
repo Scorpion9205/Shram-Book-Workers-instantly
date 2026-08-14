@@ -1,4 +1,4 @@
-import { Otp } from '@prisma/client';
+import type { Otp } from '@prisma/client';
 import { OTPPurpose, OTPChannel } from '../enums/index.js';
 
 export interface CreateOtpInput {
@@ -7,7 +7,7 @@ export interface CreateOtpInput {
   identifier: string;
   codeHash: string;
   expiresAt: Date;
-  bookingId?: string;
+  bookingId?: string | undefined;
 }
 
 export interface IOTPRepository {

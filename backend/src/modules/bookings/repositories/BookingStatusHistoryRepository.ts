@@ -1,4 +1,5 @@
-import { BookingStatusHistory, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { BookingStatusHistory } from '@prisma/client';
 import { BaseRepository } from '../../../core/base/BaseRepository.js';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { DatabaseException } from '../../../core/exceptions/index.js';

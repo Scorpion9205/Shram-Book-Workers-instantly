@@ -15,9 +15,10 @@ export class RabbitMQEventPublisher implements IEventPublisher {
 
   async init(): Promise<void> {
     try {
-      this.channel = await (this.connection as any).createChannel();
-      this.channel.on('error', (err) => this.logger.error('RabbitMQ channel error', err));
-      this.channel.on('close', () => this.logger.warn('RabbitMQ channel closed'));
+      const channel = await (this.connection as any).createChannel();
+      channel.on('error', (err: any) => this.logger.error('RabbitMQ channel error', err));
+      channel.on('close', () => this.logger.warn('RabbitMQ channel closed'));
+      this.channel = channel;
       this.logger.info('RabbitMQ Event Publisher channel initialized');
     } catch (err) {
       this.logger.error('Failed to initialize RabbitMQ channel', err);

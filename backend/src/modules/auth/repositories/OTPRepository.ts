@@ -1,4 +1,5 @@
-import { Otp, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { Otp } from '@prisma/client';
 import { BaseRepository } from '../../../core/base/BaseRepository.js';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { DatabaseException } from '../../../core/exceptions/index.js';
@@ -20,7 +21,7 @@ export class OTPRepository extends BaseRepository<Otp> implements IOTPRepository
           identifier: data.identifier,
           codeHash: data.codeHash,
           expiresAt: data.expiresAt,
-          bookingId: data.bookingId,
+          bookingId: data.bookingId ?? null,
         },
       });
     } catch (err) {

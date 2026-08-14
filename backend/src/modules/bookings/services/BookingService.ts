@@ -1,9 +1,10 @@
-import { Booking, BookingStatus, Prisma } from '@prisma/client';
+import { BookingStatus } from '@prisma/client';
+import type { Booking } from '@prisma/client';
 import { BaseService } from '../../../core/base/BaseService.js';
-import { IBookingService } from '../interfaces/IBookingService.js';
-import { IBookingRepository, BookingFilter, CreateBookingInput } from '../interfaces/IBookingRepository.js';
-import { IBookingStateService } from '../interfaces/IBookingStateService.js';
-import { PaginatedResult } from '../../../core/base/BaseRepository.js';
+import type { IBookingService } from '../interfaces/IBookingService.js';
+import type { IBookingRepository, BookingFilter, CreateBookingInput } from '../interfaces/IBookingRepository.js';
+import type { IBookingStateService } from '../interfaces/IBookingStateService.js';
+import type { PaginatedResult } from '../../../core/base/BaseRepository.js';
 import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
 
 export class BookingService extends BaseService implements IBookingService {

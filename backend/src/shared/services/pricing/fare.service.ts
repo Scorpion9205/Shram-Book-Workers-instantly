@@ -25,7 +25,7 @@ export class FareService {
         );
       }
 
-      const rate = skill.baseRate || 400;
+      const rate = Number(skill.baseRate || 400);
       subtotal +=
         rate *
         item.requiredWorkers;

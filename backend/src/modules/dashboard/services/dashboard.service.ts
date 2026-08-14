@@ -1,3 +1,4 @@
+import { BookingStatus } from "@prisma/client";
 import prisma from "../../../shared/config/prisma.js";
 import { RedisService } from "../../../shared/services/redis/redis.service.js";
 export class DashboardService {
@@ -67,7 +68,7 @@ export class DashboardService {
       prisma.booking.aggregate({
         where: {
           workerId: worker.id,
-          status: "COMPLETED",
+          status: BookingStatus.WORK_COMPLETED,
           completedAt: {
             gte: today,
           },
@@ -81,14 +82,14 @@ export class DashboardService {
       prisma.booking.count({
         where: {
           workerId: worker.id,
-          status: "CONFIRMED",
+          status: BookingStatus.WORKER_ASSIGNED,
         },
       }),
 
       prisma.booking.count({
         where: {
           workerId: worker.id,
-          status: "COMPLETED",
+          status: BookingStatus.WORK_COMPLETED,
         },
       }),
 
@@ -97,7 +98,7 @@ export class DashboardService {
       prisma.booking.findFirst({
         where: {
           workerId: worker.id,
-          status: "IN_PROGRESS",
+          status: BookingStatus.WORK_STARTED,
         },
         orderBy: {
           startedAt: "desc",
@@ -125,7 +126,7 @@ export class DashboardService {
       prisma.booking.findMany({
         where: {
           workerId: worker.id,
-          status: "CONFIRMED",
+          status: BookingStatus.WORKER_ASSIGNED,
           jobId: { not: null },
         },
         take: 5,
@@ -166,7 +167,7 @@ export class DashboardService {
       prisma.booking.findMany({
         where: {
           workerId: worker.id,
-          status: "COMPLETED",
+          status: BookingStatus.WORK_COMPLETED,
           completedAt: {
             gte: trendStart,
             lte: trendEnd,
@@ -178,7 +179,7 @@ export class DashboardService {
         },
       }),
 
-    ]);
+    ]) as [any, number, number, any, any[], any[], any[]];
 
     const earningsTrend = [];
     const diffTime = Math.abs(trendEnd.getTime() - trendStart.getTime());
@@ -201,7 +202,7 @@ export class DashboardService {
             booking.completedAt < next
         )
         .reduce(
-          (sum, booking) => sum + booking.amount,
+          (sum, booking) => sum + Number(booking.amount),
           0
         );
 
@@ -218,7 +219,7 @@ export class DashboardService {
     const dashboard = {
 
       todaysEarnings:
-        todayBookings._sum.amount ?? 0,
+        todayBookings._sum?.amount ? Number(todayBookings._sum.amount) : 0,
 
       completedJobs:
         completedBookings,
@@ -410,8 +411,10 @@ export class DashboardService {
           providerId: userId,
           status: {
             in: [
-              "CONFIRMED",
-              "IN_PROGRESS",
+              BookingStatus.WORKER_ASSIGNED,
+              BookingStatus.WORKER_EN_ROUTE,
+              BookingStatus.OTP_VERIFIED,
+              BookingStatus.WORK_STARTED,
             ],
           },
         },
@@ -420,7 +423,7 @@ export class DashboardService {
       prisma.booking.count({
         where: {
           providerId: userId,
-          status: "COMPLETED",
+          status: BookingStatus.WORK_COMPLETED,
         },
       }),
 
@@ -436,7 +439,7 @@ export class DashboardService {
       prisma.booking.aggregate({
         where: {
           providerId: userId,
-          status: "COMPLETED",
+          status: BookingStatus.WORK_COMPLETED,
           completedAt: {
             gte: today,
           },
@@ -449,7 +452,7 @@ export class DashboardService {
       prisma.booking.aggregate({
         where: {
           providerId: userId,
-          status: "COMPLETED",
+          status: BookingStatus.WORK_COMPLETED,
           completedAt: {
             gte: weekStart,
           },
@@ -462,7 +465,7 @@ export class DashboardService {
       prisma.booking.aggregate({
         where: {
           providerId: userId,
-          status: "COMPLETED",
+          status: BookingStatus.WORK_COMPLETED,
           completedAt: {
             gte: monthStart,
           },
@@ -475,7 +478,7 @@ export class DashboardService {
       prisma.booking.count({
         where: {
           providerId: userId,
-          status: "COMPLETED",
+          status: BookingStatus.WORK_COMPLETED,
         },
       }),
 
@@ -557,7 +560,7 @@ export class DashboardService {
       prisma.booking.findMany({
         where: {
           providerId: userId,
-          status: "COMPLETED",
+          status: BookingStatus.WORK_COMPLETED,
           completedAt: {
             gte: trendStart,
             lte: trendEnd,
@@ -585,7 +588,7 @@ export class DashboardService {
         }
       })
 
-    ]);
+    ]) as [number, number, number, number, number, any, any, any, number, any[], any[], any[], number, number];
     const analyticsTrend = [];
     const diffTime = Math.abs(trendEnd.getTime() - trendStart.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -607,7 +610,7 @@ export class DashboardService {
             booking.completedAt < next
         )
         .reduce(
-          (sum, booking) => sum + booking.amount,
+          (sum, booking) => sum + Number(booking.amount),
           0
         );
 
@@ -635,11 +638,11 @@ export class DashboardService {
 
       workersHired: totalWorkersHired,
 
-      todaySpent: todaySpent._sum.amount ?? 0,
+      todaySpent: todaySpent._sum?.amount ? Number(todaySpent._sum.amount) : 0,
 
-      thisWeekSpent: weekSpent._sum.amount ?? 0,
+      thisWeekSpent: weekSpent._sum?.amount ? Number(weekSpent._sum.amount) : 0,
 
-      thisMonthSpent: monthSpent._sum.amount ?? 0,
+      thisMonthSpent: monthSpent._sum?.amount ? Number(monthSpent._sum.amount) : 0,
 
       analyticsTrend,
 

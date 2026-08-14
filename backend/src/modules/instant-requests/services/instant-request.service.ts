@@ -1,4 +1,5 @@
 import prisma from "../../../shared/config/prisma.js";
+import { BookingStatus } from "@prisma/client";
 import type { CreateInstantRequestInput } from "../validations/instant-request.validation.js";
 import { FareService } from "../../../shared/services/pricing/fare.service.js";
 import { getIO } from "../../../socket/socket.js";
@@ -153,18 +154,10 @@ export class InstantRequestService {
       );
     }
 
-    const workerLocation =
-      await prisma.userLocation.findUnique({
-        where: {
-          userId,
-        },
-      });
-
-    if (!workerLocation) {
-      throw new Error(
-        "Worker location not found"
-      );
-    }
+    const workerLocation = {
+      latitude: Number(worker.latitude ?? 0),
+      longitude: Number(worker.longitude ?? 0),
+    };
 
     const skillIds =
       worker.skills.map(
@@ -423,7 +416,7 @@ export class InstantRequestService {
 
               amount: item.request.amount,
 
-              status: "CONFIRMED",
+              status: BookingStatus.CREATED,
               startOtp,
             },
           });
@@ -674,8 +667,9 @@ export class InstantRequestService {
     }
 
     // Enforce 20% max discount rule
-    const minBid = 0.80 * request.amount;
-    const maxBid = request.amount;
+    const requestAmount = Number(request.amount);
+    const minBid = 0.80 * requestAmount;
+    const maxBid = requestAmount;
     if (bidAmount < minBid || bidAmount > maxBid) {
       throw new Error(`Bid amount must be between ₹${Math.round(minBid)} and ₹${maxBid}`);
     }
@@ -772,7 +766,7 @@ export class InstantRequestService {
             workerId: bid.workerId,
             instantRequestId: request.id,
             amount: bid.bidAmount,
-            status: "CONFIRMED",
+            status: BookingStatus.CREATED,
             startOtp
           }
         });

@@ -125,7 +125,7 @@ export class CacheService implements ICacheService {
   ): Promise<string[]> {
     try {
       // GEORADIUS key longitude latitude radius m|km|ft|mi
-      return await this.redis.georadius(key, lng, lat, radius, unit);
+      return (await this.redis.georadius(key, lng, lat, radius, unit)) as string[];
     } catch (err) {
       this.logger.error(`Redis GEOSEARCH error for key ${key}`, err);
       return [];

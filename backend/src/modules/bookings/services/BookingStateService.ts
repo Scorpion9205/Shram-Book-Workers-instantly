@@ -1,8 +1,9 @@
-import { Booking, BookingStatus } from '@prisma/client';
-import { IBookingStateService, TransitionMeta } from '../interfaces/IBookingStateService.js';
-import { IBookingRepository } from '../interfaces/IBookingRepository.js';
-import { IBookingHistoryRepository } from '../interfaces/IBookingHistoryRepository.js';
-import { IEventPublisher } from '../../../core/interfaces/IEventPublisher.js';
+import { BookingStatus } from '@prisma/client';
+import type { Booking } from '@prisma/client';
+import type { IBookingStateService, TransitionMeta } from '../interfaces/IBookingStateService.js';
+import type { IBookingRepository } from '../interfaces/IBookingRepository.js';
+import type { IBookingHistoryRepository } from '../interfaces/IBookingHistoryRepository.js';
+import type { IEventPublisher } from '../../../core/interfaces/IEventPublisher.js';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { VALID_TRANSITIONS } from '../constants/booking-transitions.constants.js';
 import { BookingEvents } from '../events/booking.events.js';

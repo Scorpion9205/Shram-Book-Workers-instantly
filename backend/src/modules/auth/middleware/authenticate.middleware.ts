@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { TokenService } from '../services/TokenService.js';
 import { CacheService } from '../../../infrastructure/cache/CacheService.js';
 import { redis } from '../../../shared/config/redis.js';

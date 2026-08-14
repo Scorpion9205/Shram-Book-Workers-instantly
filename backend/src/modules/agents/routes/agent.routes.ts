@@ -1,51 +1,53 @@
-import { Router } from "express";
+import { Router } from 'express';
+import type { AgentController } from '../controllers/AgentController.js';
+import { authenticate } from '../../auth/middleware/authenticate.middleware.js';
+import { authorize } from '../../auth/middleware/role.middleware.js';
+import { UserRole } from '../../../core/enums/Role.js';
 
-import { AgentController } from "../controllers/agent.controller.js";
+export function createAgentRouter(controller: AgentController): Router {
+  const router = Router();
 
-import { authMiddleware } from "../../../shared/middleware/auth.middleware.js";
+  router.post(
+    '/profile',
+    authenticate,
+    authorize(UserRole.AGENT),
+    controller.createProfile,
+  );
 
-import { roleMiddleware } from "../../../shared/middleware/role.middleware.js";
+  router.get(
+    '/me',
+    authenticate,
+    authorize(UserRole.AGENT),
+    controller.getMyProfile,
+  );
 
-const router = Router();
+  router.patch(
+    '/me',
+    authenticate,
+    authorize(UserRole.AGENT),
+    controller.updateProfile,
+  );
 
-router.post(
-  "/profile",
-  authMiddleware,
-  roleMiddleware("AGENT"),
-  AgentController.createProfile
-);
+  router.get(
+    '/dashboard',
+    authenticate,
+    authorize(UserRole.AGENT),
+    controller.getDashboard,
+  );
 
-router.get(
-  "/me",
-  authMiddleware,
-  roleMiddleware("AGENT"),
-  AgentController.getMyProfile
-);
+  router.get(
+    '/applications',
+    authenticate,
+    authorize(UserRole.AGENT),
+    controller.getMyApplications,
+  );
 
-router.patch(
-  "/me",
-  authMiddleware,
-  roleMiddleware("AGENT"),
-  AgentController.updateProfile
-);
+  router.get(
+    '/bookings',
+    authenticate,
+    authorize(UserRole.AGENT),
+    controller.getMyBookings,
+  );
 
-router.get(
-    "/dashboard",
-    authMiddleware,
-    roleMiddleware("AGENT"),
-    AgentController.getDashboard
-);
-router.get(
-  "/applications",
-  authMiddleware,
-  roleMiddleware("AGENT"),
-  AgentController.getMyApplications
-);
-
-router.get(
-  "/bookings",
-  authMiddleware,
-  roleMiddleware("AGENT"),
-  AgentController.getMyBookings
-);
-export default router;
+  return router;
+}

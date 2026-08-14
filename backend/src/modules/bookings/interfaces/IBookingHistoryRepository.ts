@@ -1,4 +1,4 @@
-import { BookingStatusHistory, BookingStatus, Prisma } from '@prisma/client';
+import type { BookingStatusHistory, BookingStatus, Prisma } from '@prisma/client';
 
 export interface AppendHistoryInput {
   bookingId: string;

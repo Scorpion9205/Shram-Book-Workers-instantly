@@ -38,7 +38,7 @@ export class InstantMatchingService {
             }
           }
         },
-        include: { user: { include: { location: true } } }
+        include: { user: true }
       });
 
       const newWorkers = eligibleWorkers.filter(w => !notifiedWorkerIds.has(w.id));

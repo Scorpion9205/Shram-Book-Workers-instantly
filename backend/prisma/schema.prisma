@@ -161,6 +161,7 @@ model WorkerProfile {
   user                    User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
   skills                  WorkerSkill[]
   instantBids             InstantRequestBid[]
+  wallet                  Wallet?
 }
 
 model ProviderProfile {
@@ -325,6 +326,7 @@ model Booking {
   otps                     Otp[]
   statusHistory            BookingStatusHistory[]
   chatThread               ChatThread?
+  payment                  Payment?
 
   @@index([providerId])
   @@index([workerId])
@@ -488,4 +490,37 @@ model ChatMessage {
   senderId  String
   content   String
   createdAt DateTime   @default(now())
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  bookingId         String        @unique
+  booking           Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  amount            Decimal
+  status            PaymentStatus @default(PENDING)
+  razorpayOrderId   String?       @unique
+  razorpayPaymentId String?       @unique
+  razorpaySignature String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+}
+
+model Wallet {
+  id        String        @id @default(uuid())
+  workerId  String        @unique
+  worker    WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  balance   Decimal       @default(0.00)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  transactions Transaction[]
+}
+
+model Transaction {
+  id        String   @id @default(uuid())
+  walletId  String
+  wallet    Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  amount    Decimal
+  type      String   // CREDIT or DEBIT
+  reference String
+  createdAt DateTime @default(now())
 }

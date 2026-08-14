@@ -1,24 +1,25 @@
-import { Booking, BookingStatus, Prisma } from '@prisma/client';
-import { PaginatedResult } from '../../../core/base/BaseRepository.js';
+import { BookingStatus } from '@prisma/client';
+import type { Booking, Prisma } from '@prisma/client';
+import type { PaginatedResult } from '../../../core/base/BaseRepository.js';
 
 export interface BookingFilter {
-  providerId?: string;
-  workerId?: string;
-  agentId?: string;
-  status?: BookingStatus;
-  jobId?: string;
+  providerId?: string | undefined;
+  workerId?: string | undefined;
+  agentId?: string | undefined;
+  status?: BookingStatus | undefined;
+  jobId?: string | undefined;
 }
 
 export interface CreateBookingInput {
-  jobId?: string;
+  jobId?: string | undefined;
   providerId: string;
-  workerId?: string;
-  agentId?: string;
+  workerId?: string | undefined;
+  agentId?: string | undefined;
   amount: Prisma.Decimal;
   estimatedFare: Prisma.Decimal;
-  status?: BookingStatus;
+  status?: BookingStatus | undefined;
   type: string; // BookingType
-  address?: Prisma.InputJsonValue;
+  address?: Prisma.InputJsonValue | undefined;
 }
 
 export interface IBookingRepository {

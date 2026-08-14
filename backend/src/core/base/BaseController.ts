@@ -1,7 +1,7 @@
 import type { Response } from 'express';
 import { ResponseBuilder, type PaginationMeta, type FieldError } from '../responses/ResponseBuilder.js';
 import { ValidationException } from '../exceptions/ValidationException.js';
-import type { ZodSchema } from 'zod';
+import type { ZodSchema, ZodIssue } from 'zod';
 
 /**
  * Abstract base for all SHRAM controllers.
@@ -62,7 +62,7 @@ export abstract class BaseController {
   protected validate<T>(schema: ZodSchema<T>, data: unknown): T {
     const result = schema.safeParse(data);
     if (!result.success) {
-      const errors: FieldError[] = result.error.errors.map((e) => ({
+      const errors: FieldError[] = result.error.issues.map((e: ZodIssue) => ({
         field: e.path.join('.'),
         message: e.message,
       }));

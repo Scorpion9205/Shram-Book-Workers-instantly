@@ -1,4 +1,4 @@
-import { Booking } from '@prisma/client';
+import type { Booking } from '@prisma/client';
 
 export interface BookingResponseDto {
   id: string;

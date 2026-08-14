@@ -1,0 +1,194 @@
+import type { Application } from '@prisma/client';
+import { BaseService } from '../../../core/base/BaseService.js';
+import type { IApplicationService } from '../interfaces/IApplicationService.js';
+import type { IApplicationRepository } from '../interfaces/IApplicationRepository.js';
+import type { IJobRepository } from '../interfaces/IJobRepository.js';
+import type { IWorkerRepository } from '../../workers/interfaces/IWorkerRepository.js';
+import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
+import { BookingStatus } from '@prisma/client';
+import { PrismaService } from '../../../database/prisma/PrismaService.js';
+import { CacheInvalidationService } from '../../../shared/services/cache/cache-invalidation.service.js';
+import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
+
+export class ApplicationService extends BaseService implements IApplicationService {
+  constructor(
+    private readonly applicationRepo: IApplicationRepository,
+    private readonly jobRepo: IJobRepository,
+    private readonly workerRepo: IWorkerRepository,
+    private readonly cache: ICacheService,
+    private readonly prisma: PrismaService,
+  ) {
+    super('ApplicationService');
+  }
+
+  async applyForJob(userId: string, jobId: string, data: any): Promise<Application> {
+    this.log('Applying for job', { userId, jobId });
+
+    const worker = await this.workerRepo.findByUserId(userId);
+    if (!worker) {
+      throw new NotFoundException('WorkerProfile', userId);
+    }
+
+    const job = await this.jobRepo.findById(jobId);
+    if (!job) {
+      throw new NotFoundException('Job', jobId);
+    }
+
+    if (job.providerId === userId) {
+      throw new BusinessException('INVALID_APPLICATION', 'You cannot apply to your own job.');
+    }
+
+    if (job.status !== 'OPEN') {
+      throw new BusinessException('JOB_CLOSED', 'Job is closed');
+    }
+
+    const alreadyApplied = await this.applicationRepo.findByJobAndWorker(jobId, worker.id);
+    if (alreadyApplied) {
+      throw new BusinessException('ALREADY_APPLIED', 'You have already applied');
+    }
+
+    return await this.applicationRepo.create({
+      jobId,
+      applicantType: 'WORKER',
+      workerId: worker.id,
+      message: data.message ?? null,
+      workerCount: data.workerCount ?? null,
+      bidAmount: data.bidAmount,
+      status: 'PENDING',
+    });
+  }
+
+  async getJobApplications(userId: string, jobId: string): Promise<any[]> {
+    this.log('Retrieving applications for job', { providerId: userId, jobId });
+
+    const job = await this.jobRepo.findById(jobId);
+    if (!job) {
+      throw new NotFoundException('Job', jobId);
+    }
+
+    if (job.providerId !== userId) {
+      throw new BusinessException('UNAUTHORIZED_ACCESS', 'Unauthorized access to job applications');
+    }
+
+    return this.applicationRepo.findManyByJobId(jobId);
+  }
+
+  async acceptApplication(userId: string, applicationId: string): Promise<any> {
+    this.log('Accepting job application', { providerId: userId, applicationId });
+
+    const result = await this.prisma.client.$transaction(async (tx) => {
+      const application = await this.applicationRepo.findById(applicationId, tx);
+      if (!application) {
+        throw new NotFoundException('Application', applicationId);
+      }
+
+      if (application.applicantType === 'WORKER') {
+        if (!application.worker?.userId) {
+          throw new BusinessException('USER_NOT_FOUND', 'Worker user not found');
+        }
+      } else if (application.applicantType === 'AGENT') {
+        if (!application.agent?.userId) {
+          throw new BusinessException('USER_NOT_FOUND', 'Agent user not found');
+        }
+      }
+
+      if (application.job.providerId !== userId) {
+        throw new BusinessException('UNAUTHORIZED', 'Unauthorized');
+      }
+
+      if (application.status !== 'PENDING') {
+        throw new BusinessException('ALREADY_PROCESSED', 'Application already processed');
+      }
+
+      if (application.job.status !== 'OPEN') {
+        throw new BusinessException('JOB_CLOSED', 'Job is closed');
+      }
+
+      await this.applicationRepo.update(applicationId, { status: 'ACCEPTED' }, tx);
+
+      // Generate random start OTP
+      const startOtp = Math.floor(1000 + Math.random() * 9000).toString();
+
+      await tx.booking.create({
+        data: {
+          jobId: application.jobId,
+          providerId: application.job.providerId,
+          workerId: application.workerId,
+          agentId: application.agentId,
+          amount: application.bidAmount ?? 0,
+          status: BookingStatus.CREATED,
+          startOtp,
+        },
+      });
+
+      const decrementAmount =
+        application.applicantType === 'AGENT' ? application.workerCount ?? 1 : 1;
+
+      const updatedJob = await tx.job.update({
+        where: { id: application.jobId },
+        data: {
+          requiredWorkers: {
+            decrement: decrementAmount,
+          },
+        },
+      });
+
+      if (updatedJob.requiredWorkers <= 0) {
+        await tx.job.update({
+          where: { id: updatedJob.id },
+          data: {
+            status: 'ASSIGNED',
+            requiredWorkers: 0,
+          },
+        });
+
+        await this.applicationRepo.updateManyPendingToRejected(updatedJob.id, tx);
+      }
+
+      return {
+        workerUserId: application.worker?.userId ?? null,
+        agentUserId: application.agent?.userId ?? null,
+      };
+    });
+
+    await CacheInvalidationService.afterJobAccepted(
+      userId,
+      result.workerUserId,
+      result.agentUserId,
+    );
+
+    return { success: true };
+  }
+
+  async rejectApplication(userId: string, applicationId: string): Promise<any> {
+    this.log('Rejecting job application', { providerId: userId, applicationId });
+
+    const application = await this.applicationRepo.findById(applicationId);
+    if (!application) {
+      throw new NotFoundException('Application', applicationId);
+    }
+
+    if (application.job.providerId !== userId) {
+      throw new BusinessException('UNAUTHORIZED', 'Unauthorized');
+    }
+
+    if (application.status !== 'PENDING') {
+      throw new BusinessException('ALREADY_PROCESSED', 'Application already processed');
+    }
+
+    await this.applicationRepo.update(applicationId, { status: 'REJECTED' });
+
+    return { success: true };
+  }
+
+  async getMyApplications(userId: string): Promise<any[]> {
+    this.log('Retrieving my applications', { workerUserId: userId });
+
+    const worker = await this.workerRepo.findByUserId(userId);
+    if (!worker) {
+      throw new NotFoundException('WorkerProfile', userId);
+    }
+
+    return this.applicationRepo.findManyByWorkerId(worker.id);
+  }
+}

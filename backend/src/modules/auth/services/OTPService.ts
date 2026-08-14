@@ -1,9 +1,9 @@
 import argon2 from 'argon2';
 import { randomInt } from 'crypto';
-import { IOTPService, RequestOTPInput, VerifyOTPInput } from '../interfaces/IOTPService.js';
-import { IOTPRepository } from '../interfaces/IOTPRepository.js';
-import { ICacheService } from '../../../core/interfaces/ICacheService.js';
-import { IEmailProvider, ISmsProvider } from '../../../core/interfaces/IProviders.js';
+import type { IOTPService, RequestOTPInput, VerifyOTPInput } from '../interfaces/IOTPService.js';
+import type { IOTPRepository } from '../interfaces/IOTPRepository.js';
+import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
+import type { IEmailProvider, ISmsProvider } from '../../../core/interfaces/IProviders.js';
 import { CacheKeys } from '../../../infrastructure/cache/cacheKeys.js';
 import { OTP_CONSTANTS } from '../constants/otp.constants.js';
 import { OTPChannel } from '../enums/OTPChannel.js';

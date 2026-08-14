@@ -1,5 +1,5 @@
-import { Request, Response, NextFunction } from 'express';
-import { ZodSchema } from 'zod';
+import type { Request, Response, NextFunction } from 'express';
+import type { ZodSchema, ZodIssue } from 'zod';
 import { ValidationException } from '../core/exceptions/ValidationException.js';
 
 export const validateBody = (schema: ZodSchema) =>
@@ -8,7 +8,7 @@ export const validateBody = (schema: ZodSchema) =>
     if (!result.success) {
       throw new ValidationException(
         'Validation failed',
-        result.error.errors.map((e) => ({
+        result.error.issues.map((e: ZodIssue) => ({
           field: e.path.join('.'),
           message: e.message,
         })),
@@ -24,7 +24,7 @@ export const validateQuery = (schema: ZodSchema) =>
     if (!result.success) {
       throw new ValidationException(
         'Invalid query parameters',
-        result.error.errors.map((e) => ({
+        result.error.issues.map((e: ZodIssue) => ({
           field: e.path.join('.'),
           message: e.message,
         })),
@@ -40,7 +40,7 @@ export const validateParams = (schema: ZodSchema) =>
     if (!result.success) {
       throw new ValidationException(
         'Invalid path parameters',
-        result.error.errors.map((e) => ({
+        result.error.issues.map((e: ZodIssue) => ({
           field: e.path.join('.'),
           message: e.message,
         })),

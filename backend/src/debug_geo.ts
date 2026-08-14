@@ -42,7 +42,7 @@ async function main() {
           }
         }
       },
-      include: { user: { include: { location: true } } }
+      include: { user: true }
     });
 
     console.log(`- DB Query found eligible workers:`, eligibleWorkers.map(w => ({
@@ -50,7 +50,8 @@ async function main() {
       name: w.user.name,
       isAvailable: w.isAvailable,
       role: w.user.role,
-      location: w.user.location
+      latitude: w.latitude,
+      longitude: w.longitude
     })));
   }
 }

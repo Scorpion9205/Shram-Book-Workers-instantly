@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
-import { ITokenService, ITokenPayload } from '../interfaces/ITokenService.js';
-import { ICacheService } from '../../../core/interfaces/ICacheService.js';
+import type { ITokenService, ITokenPayload } from '../interfaces/ITokenService.js';
+import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import { UserRole } from '../../../core/enums/Role.js';
 import { env } from '../../../config/env.js';
 import { CacheKeys } from '../../../infrastructure/cache/cacheKeys.js';
@@ -11,13 +11,13 @@ export class TokenService implements ITokenService {
 
   generateAccessToken(userId: string, role: UserRole): string {
     return jwt.sign({ userId, role }, env.JWT_ACCESS_SECRET, {
-      expiresIn: env.JWT_ACCESS_EXPIRY,
+      expiresIn: env.JWT_ACCESS_EXPIRY as any,
     });
   }
 
   generateRefreshToken(userId: string): string {
     return jwt.sign({ userId }, env.JWT_REFRESH_SECRET, {
-      expiresIn: env.JWT_REFRESH_EXPIRY,
+      expiresIn: env.JWT_REFRESH_EXPIRY as any,
     });
   }
 

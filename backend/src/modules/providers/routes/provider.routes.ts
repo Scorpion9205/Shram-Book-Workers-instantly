@@ -1,31 +1,40 @@
-import { Router } from "express";
+import { Router } from 'express';
+import { ProviderController } from '../controllers/ProviderController.js';
+import { ProviderService } from '../services/ProviderService.js';
+import { ProviderRepository } from '../repositories/ProviderRepository.js';
+import { PrismaService } from '../../../database/prisma/PrismaService.js';
+import { authenticate } from '../../auth/middleware/authenticate.middleware.js';
+import { authorize } from '../../auth/middleware/role.middleware.js';
+import { UserRole } from '../../../core/enums/Role.js';
 
-import { ProviderController } from "../controllers/provider.controller.js";
+// Dependency wiring fallback
+const prisma = PrismaService.getInstance();
 
-import { authMiddleware } from "../../../shared/middleware/auth.middleware.js";
-import { roleMiddleware } from "../../../shared/middleware/role.middleware.js";
+const providerRepo = new ProviderRepository(prisma);
+const providerService = new ProviderService(providerRepo);
+const controller = new ProviderController(providerService);
 
 const router = Router();
 
 router.post(
-  "/profile",
-  authMiddleware,
-  roleMiddleware("PROVIDER"),
-  ProviderController.createProfile
+  '/profile',
+  authenticate,
+  authorize(UserRole.PROVIDER),
+  controller.createProfile,
 );
 
 router.get(
-  "/me",
-  authMiddleware,
-  roleMiddleware("PROVIDER"),
-  ProviderController.getMyProfile
+  '/me',
+  authenticate,
+  authorize(UserRole.PROVIDER),
+  controller.getMyProfile,
 );
 
 router.patch(
-  "/me",
-  authMiddleware,
-  roleMiddleware("PROVIDER"),
-  ProviderController.updateProfile
+  '/me',
+  authenticate,
+  authorize(UserRole.PROVIDER),
+  controller.updateProfile,
 );
 
 export default router;

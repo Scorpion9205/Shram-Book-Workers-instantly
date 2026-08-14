@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { UserRole } from '../../../core/enums/Role.js';
 import { AuthorizationException } from '../../../core/exceptions/index.js';
 

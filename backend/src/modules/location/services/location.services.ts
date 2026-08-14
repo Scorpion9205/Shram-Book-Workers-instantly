@@ -7,64 +7,54 @@ export class LocationService {
     userId: string,
     data: UpdateLocationInput
   ) {
-    const existingLocation =
-      await prisma.userLocation.findUnique({
-        where: {
-          userId,
-        },
-      });
-
-    let loc;
-    if (!existingLocation) {
-      loc = await prisma.userLocation.create({
-        data: {
-          userId,
-          latitude: data.latitude,
-          longitude: data.longitude,
-        },
-      });
-    } else {
-      loc = await prisma.userLocation.update({
-        where: {
-          userId,
-        },
-        data: {
-          latitude: data.latitude,
-          longitude: data.longitude,
-        },
-      });
-    }
-
-    // Sync to Redis GEO if user is an online active worker
     const worker = await prisma.workerProfile.findUnique({
       where: { userId },
       include: { skills: true }
     });
-    if (worker && worker.isAvailable) {
+
+    if (!worker) {
+      throw new Error("Worker profile not found");
+    }
+
+    const updatedWorker = await prisma.workerProfile.update({
+      where: { id: worker.id },
+      data: {
+        latitude: data.latitude,
+        longitude: data.longitude,
+      },
+    });
+
+    // Sync to Redis GEO if user is an online active worker
+    if (worker.isAvailable) {
       for (const skill of worker.skills) {
         await RedisService.geoAdd(`geo:instant-workers:${skill.skillId}`, data.longitude, data.latitude, worker.id);
       }
     }
 
-    return loc;
+    return {
+      userId,
+      latitude: data.latitude,
+      longitude: data.longitude,
+    };
   }
 
   static async getMyLocation(
     userId: string
   ) {
-    const location =
-      await prisma.userLocation.findUnique({
-        where: {
-          userId,
-        },
-      });
+    const worker = await prisma.workerProfile.findUnique({
+      where: { userId },
+    });
 
-    if (!location) {
+    if (!worker || worker.latitude === null || worker.longitude === null) {
       throw new Error(
         "Location not found"
       );
     }
 
-    return location;
+    return {
+      userId,
+      latitude: Number(worker.latitude),
+      longitude: Number(worker.longitude),
+    };
   }
 }

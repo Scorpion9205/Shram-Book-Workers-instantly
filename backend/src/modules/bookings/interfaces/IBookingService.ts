@@ -1,6 +1,6 @@
-import { Booking, BookingStatus } from '@prisma/client';
-import { PaginatedResult } from '../../../core/base/BaseRepository.js';
-import { BookingFilter, CreateBookingInput } from './IBookingRepository.js';
+import type { Booking, BookingStatus } from '@prisma/client';
+import type { PaginatedResult } from '../../../core/base/BaseRepository.js';
+import type { BookingFilter, CreateBookingInput } from './IBookingRepository.js';
 
 export interface IBookingService {
   getBookingById(id: string): Promise<Booking>;

@@ -1,4 +1,4 @@
-import { Booking, BookingStatus } from '@prisma/client';
+import type { Booking, BookingStatus } from '@prisma/client';
 
 export interface TransitionMeta {
   changedBy: string;

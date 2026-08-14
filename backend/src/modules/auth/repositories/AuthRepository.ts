@@ -1,4 +1,5 @@
-import { User, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { User } from '@prisma/client';
 import { BaseRepository } from '../../../core/base/BaseRepository.js';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { ConflictException, DatabaseException } from '../../../core/exceptions/index.js';
@@ -60,10 +61,10 @@ export class AuthRepository extends BaseRepository<User> implements IAuthReposit
         data: {
           name: data.name,
           phone: data.phone,
-          email: data.email,
+          email: data.email ?? null,
           role: data.role,
-          googleId: data.googleId,
-          passwordHash: data.passwordHash,
+          googleId: data.googleId ?? null,
+          passwordHash: data.passwordHash ?? null,
           isVerified: data.isVerified ?? false,
         },
       });

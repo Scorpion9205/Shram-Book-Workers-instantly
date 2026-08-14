@@ -1,11 +1,14 @@
-import {Router} from "express"
-import { UserController } from "../controllers/user.controller.js"
-import { authMiddleware } from "../../../shared/middleware/auth.middleware.js"
+import { Router } from 'express';
+import type { UserController } from '../controllers/UserController.js';
+import { authenticate } from '../../auth/middleware/authenticate.middleware.js';
 
-const router = Router();
+export function createUserRouter(controller: UserController): Router {
+  const router = Router();
 
-router.get("/me",authMiddleware,UserController.getProfile)
-router.patch("/me",authMiddleware,UserController.updateProfile)
-router.delete("/me",authMiddleware,UserController.deleteAccount);
-router.patch("/change-password",authMiddleware,UserController.changePassword);
-export default router
+  router.get('/me', authenticate, controller.getProfile);
+  router.patch('/me', authenticate, controller.updateProfile);
+  router.delete('/me', authenticate, controller.deleteAccount);
+  router.patch('/change-password', authenticate, controller.changePassword);
+
+  return router;
+}

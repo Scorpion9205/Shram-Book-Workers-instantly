@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { AppException } from '../core/exceptions/AppException.js';
 import { ResponseBuilder } from '../core/responses/ResponseBuilder.js';
 import { Logger } from '../core/logger/Logger.js';

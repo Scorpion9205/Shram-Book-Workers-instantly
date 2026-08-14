@@ -1,4 +1,4 @@
-import { User } from '@prisma/client';
+import type { User } from '@prisma/client';
 import { UserRole } from '../../../core/enums/Role.js';
 import { OTPChannel } from '../enums/index.js';
 

@@ -1,5 +1,7 @@
-import { Booking, BookingStatus, Prisma } from '@prisma/client';
-import { BaseRepository, PaginatedResult } from '../../../core/base/BaseRepository.js';
+import { BookingStatus, Prisma } from '@prisma/client';
+import type { Booking } from '@prisma/client';
+import { BaseRepository } from '../../../core/base/BaseRepository.js';
+import type { PaginatedResult } from '../../../core/base/BaseRepository.js';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { DatabaseException } from '../../../core/exceptions/index.js';
 import type { IBookingRepository, BookingFilter, CreateBookingInput } from '../interfaces/IBookingRepository.js';
@@ -116,7 +118,7 @@ export class BookingRepository extends BaseRepository<Booking> implements IBooki
           estimatedFare: data.estimatedFare,
           status: data.status || BookingStatus.CREATED,
           type: data.type as any,
-          address: data.address ?? null,
+          address: data.address ?? Prisma.DbNull,
         },
       });
     } catch (err) {

@@ -125,7 +125,7 @@ async function main() {
         },
       },
       update: {
-        subject: t.subject,
+        subject: t.subject ?? null,
         body: t.body,
         variables: t.variables,
       },
@@ -133,7 +133,7 @@ async function main() {
         type: t.type,
         channel: t.channel,
         locale: t.locale,
-        subject: t.subject,
+        subject: t.subject ?? null,
         body: t.body,
         variables: t.variables,
       },

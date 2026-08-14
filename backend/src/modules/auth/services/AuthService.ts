@@ -1,10 +1,10 @@
 import argon2 from 'argon2';
 import jwt from 'jsonwebtoken';
-import { IAuthService, AuthResponse } from '../interfaces/IAuthService.js';
-import { IAuthRepository } from '../interfaces/IAuthRepository.js';
-import { IOTPService } from '../interfaces/IOTPService.js';
-import { ITokenService } from '../interfaces/ITokenService.js';
-import { ICacheService } from '../../../core/interfaces/ICacheService.js';
+import type { IAuthService, AuthResponse } from '../interfaces/IAuthService.js';
+import type { IAuthRepository } from '../interfaces/IAuthRepository.js';
+import type { IOTPService } from '../interfaces/IOTPService.js';
+import type { ITokenService } from '../interfaces/ITokenService.js';
+import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { UserRole } from '../../../core/enums/Role.js';
 import { OTPChannel, OTPPurpose } from '../enums/index.js';
@@ -14,7 +14,7 @@ import {
   BusinessException,
   NotFoundException,
 } from '../../../core/exceptions/index.js';
-import { User } from '@prisma/client';
+import type { User } from '@prisma/client';
 
 export class AuthService implements IAuthService {
   constructor(
@@ -78,7 +78,7 @@ export class AuthService implements IAuthService {
 
       user = await this.prisma.transaction(async (tx) => {
         const newUser = await this.userRepo.create({
-          name: identifier.split('@')[0], // Default name
+          name: identifier.split('@')[0] || 'User', // Default name
           phone: channel === OTPChannel.SMS ? identifier : '',
           email: channel === OTPChannel.EMAIL ? identifier : null,
           role: signupRole,
