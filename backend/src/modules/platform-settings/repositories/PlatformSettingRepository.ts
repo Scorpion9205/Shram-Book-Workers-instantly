@@ -54,4 +54,15 @@ export class PlatformSettingRepository extends BaseRepository<PlatformSetting>
     if (!setting) return null;
     return setting.value as { minFare?: number; maxFare?: number };
   }
+
+  async listAll(tx?: Prisma.TransactionClient): Promise<PlatformSetting[]> {
+    const client = tx ?? this.prisma.client;
+    try {
+      return await client.platformSetting.findMany({
+        orderBy: { key: 'asc' },
+      });
+    } catch (err) {
+      throw new DatabaseException('Failed to list all platform settings', err);
+    }
+  }
 }

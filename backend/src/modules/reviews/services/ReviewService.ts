@@ -30,7 +30,7 @@ export class ReviewService extends BaseService implements IReviewService {
       throw new BusinessException('UNAUTHORIZED_REVIEW', 'Unauthorized to review this booking');
     }
 
-    if (booking.status !== BookingStatus.WORK_COMPLETED) {
+    if (booking.status !== BookingStatus.WORK_COMPLETED && booking.status !== BookingStatus.PAYMENT_SETTLED) {
       throw new BusinessException('BOOKING_NOT_COMPLETED', 'Booking is not completed');
     }
 

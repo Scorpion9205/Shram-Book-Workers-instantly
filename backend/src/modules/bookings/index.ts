@@ -8,7 +8,7 @@ export { BookingMapper } from './mappers/Booking.mapper.js';
 export { BookingEvents } from './events/booking.events.js';
 export { VALID_TRANSITIONS } from './constants/booking-transitions.constants.js';
 export { CancelReason } from './enums/CancelReason.js';
-export { default as bookingRouter } from './routes/booking.routes.js';
+export { createBookingRouter } from './routes/booking.routes.js';
 export type { IBookingService } from './interfaces/IBookingService.js';
 export type { IBookingStateService, TransitionMeta } from './interfaces/IBookingStateService.js';
 export type { IBookingRepository, BookingFilter, CreateBookingInput } from './interfaces/IBookingRepository.js';

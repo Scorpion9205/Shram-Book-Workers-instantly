@@ -5,9 +5,11 @@ import type { IApplicationRepository } from '../interfaces/IApplicationRepositor
 import type { IJobRepository } from '../interfaces/IJobRepository.js';
 import type { IWorkerRepository } from '../../workers/interfaces/IWorkerRepository.js';
 import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
+import type { IEventPublisher } from '../../../core/interfaces/IEventPublisher.js';
 import { BookingStatus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { CacheInvalidationService } from '../../../shared/services/cache/cache-invalidation.service.js';
+import { RoutingKeys } from '../../../infrastructure/queue/queue.constants.js';
 import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
 
 export class ApplicationService extends BaseService implements IApplicationService {
@@ -17,6 +19,7 @@ export class ApplicationService extends BaseService implements IApplicationServi
     private readonly workerRepo: IWorkerRepository,
     private readonly cache: ICacheService,
     private readonly prisma: PrismaService,
+    private readonly eventPublisher: IEventPublisher,
   ) {
     super('ApplicationService');
   }
@@ -109,7 +112,7 @@ export class ApplicationService extends BaseService implements IApplicationServi
       // Generate random start OTP
       const startOtp = Math.floor(1000 + Math.random() * 9000).toString();
 
-      await tx.booking.create({
+      const booking = await tx.booking.create({
         data: {
           jobId: application.jobId,
           providerId: application.job.providerId,
@@ -146,10 +149,14 @@ export class ApplicationService extends BaseService implements IApplicationServi
       }
 
       return {
+        booking,
         workerUserId: application.worker?.userId ?? null,
         agentUserId: application.agent?.userId ?? null,
       };
     });
+
+    // Publish booking.created event
+    await this.eventPublisher.publish(RoutingKeys.BOOKING_CREATED, result.booking);
 
     await CacheInvalidationService.afterJobAccepted(
       userId,

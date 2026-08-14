@@ -4,13 +4,16 @@ import { BaseService } from '../../../core/base/BaseService.js';
 import type { IBookingService } from '../interfaces/IBookingService.js';
 import type { IBookingRepository, BookingFilter, CreateBookingInput } from '../interfaces/IBookingRepository.js';
 import type { IBookingStateService } from '../interfaces/IBookingStateService.js';
+import type { IEventPublisher } from '../../../core/interfaces/IEventPublisher.js';
 import type { PaginatedResult } from '../../../core/base/BaseRepository.js';
+import { RoutingKeys } from '../../../infrastructure/queue/queue.constants.js';
 import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
 
 export class BookingService extends BaseService implements IBookingService {
   constructor(
     private readonly bookingRepo: IBookingRepository,
     private readonly stateService: IBookingStateService,
+    private readonly eventPublisher: IEventPublisher,
   ) {
     super('BookingService');
   }
@@ -33,7 +36,9 @@ export class BookingService extends BaseService implements IBookingService {
 
   async createBooking(input: CreateBookingInput): Promise<Booking> {
     this.log('Creating new booking', { providerId: input.providerId, type: input.type });
-    return await this.bookingRepo.create(input);
+    const booking = await this.bookingRepo.create(input);
+    await this.eventPublisher.publish(RoutingKeys.BOOKING_CREATED, booking);
+    return booking;
   }
 
   async cancelBooking(bookingId: string, userId: string, reason?: string): Promise<Booking> {
@@ -44,15 +49,77 @@ export class BookingService extends BaseService implements IBookingService {
 
     this.log(`Cancelling booking ${bookingId}`, { userId, reason });
 
-    // Determine cancellation transition path based on who cancels
     const toStatus = userId === booking.providerId
       ? BookingStatus.CANCELLED_BY_PROVIDER
       : BookingStatus.CANCELLED_BY_WORKER;
 
-    // Execute state transition
     return await this.stateService.transition(bookingId, toStatus, {
       changedBy: userId,
       reason: reason || 'Cancellation requested by user',
+    });
+  }
+
+  async workerEnRoute(id: string, userId: string): Promise<Booking> {
+    const booking = await this.getBookingById(id) as any;
+    this.log('Worker is en route for booking', { bookingId: id, workerUserId: userId });
+
+    // Validate that the user is the assigned worker
+    if (booking.worker?.userId !== userId) {
+      throw new BusinessException('UNAUTHORIZED_WORKER', 'You are not assigned to this booking');
+    }
+
+    return await this.stateService.transition(id, BookingStatus.WORKER_EN_ROUTE, {
+      changedBy: userId,
+      reason: 'Worker is on the way',
+    });
+  }
+
+  async verifyStartOtp(id: string, userId: string, code: string): Promise<Booking> {
+    const booking = await this.getBookingById(id) as any;
+    this.log('Verifying start OTP for booking', { bookingId: id, workerUserId: userId });
+
+    // Validate that the user is the assigned worker
+    if (booking.worker?.userId !== userId) {
+      throw new BusinessException('UNAUTHORIZED_WORKER', 'You are not assigned to this booking');
+    }
+
+    if (!booking.startOtp) {
+      throw new BusinessException('OTP_INVALID', 'No active start OTP found for this booking');
+    }
+
+    if (booking.startOtp !== code) {
+      throw new BusinessException('OTP_INVALID', 'Invalid work-start OTP code');
+    }
+
+    // Verify transitions sequential FSM path: WORKER_EN_ROUTE -> OTP_VERIFIED -> WORK_STARTED
+    await this.stateService.transition(id, BookingStatus.OTP_VERIFIED, {
+      changedBy: userId,
+      reason: 'Start OTP verified successfully',
+    });
+
+    const updated = await this.stateService.transition(id, BookingStatus.WORK_STARTED, {
+      changedBy: userId,
+      reason: 'Work started',
+    });
+
+    // Clear start OTP to prevent replay
+    await this.bookingRepo.update(id, { startOtp: null });
+
+    return updated;
+  }
+
+  async completeBooking(id: string, userId: string): Promise<Booking> {
+    const booking = await this.getBookingById(id) as any;
+    this.log('Worker is completing booking', { bookingId: id, workerUserId: userId });
+
+    // Validate that the user is the assigned worker
+    if (booking.worker?.userId !== userId) {
+      throw new BusinessException('UNAUTHORIZED_WORKER', 'You are not assigned to this booking');
+    }
+
+    return await this.stateService.transition(id, BookingStatus.WORK_COMPLETED, {
+      changedBy: userId,
+      reason: 'Worker completed the work',
     });
   }
 }

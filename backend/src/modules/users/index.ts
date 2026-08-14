@@ -6,3 +6,4 @@ export type { IUserRepository } from './interfaces/IUserRepository.js';
 export { createUserRouter } from './routes/user.routes.js';
 export { UserMapper } from './mappers/User.mapper.js';
 export * from './validations/user.validation.js';
+export type { UserFilter } from './interfaces/IUserRepository.js';

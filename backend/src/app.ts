@@ -10,7 +10,6 @@ import locationRoutes from "./modules/location/routes/location.routes.js";
 import providerRoutes from "./modules/providers/routes/provider.routes.js";
 import skillRoutes from "./modules/skills/routes/skill.routes.js";
 import instantRequestRoutes from "./modules/instant-requests/routes/instant-request.routes.js";
-import bookingRoutes from "./modules/bookings/routes/booking.routes.js";
 import dashboardRoutes from "./modules/dashboard/routes/dashboard.routes.js";
 import pricingRoutes from "./modules/pricing/routes/pricing.routes.js";
 
@@ -39,7 +38,6 @@ app.use("/api/v1/location", locationRoutes);
 app.use("/api/v1/providers", providerRoutes);
 app.use("/api/v1/skills", skillRoutes);
 app.use("/api/v1/instant-requests", instantRequestRoutes);
-app.use("/api/v1/bookings", bookingRoutes);
 app.use("/api/v1/dashboard", dashboardRoutes);
 app.use("/api/v1/pricing", pricingRoutes);
 
@@ -86,6 +84,10 @@ app.use("/api/v1/admin", (req, res, next) => {
 
 app.use("/api/v1/notifications", (req, res, next) => {
   (global as any).deps.notificationRouter(req, res, next);
+});
+
+app.use("/api/v1/bookings", (req, res, next) => {
+  (global as any).deps.bookingRouter(req, res, next);
 });
 
 // Fallback handlers
