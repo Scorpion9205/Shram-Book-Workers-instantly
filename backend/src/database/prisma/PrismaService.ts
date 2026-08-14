@@ -1,5 +1,5 @@
-import { PrismaClient, Prisma } from '@prisma/client';
-import { env } from '../../config/env.js';
+import type { Prisma } from '@prisma/client';
+import prisma from '../../shared/config/prisma.js';
 import { Logger } from '../../core/logger/Logger.js';
 
 const logger = new Logger('PrismaService');
@@ -10,22 +10,9 @@ const logger = new Logger('PrismaService');
  */
 export class PrismaService {
   private static _instance: PrismaService;
-  readonly client: PrismaClient;
+  readonly client = prisma;
 
-  private constructor() {
-    this.client = new PrismaClient({
-      log: env.NODE_ENV === 'development'
-        ? [{ emit: 'event', level: 'query' }, { emit: 'event', level: 'warn' }, { emit: 'event', level: 'error' }]
-        : [{ emit: 'event', level: 'error' }],
-    });
-
-    if (env.NODE_ENV === 'development') {
-      // @ts-expect-error — prisma event type
-      this.client.$on('query', (e: { query: string; duration: number }) => {
-        logger.debug('Prisma query', { query: e.query, duration: `${e.duration}ms` });
-      });
-    }
-  }
+  private constructor() {}
 
   static getInstance(): PrismaService {
     if (!PrismaService._instance) {
