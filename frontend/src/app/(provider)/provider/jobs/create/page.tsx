@@ -5,44 +5,43 @@ import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { motion } from "framer-motion";
-import { X, Plus, Briefcase } from "lucide-react";
+import { Briefcase } from "lucide-react";
 import { toast } from "sonner";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createJobSchema, type CreateJobFormValues } from "@/lib/utils/job-validation";
 import { useCreateJobMutation } from "@/features/jobs/jobsApi";
 import { useGetSkillsQuery } from "@/features/skills/skillsApi";
-import { geocodeAddress } from "@/lib/utils/geocode";
+import { AddressSearch } from "@/components/ui/AddressSearch";
 
 export default function CreateJobPage() {
   const router = useRouter();
   const [createJob, { isLoading }] = useCreateJobMutation();
   const { data: availableSkills = [] } = useGetSkillsQuery();
 
+  const [latitude, setLatitude] = useState<number | undefined>(undefined);
+  const [longitude, setLongitude] = useState<number | undefined>(undefined);
 
   const {
     register,
     handleSubmit,
     control,
-    watch,
-    setValue,
     formState: { errors },
   } = useForm<CreateJobFormValues>({
     resolver: zodResolver(createJobSchema) as never,
     defaultValues: {
       skillId: "",
       workersRequired: 1,
+      address: "",
     }
   });
 
   async function onSubmit(values: CreateJobFormValues) {
     try {
-      const coordinates = await geocodeAddress(values.address);
       await createJob({
         title: values.title,
         description: values.description,
@@ -50,8 +49,8 @@ export default function CreateJobPage() {
         address: values.address,
         salary: values.salary,
         workersRequired: values.workersRequired,
-        latitude: coordinates?.latitude,
-        longitude: coordinates?.longitude,
+        latitude,
+        longitude,
       }).unwrap();
       toast.success("Job posted successfully!");
       router.push("/provider/jobs");
@@ -125,8 +124,22 @@ export default function CreateJobPage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="address">Address</Label>
-                <Input id="address" placeholder="Job location" {...register("address")} />
+                <Label>Work Location Address</Label>
+                <Controller
+                  name="address"
+                  control={control}
+                  render={({ field }) => (
+                    <AddressSearch
+                      value={field.value}
+                      onChange={(details) => {
+                        field.onChange(details.address);
+                        setLatitude(details.lat);
+                        setLongitude(details.lng);
+                      }}
+                      placeholder="Search job location address..."
+                    />
+                  )}
+                />
                 {errors.address && <p className="text-xs text-destructive">{errors.address.message}</p>}
               </div>
 

@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { motion, AnimatePresence } from "framer-motion";
-import { Zap, MapPin, IndianRupee, Users, FileText, CheckCircle2, Clock, Star, Award } from "lucide-react";
+import { Zap, IndianRupee, Clock, CheckCircle2, Star, Award } from "lucide-react";
 import { toast } from "sonner";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -18,6 +18,7 @@ import { instantHireSchema, type InstantHireFormValues } from "@/lib/utils/job-v
 import { useCreateInstantRequestMutation, useCalculateFareMutation } from "@/features/instantRequests/instantRequestApi";
 import { useGetSkillsQuery } from "@/features/skills/skillsApi";
 import { useSocket } from "@/providers/SocketProvider";
+import { AddressSearch } from "@/components/ui/AddressSearch";
 
 type FlowStep = "form" | "searching" | "bidding" | "sent" | "no-worker" | "no-bids";
 
@@ -40,6 +41,10 @@ export default function InstantHirePage() {
   const [subtotal, setSubtotal] = useState<number | null>(null);
   const [platformFee, setPlatformFee] = useState<number | null>(null);
 
+  // Geolocation states for fare calculation and worker matching
+  const [latitude, setLatitude] = useState<number>(28.628848);
+  const [longitude, setLongitude] = useState<number>(77.488723);
+
   // Bidding states
   const [bids, setBids] = useState<BidInfo[]>([]);
   const [sortBy, setSortBy] = useState<"recommended" | "price" | "rating">("recommended");
@@ -59,21 +64,21 @@ export default function InstantHirePage() {
     formState: { errors },
   } = useForm<InstantHireFormValues>({
     resolver: zodResolver(instantHireSchema) as never,
-    defaultValues: { workersNeeded: 1, address: "Noida Sector 62, Uttar Pradesh" },
+    defaultValues: { workersNeeded: 1, address: "" },
   });
 
   const watchWorkerType = watch("workerType");
   const watchWorkersNeeded = watch("workersNeeded");
 
-  // Trigger fare calculation when skill or worker count changes
+  // Trigger fare calculation when skill, worker count or selected coordinates change
   useEffect(() => {
     if (!watchWorkerType) return;
 
     calculateFare({
       workerType: watchWorkerType,
       workersNeeded: watchWorkersNeeded,
-      lat: 28.628848,
-      lng: 77.488723,
+      lat: latitude,
+      lng: longitude,
     })
       .unwrap()
       .then((res) => {
@@ -85,7 +90,7 @@ export default function InstantHirePage() {
       .catch((err) => {
         console.error("Fare calculation error:", err);
       });
-  }, [watchWorkerType, watchWorkersNeeded, calculateFare]);
+  }, [watchWorkerType, watchWorkersNeeded, latitude, longitude, calculateFare]);
 
   // Socket and countdown subscriptions
   useEffect(() => {
@@ -120,13 +125,13 @@ export default function InstantHirePage() {
     }
 
     return () => {
-      socket.off("instant-request:matched");
+      socket.off("bookingUpdated");
       socket.off("instant-request:no-worker");
       socket.off("instant-bidding:bid-submitted");
       socket.off("instant-bidding:closed");
       socket.off("instant-bidding:no-bids");
     };
-  }, [socket, requestId, bookingMode]);
+  }, [socket, requestId, bookingMode, router]);
 
   // Bidding countdown timer
   useEffect(() => {
@@ -137,12 +142,9 @@ export default function InstantHirePage() {
     return () => clearInterval(interval);
   }, [step, biddingTimeLeft]);
 
-  console.log("Form Validation Errors:", errors);
-
   async function onSubmit(values: InstantHireFormValues) {
-    console.log("Submitting values:", values);
     if (!quoteId || estimatedPrice === null) {
-      toast.error("Estimated quote is missing. Please retry selecting parameters.");
+      toast.error("Estimated quote is missing. Please select skill and address.");
       return;
     }
 
@@ -161,8 +163,8 @@ export default function InstantHirePage() {
         amount: estimatedPrice,
         notes: values.notes,
         workersNeeded: values.workersNeeded,
-        lat: 28.628848,
-        lng: 77.488723,
+        lat: latitude,
+        lng: longitude,
         bookingMode,
         quoteId,
       }).unwrap();
@@ -252,11 +254,21 @@ export default function InstantHirePage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="address">Work Address</Label>
-                    <Input
-                      id="address"
-                      {...register("address")}
-                      placeholder="Type your address"
+                    <Label>Work Location Address</Label>
+                    <Controller
+                      name="address"
+                      control={control}
+                      render={({ field }) => (
+                        <AddressSearch
+                          value={field.value}
+                          onChange={(details) => {
+                            field.onChange(details.address);
+                            setLatitude(details.lat);
+                            setLongitude(details.lng);
+                          }}
+                          placeholder="Search work address..."
+                        />
+                      )}
                     />
                     {errors.address && <p className="text-xs text-destructive">{errors.address.message}</p>}
                   </div>

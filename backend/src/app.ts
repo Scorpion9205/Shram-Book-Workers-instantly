@@ -1,6 +1,5 @@
 import express from "express";
 import cors from "cors";
-import helmet from "helmet";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
 
@@ -16,10 +15,23 @@ import pricingRoutes from "./modules/pricing/routes/pricing.routes.js";
 // Middlewares
 import { notFoundHandler } from "./middleware/notFound.middleware.js";
 import { globalErrorHandler } from "./middleware/error.middleware.js";
+import { requestIdMiddleware } from "./shared/middleware/requestId.middleware.js";
+import { helmetMiddleware } from "./shared/middleware/helmet.middleware.js";
+import { idempotencyMiddleware } from "./shared/middleware/idempotency.middleware.js";
+
+// Databases configuration
+import prisma from "./shared/config/prisma.js";
+import { redis } from "./shared/config/redis.js";
 
 const app = express();
 
-app.use(helmet());
+// Traceable unique request identifier
+app.use(requestIdMiddleware);
+
+// Security hardening headers
+app.use(helmetMiddleware);
+
+// CORS cross origin restrictor
 app.use(
   cors({
     origin: process.env.FRONTEND_URL ?? "http://localhost:3000",
@@ -32,6 +44,9 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// Idempotent client requests caching
+app.use(idempotencyMiddleware());
+
 // Static Legacy Endpoint Mounts
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/location", locationRoutes);
@@ -41,12 +56,28 @@ app.use("/api/v1/instant-requests", instantRequestRoutes);
 app.use("/api/v1/dashboard", dashboardRoutes);
 app.use("/api/v1/pricing", pricingRoutes);
 
-// Health Check
-app.get("/api/v1/health", (_req, res) => {
-  res.status(200).json({
-    success: true,
-    message: "Server is running",
-  });
+// Health Check with Database and Redis Ping
+app.get("/api/v1/health", async (_req, res) => {
+  try {
+    // Ping Database (Prisma PostgreSQL)
+    await prisma.$queryRaw`SELECT 1`;
+
+    // Ping Redis
+    await redis.ping();
+
+    res.status(200).json({
+      success: true,
+      status: "UP",
+      database: "CONNECTED",
+      redis: "CONNECTED",
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      status: "DOWN",
+      error: error.message || String(error),
+    });
+  }
 });
 
 // Dynamic Dependency Injection Endpoint Mounts
