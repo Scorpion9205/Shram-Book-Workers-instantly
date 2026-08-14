@@ -3,16 +3,18 @@
 import { useEffect, useRef } from "react";
 import { useUpdateLocationMutation } from "@/features/location/locationApi";
 import { useAppSelector } from "@/hooks/redux";
+import { useSocket } from "@/providers/SocketProvider";
 
 const UPDATE_INTERVAL_MS = 10_000;
 
 /**
  * Tracks the worker's live location using the browser Geolocation API
- * and pushes updates to the backend every 10 seconds while active.
+ * and pushes updates to the backend and socket server every 10 seconds while active.
  * Only runs for authenticated workers who are marked available.
  */
 export function useLiveLocation(enabled: boolean) {
   const [updateLocation] = useUpdateLocationMutation();
+  const { socket } = useSocket();
   const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
   const watchIdRef = useRef<number | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -36,9 +38,16 @@ export function useLiveLocation(enabled: boolean) {
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
     );
 
-    intervalRef.current = setInterval(() => {
+    intervalRef.current = setInterval(async () => {
       if (lastCoordsRef.current) {
-        updateLocation(lastCoordsRef.current);
+        try {
+          await updateLocation(lastCoordsRef.current).unwrap();
+          if (socket?.connected) {
+            socket.emit("worker:location_update", lastCoordsRef.current);
+          }
+        } catch (err) {
+          console.error("Failed to update live location via socket/HTTP", err);
+        }
       }
     }, UPDATE_INTERVAL_MS);
 
@@ -46,5 +55,5 @@ export function useLiveLocation(enabled: boolean) {
       if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [enabled, isAuthenticated, updateLocation]);
+  }, [enabled, isAuthenticated, updateLocation, socket]);
 }

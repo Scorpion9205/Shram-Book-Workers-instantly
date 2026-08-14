@@ -332,7 +332,7 @@ backend/
 │   └── dashboard/
 │
 │   Every module contains:
-│    i no need off any ffile don't take that
+│    
 
 │   module/
 │   │

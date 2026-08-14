@@ -7,11 +7,13 @@ import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "./ThemeToggle";
 import { NotificationBell } from "./NotificationBell";
 import { ProfileMenu } from "./ProfileMenu";
-import { useAppDispatch } from "@/hooks/redux";
+import { useAppDispatch, useAppSelector } from "@/hooks/redux";
 import { setMobileDrawerOpen } from "@/store/uiSlice";
+import { GoOnlineButton } from "@/features/worker/components/GoOnlineButton";
 
 export function Navbar({ title }: { title?: string }) {
   const dispatch = useAppDispatch();
+  const role = useAppSelector((s) => s.auth.user?.role);
   const [searchFocused, setSearchFocused] = useState(false);
 
   return (
@@ -44,6 +46,7 @@ export function Navbar({ title }: { title?: string }) {
             onBlur={() => setSearchFocused(false)}
           />
         </div>
+        {role === "worker" && <GoOnlineButton />}
         <ThemeToggle />
         <NotificationBell />
         <ProfileMenu />
