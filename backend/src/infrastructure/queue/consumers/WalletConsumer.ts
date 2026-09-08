@@ -37,14 +37,20 @@ export class WalletConsumer {
     if (routingKey === 'booking.status_changed') {
       if (payload.toStatus === BookingStatus.WORK_COMPLETED) {
         const bookingId = payload.bookingId;
-        this.logger.info(`Work completed event caught. Settling payment for booking ${bookingId}`);
-        await this.bookingStateService.transition(bookingId, BookingStatus.PAYMENT_SETTLED, {
-          changedBy: 'SYSTEM',
-          reason: 'Auto-settled upon completion',
-        });
+        this.logger.info(`Work completed event caught. Checking payment mode for booking ${bookingId}`);
+        const booking = await this.bookingRepo.findById(bookingId);
+        if (booking && booking.paymentMode === 'ONLINE') {
+          this.logger.info(`Online booking. Auto-settling payment for booking ${bookingId}`);
+          await this.bookingStateService.transition(bookingId, BookingStatus.PAYMENT_SETTLED, {
+            changedBy: 'SYSTEM',
+            reason: 'Auto-settled upon completion (Online Booking)',
+          });
+        } else {
+          this.logger.info(`Offline booking. Awaiting manual payment settlement for booking ${bookingId}`);
+        }
       } else if (payload.toStatus === BookingStatus.PAYMENT_SETTLED) {
         const bookingId = payload.bookingId;
-        this.logger.info(`Processing wallet payout for payment settled booking ${bookingId}`);
+        this.logger.info(`Processing wallet payout/deduction for payment settled booking ${bookingId}`);
 
         const booking = await this.bookingRepo.findById(bookingId);
         if (!booking) {
@@ -59,14 +65,25 @@ export class WalletConsumer {
         }
 
         const amount = Number(booking.amount);
-        const commissionPercent = 15;
-        const creditAmount = Number((amount * (1 - commissionPercent / 100)).toFixed(2));
+        const commissionPercent = 10;
 
-        await this.walletService.creditWallet(workerId, creditAmount, 'BOOKING_PAYMENT', bookingId);
-        this.logger.info(`Successfully credited worker wallet for booking ${bookingId}`, {
-          workerId,
-          amount: creditAmount,
-        });
+        if (booking.paymentMode === 'ONLINE') {
+          // Online payment captured: credit 90% to worker's wallet
+          const creditAmount = Number((amount * (1 - commissionPercent / 100)).toFixed(2));
+          await this.walletService.creditWallet(workerId, creditAmount, 'BOOKING_PAYMENT', bookingId);
+          this.logger.info(`Successfully credited worker wallet for booking ${bookingId}`, {
+            workerId,
+            amount: creditAmount,
+          });
+        } else {
+          // Offline cash payment: debit 10% commission from worker's wallet (allowNegative = true)
+          const debitAmount = Number((amount * (commissionPercent / 100)).toFixed(2));
+          await this.walletService.debitWallet(workerId, debitAmount, 'COMMISSION_DEDUCTION', bookingId, true);
+          this.logger.info(`Successfully debited commission from worker wallet for offline booking ${bookingId}`, {
+            workerId,
+            amount: debitAmount,
+          });
+        }
       }
     }
   }

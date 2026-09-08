@@ -306,6 +306,7 @@ model Booking {
   updatedAt                DateTime                @updatedAt
   startOtp                 String?
   type                     BookingType             @default(NORMAL_JOB)
+  paymentMode              String                  @default("ONLINE")
   estimatedFare            Decimal                 @default(0.00)
   finalFare                Decimal?
   scheduledAt              DateTime?
@@ -334,6 +335,8 @@ model Booking {
   @@index([jobId])
   @@index([instantRequestId])
   @@index([status])
+  @@index([scheduledAt])
+  @@index([status, createdAt])
 }
 
 model BookingStatusHistory {
@@ -359,6 +362,9 @@ model Otp {
   bookingId   String?
   booking     Booking?    @relation(fields: [bookingId], references: [id])
   createdAt   DateTime    @default(now())
+
+  @@index([identifier, purpose, channel])
+  @@index([expiresAt])
 }
 
 model Review {

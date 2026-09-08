@@ -29,7 +29,7 @@ export class BookingController extends BaseController {
       throw new AuthorizationException('You are not authorized to view this booking');
     }
 
-    this.ok(res, BookingMapper.toResponse(booking), 'Booking details retrieved successfully');
+    this.ok(res, BookingMapper.toResponse(booking, user), 'Booking details retrieved successfully');
   };
 
   getBookings = async (req: Request, res: Response): Promise<void> => {
@@ -46,7 +46,7 @@ export class BookingController extends BaseController {
 
     this.paginated(
       res,
-      BookingMapper.toResponseList(result.items),
+      BookingMapper.toResponseList(result.items, user),
       result.total,
       result.page,
       result.limit,
@@ -68,7 +68,8 @@ export class BookingController extends BaseController {
       address: dto.address,
     });
 
-    this.created(res, BookingMapper.toResponse(booking), 'Booking created successfully');
+    const user = (req as any).user;
+    this.created(res, BookingMapper.toResponse(booking, user), 'Booking created successfully');
   };
 
   cancelBooking = async (req: Request, res: Response): Promise<void> => {
@@ -92,7 +93,7 @@ export class BookingController extends BaseController {
     const bookingId = req.params.id as string;
     const user = (req as any).user;
     const booking = await this.bookingService.workerEnRoute(bookingId, user.userId);
-    this.ok(res, BookingMapper.toResponse(booking), 'Worker marked en-route successfully');
+    this.ok(res, BookingMapper.toResponse(booking, user), 'Worker marked en-route successfully');
   };
 
   verifyStartOtp = async (req: Request, res: Response): Promise<void> => {
@@ -103,14 +104,28 @@ export class BookingController extends BaseController {
       throw new BusinessException('OTP_REQUIRED', 'OTP code is required');
     }
     const booking = await this.bookingService.verifyStartOtp(bookingId, user.userId, code);
-    this.ok(res, BookingMapper.toResponse(booking), 'Work-start OTP verified and work started successfully');
+    this.ok(res, BookingMapper.toResponse(booking, user), 'Work-start OTP verified and work started successfully');
   };
 
   completeBooking = async (req: Request, res: Response): Promise<void> => {
     const bookingId = req.params.id as string;
     const user = (req as any).user;
     const booking = await this.bookingService.completeBooking(bookingId, user.userId);
-    this.ok(res, BookingMapper.toResponse(booking), 'Booking marked as completed successfully');
+    this.ok(res, BookingMapper.toResponse(booking, user), 'Booking marked as completed successfully');
+  };
+
+  settleBooking = async (req: Request, res: Response): Promise<void> => {
+    const bookingId = req.params.id as string;
+    const user = (req as any).user;
+    const booking = await this.bookingService.settlePayment(bookingId, user.userId);
+    this.ok(res, BookingMapper.toResponse(booking, user), 'Payment settled successfully');
+  };
+
+  settleOfflineBooking = async (req: Request, res: Response): Promise<void> => {
+    const bookingId = req.params.id as string;
+    const user = (req as any).user;
+    const booking = await this.bookingService.settleOfflinePayment(bookingId, user.userId);
+    this.ok(res, BookingMapper.toResponse(booking, user), 'Offline payment settled successfully');
   };
 
   submitReview = async (req: Request, res: Response): Promise<void> => {

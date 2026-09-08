@@ -104,7 +104,7 @@ export default function WorkerDashboardPage() {
       >
         <div className="flex items-center gap-3">
           <Avatar className="size-12 ring-2 ring-primary/20">
-            <AvatarImage src={user?.avatarUrl} alt={user?.name} />
+            <AvatarImage src={user?.profileImage} alt={user?.name} />
             <AvatarFallback className="text-base">{user?.name?.[0]?.toUpperCase()}</AvatarFallback>
           </Avatar>
           <div>
@@ -112,20 +112,6 @@ export default function WorkerDashboardPage() {
             <h1 className="text-xl font-bold tracking-tight">{user?.name?.split(" ")[0] || "Worker"}</h1>
           </div>
         </div>
-
-        <Card className="flex items-center gap-3 px-4 py-3">
-          <div
-            className={`size-2.5 rounded-full ${profile?.isAvailable ? "bg-success animate-pulse" : "bg-muted-foreground/40"}`}
-          />
-          <span className="text-sm font-medium">
-            {profile?.isAvailable ? "Online — Receiving Requests" : "Offline"}
-          </span>
-          <Switch
-            checked={Boolean(profile?.isAvailable)}
-            onCheckedChange={handleToggleAvailability}
-            disabled={isToggling}
-          />
-        </Card>
       </motion.div>
 
       {/* Stats */}

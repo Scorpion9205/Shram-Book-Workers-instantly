@@ -1,6 +1,7 @@
 import { BookingStatus } from "@prisma/client";
 import prisma from "../../../shared/config/prisma.js";
 import { RedisService } from "../../../shared/services/redis/redis.service.js";
+import { NotFoundException } from "../../../core/exceptions/index.js";
 export class DashboardService {
 
   static async getWorkerDashboard(
@@ -32,9 +33,7 @@ export class DashboardService {
       });
 
     if (!worker) {
-      throw new Error(
-        "Worker profile not found"
-      );
+      throw new NotFoundException("WorkerProfile", userId);
     }
 
     const today = new Date();

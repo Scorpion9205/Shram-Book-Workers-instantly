@@ -2,8 +2,8 @@ import "dotenv/config"
 import type { Request,Response, NextFunction } from "express";
 import jwt from "jsonwebtoken"
 
-export interface AuthRequest extends Request{
-    user?:{userId:string,role:string}
+export interface AuthRequest extends Request {
+    user?: { id: string; userId: string; role: string }
 }
 
 export const authMiddleware =(req:AuthRequest,res:Response,next:NextFunction)=>{
@@ -39,7 +39,7 @@ export const authMiddleware =(req:AuthRequest,res:Response,next:NextFunction)=>{
             role:string;
         }
 
-        req.user = { userId: decoded.userId, role: decoded.role }
+        req.user = { id: decoded.userId, userId: decoded.userId, role: decoded.role }
         next();
     } catch (error) {
         return res.status(401).json({ success:false, message: "Invalid or expired token" })

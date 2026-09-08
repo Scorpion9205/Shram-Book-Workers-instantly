@@ -5,6 +5,7 @@ import { createInstantRequestSchema, calculateFareSchema } from "../validations/
 import { FareService } from "../../../shared/services/pricing/fare.service.js";
 import { RedisService } from "../../../shared/services/redis/redis.service.js";
 import { randomUUID } from "crypto";
+import { BadRequestException } from "../../../core/exceptions/index.js";
 
 export class InstantRequestController {
 
@@ -217,12 +218,12 @@ export class InstantRequestController {
       const { id } = req.params;
       const { bidAmount } = req.body;
       if (!id || typeof id !== "string") {
-        throw new Error("Invalid request parameter");
+        throw new BadRequestException("Invalid request parameter");
       }
       const bid = await InstantRequestService.submitBid(req.user!.userId, id, Number(bidAmount));
       return res.status(200).json({ success: true, bid });
     } catch (error: any) {
-      return res.status(400).json({ success: false, message: error.message });
+      return res.status(error.statusCode || 400).json({ success: false, message: error.message });
     }
   }
 
@@ -230,12 +231,12 @@ export class InstantRequestController {
     try {
       const { id, bidId } = req.params;
       if (!id || !bidId || typeof id !== "string" || typeof bidId !== "string") {
-        throw new Error("Invalid parameters");
+        throw new BadRequestException("Invalid parameters");
       }
       const result = await InstantRequestService.selectBid(req.user!.userId, id, bidId);
       return res.status(200).json({ success: true, ...result });
     } catch (error: any) {
-      return res.status(400).json({ success: false, message: error.message });
+      return res.status(error.statusCode || 400).json({ success: false, message: error.message });
     }
   }
 }

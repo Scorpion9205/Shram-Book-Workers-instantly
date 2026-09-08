@@ -80,7 +80,10 @@ export const jobsApi = apiSlice.injectEndpoints({
           address: body.address,
         },
       }),
-      transformResponse: (response: JobResponse) => response.job,
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return data.job || data;
+      },
       invalidatesTags: ["MyJobs", "Job", "DashboardProvider"],
     }),
     getJobs: builder.query<PaginatedResponse<Job>, JobFilters | void>({
@@ -88,10 +91,10 @@ export const jobsApi = apiSlice.injectEndpoints({
       // transformResponse: (response: any) => {
 
 
-      transformResponse: (response: JobsResponse) =>
-        toPaginatedJobs(response.jobs),
-      
-
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return toPaginatedJobs(data.jobs || data);
+      },
       providesTags: (result) => {
         console.log("PROVIDES TAGS RESULT", result);
 
@@ -122,15 +125,20 @@ export const jobsApi = apiSlice.injectEndpoints({
     }),
     getMyPostedJobs: builder.query<PaginatedResponse<Job>, { page?: number } | void>({
       query: (params) => `/jobs/provider/my-jobs${buildQuery(params || {})}`,
-      transformResponse: (response: JobsResponse) =>
-        toPaginatedJobs(response.jobs),
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return toPaginatedJobs(data.jobs || data);
+      },
       providesTags: ["MyJobs"],
     }),
 
 
     getJobById: builder.query<Job, string>({
       query: (jobId) => `/jobs/${jobId}`,
-      transformResponse: (response: JobResponse) => response.job,
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return data.job || data;
+      },
       providesTags: (result, error, jobId) => [{ type: "Job", id: jobId }],
     }),
 
@@ -149,21 +157,26 @@ export const jobsApi = apiSlice.injectEndpoints({
     }),
     getJobApplications: builder.query<JobApplication[], string>({
       query: (jobId) => `/jobs/${jobId}/applications`,
-      transformResponse: (response: ApplicationsResponse) =>
-        response.applications,
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return data.applications || data;
+      },
       providesTags: ["JobApplications"],
     }),
-    acceptApplication: builder.mutation<JobApplication, string>({
-      query: (applicationId) => ({
+    acceptApplication: builder.mutation<any, { applicationId: string; paymentMode: "ONLINE" | "OFFLINE" }>({
+      query: ({ applicationId, paymentMode }) => ({
         url: `/jobs/applications/${applicationId}/accept`,
         method: "PATCH",
+        body: { paymentMode },
       }),
       invalidatesTags: ["JobApplications", "MyJobs", "Booking", "DashboardProvider"],
     }),
     getMyApplications: builder.query<JobApplication[], void>({
       query: () => "/jobs/my-applications",
-      transformResponse: (response: ApplicationsResponse) =>
-        response.applications,
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return data.applications || data;
+      },
       providesTags: ["MyApplications"],
     }),
   }),

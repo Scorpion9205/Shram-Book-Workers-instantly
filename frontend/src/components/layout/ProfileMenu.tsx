@@ -49,7 +49,7 @@ export function ProfileMenu() {
       <DropdownMenuTrigger asChild>
         <button className="flex items-center gap-2 rounded-full p-0.5 transition-colors hover:bg-secondary">
           <Avatar className="size-9 ring-2 ring-border">
-            <AvatarImage src={user?.avatarUrl} alt={user?.name} />
+            <AvatarImage src={user?.profileImage} alt={user?.name} />
             <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
         </button>

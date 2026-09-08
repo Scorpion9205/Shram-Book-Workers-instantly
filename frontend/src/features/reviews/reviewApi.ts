@@ -23,17 +23,23 @@ export const reviewApi = apiSlice.injectEndpoints({
         method: "POST",
         body,
       }),
-      transformResponse: (response: ReviewResponse) =>
-        response.review,
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return data.review || data;
+      },
       invalidatesTags: ["Review", "Booking"],
     }),
     getWorkerRating: builder.query<{ average: number; total: number; reviews: Review[] }, string>({
       query: (workerId) => `/reviews/worker/${workerId}/rating`,
-      transformResponse: (response: WorkerRatingResponse) => ({
-        average: response.worker.rating,
-        total: response.worker.totalReviews,
-        reviews: response.worker.reviews ?? [],
-      }),
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        const worker = data.worker || data;
+        return {
+          average: worker.rating || 0,
+          total: worker.totalReviews || 0,
+          reviews: worker.reviews ?? [],
+        };
+      },
       providesTags: ["Review"],
     }),
 
@@ -48,20 +54,16 @@ export const reviewApi = apiSlice.injectEndpoints({
     >({
       query: (workerId) => `/reviews/worker/${workerId}`,
 
-      transformResponse: (response: {
-        success: boolean;
-        worker: {
-          rating: number;
-          totalReviews: number;
-          totalJobs: number;
-          reviews: Review[];
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        const worker = data.worker || data;
+        return {
+          average: worker.rating || 0,
+          total: worker.totalReviews || 0,
+          totalJobs: worker.totalJobs || 0,
+          reviews: worker.reviews ?? [],
         };
-      }) => ({
-        average: response.worker.rating,
-        total: response.worker.totalReviews,
-        totalJobs: response.worker.totalJobs,
-        reviews: response.worker.reviews,
-      }),
+      },
 
       providesTags: ["Review"],
     }),
@@ -73,10 +75,10 @@ export const reviewApi = apiSlice.injectEndpoints({
       query: (providerId) =>
         `/reviews/provider/${providerId}`,
 
-      transformResponse: (response: {
-        success: boolean;
-        reviews: Review[];
-      }) => response.reviews,
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return data.reviews || data;
+      },
 
       providesTags: ["Review"],
     }),

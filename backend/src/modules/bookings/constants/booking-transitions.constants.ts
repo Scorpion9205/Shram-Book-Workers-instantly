@@ -4,6 +4,7 @@ export const VALID_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
   [BookingStatus.CREATED]: [
     BookingStatus.PAYMENT_PENDING,
     BookingStatus.CANCELLED_BY_PROVIDER,
+    BookingStatus.WORKER_EN_ROUTE,
   ],
   [BookingStatus.PAYMENT_PENDING]: [
     BookingStatus.PAYMENT_CONFIRMED,

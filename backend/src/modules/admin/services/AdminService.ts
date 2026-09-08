@@ -9,14 +9,14 @@ import type { INotificationTemplateRepository } from '../../notifications/interf
 import type { IWorkerRepository } from '../../workers/interfaces/IWorkerRepository.js';
 import type { IBookingStateService } from '../../bookings/interfaces/IBookingStateService.js';
 import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
-import { PrismaService } from '../../../database/prisma/PrismaService.js';
+import type { IAdminRepository } from '../interfaces/IAdminRepository.js';
 import { CacheKeys } from '../../../infrastructure/cache/cacheKeys.js';
 import type { PaginatedResult } from '../../../core/base/BaseRepository.js';
 import { NotFoundException } from '../../../core/exceptions/index.js';
 
 export class AdminService extends BaseService implements IAdminService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly adminRepo: IAdminRepository,
     private readonly cache: ICacheService,
     private readonly userRepo: IUserRepository,
     private readonly bookingRepo: IBookingRepository,
@@ -30,31 +30,7 @@ export class AdminService extends BaseService implements IAdminService {
 
   async getDashboardStats(): Promise<any> {
     this.log('Fetching system-wide admin dashboard statistics');
-
-    const [
-      totalUsers,
-      totalWorkers,
-      totalProviders,
-      totalAgents,
-      totalBookings,
-      totalJobs,
-    ] = await Promise.all([
-      this.prisma.client.user.count(),
-      this.prisma.client.workerProfile.count(),
-      this.prisma.client.providerProfile.count(),
-      this.prisma.client.agentProfile.count(),
-      this.prisma.client.booking.count(),
-      this.prisma.client.job.count(),
-    ]);
-
-    return {
-      totalUsers,
-      totalWorkers,
-      totalProviders,
-      totalAgents,
-      totalBookings,
-      totalJobs,
-    };
+    return await this.adminRepo.getDashboardCounts();
   }
 
   async getUsers(filter: UserFilter, page: number, limit: number): Promise<PaginatedResult<User>> {

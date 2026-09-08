@@ -17,6 +17,7 @@ export class BookingFactory {
       instantRequestResponseId: overrides.instantRequestResponseId !== undefined ? overrides.instantRequestResponseId : null,
       startOtp: overrides.startOtp !== undefined ? overrides.startOtp : null,
       type: overrides.type || ("NORMAL_JOB" as BookingType),
+      paymentMode: overrides.paymentMode || "ONLINE",
       estimatedFare: overrides.estimatedFare || new Prisma.Decimal(500),
       finalFare: overrides.finalFare !== undefined ? overrides.finalFare : null,
       scheduledAt: overrides.scheduledAt !== undefined ? overrides.scheduledAt : null,

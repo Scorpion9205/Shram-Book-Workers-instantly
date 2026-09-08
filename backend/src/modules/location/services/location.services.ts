@@ -1,6 +1,7 @@
 import prisma from "../../../shared/config/prisma.js";
 import type { UpdateLocationInput } from "../validations/location.validation.js";
 import { RedisService } from "../../../shared/services/redis/redis.service.js";
+import { NotFoundException } from "../../../core/exceptions/index.js";
 
 export class LocationService {
   static async updateLocation(
@@ -13,7 +14,7 @@ export class LocationService {
     });
 
     if (!worker) {
-      throw new Error("Worker profile not found");
+      throw new NotFoundException("WorkerProfile", userId);
     }
 
     const updatedWorker = await prisma.workerProfile.update({
@@ -46,9 +47,7 @@ export class LocationService {
     });
 
     if (!worker || worker.latitude === null || worker.longitude === null) {
-      throw new Error(
-        "Location not found"
-      );
+      throw new NotFoundException("Location not found for worker");
     }
 
     return {

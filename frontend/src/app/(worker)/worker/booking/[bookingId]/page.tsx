@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useEffect } from "react";
 import { ArrowLeft, Phone, MapPin } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -13,20 +13,46 @@ import { BookingTimeline } from "@/components/cards/BookingTimeline";
 import { EmptyState } from "@/components/cards/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   useGetBookingByIdQuery,
   useWorkerEnRouteMutation,
   useVerifyStartOtpMutation,
   useCompleteBookingMutation,
+  useSettleOfflineBookingMutation,
 } from "@/features/booking/bookingApi";
+import { useSocket } from "@/providers/SocketProvider";
 
 export default function WorkerBookingDetailPage({ params }: { params: Promise<{ bookingId: string }> }) {
   const { bookingId } = use(params);
-  const { data: booking, isLoading, isError } = useGetBookingByIdQuery(bookingId);
+  const { data: booking, isLoading, isError, refetch } = useGetBookingByIdQuery(bookingId);
   const [workerEnRoute, { isLoading: isEnRouteLoading }] = useWorkerEnRouteMutation();
   const [verifyStartOtp, { isLoading: isVerifying }] = useVerifyStartOtpMutation();
   const [completeBooking, { isLoading: isCompleting }] = useCompleteBookingMutation();
+  const [settleOfflineBooking, { isLoading: isSettlingOffline }] = useSettleOfflineBookingMutation();
   const [otp, setOtp] = useState("");
+  const { socket } = useSocket();
+
+  async function handleSettleOffline() {
+    try {
+      await settleOfflineBooking(bookingId).unwrap();
+      toast.success("Payment marked as received! The job is now fully settled and completed.");
+    } catch (err: any) {
+      toast.error(err?.data?.message || "Failed to confirm payment.");
+    }
+  }
+
+  useEffect(() => {
+    if (!socket) return;
+    socket.on("bookingStatusUpdated", (data: { bookingId: string; status: string }) => {
+      if (data.bookingId === bookingId) {
+        refetch();
+      }
+    });
+    return () => {
+      socket.off("bookingStatusUpdated");
+    };
+  }, [socket, bookingId, refetch]);
 
   async function handleStartJourney() {
     try {
@@ -77,9 +103,20 @@ export default function WorkerBookingDetailPage({ params }: { params: Promise<{ 
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <Link href="/worker/bookings" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-4" /> Back to Bookings
-      </Link>
+      <div className="flex items-center justify-between">
+        <Link href="/worker/bookings" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="size-4" /> Back to Bookings
+        </Link>
+        {booking.paymentMode === "ONLINE" ? (
+          <Badge className="bg-indigo-600 hover:bg-indigo-700 text-white border-none px-3 py-1 text-xs rounded-full">
+            Paid Online (Prepaid)
+          </Badge>
+        ) : (
+          <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white border-none px-3 py-1 text-xs rounded-full">
+            Cash / UPI on Completion (Offline)
+          </Badge>
+        )}
+      </div>
 
       <Card>
         <CardHeader>
@@ -173,8 +210,48 @@ export default function WorkerBookingDetailPage({ params }: { params: Promise<{ 
         </Card>
       )}
 
+      {booking.status === "WORK_COMPLETED" && booking.paymentMode === "OFFLINE" && (
+        <Card className="border-2 border-emerald-500 bg-emerald-50/10">
+          <CardHeader>
+            <CardTitle className="text-emerald-600 flex items-center gap-2">
+              <span className="size-2 rounded-full bg-emerald-500 animate-ping" />
+              Collect Payment (₹{booking.amount})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Please collect the payment from the provider. Show this UPI QR code for scanning, or collect cash directly.
+            </p>
+            <div className="flex flex-col items-center justify-center p-4 bg-white rounded-2xl border border-emerald-100">
+              <img
+                src={`https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=${encodeURIComponent(
+                  `upi://pay?pa=shram@upi&pn=Shram&am=${booking.amount}&tr=${booking.id}&tn=Payment+for+Booking+${booking.id}`
+                )}`}
+                alt="Payment QR Code"
+                className="w-48 h-48"
+              />
+              <p className="text-xs text-muted-foreground mt-2 font-mono">Scan using any UPI App (GPay/PhonePe)</p>
+            </div>
+            <Button
+              className="w-full text-white bg-emerald-600 hover:bg-emerald-700"
+              size="lg"
+              onClick={handleSettleOffline}
+              loading={isSettlingOffline}
+            >
+              Received Cash / UPI Payment
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {booking.status === "PAYMENT_SETTLED" && (
+        <Card className="border border-emerald-500/20 bg-emerald-500/5 text-emerald-600 p-4 rounded-2xl text-center font-semibold">
+          🎉 Job Completed! Payment of ₹{booking.amount} has been successfully settled.
+        </Card>
+      )}
+
       <div className="flex gap-3">
-        {booking.status === "WORKER_ASSIGNED" && (
+        {(booking.status === "CREATED" || booking.status === "WORKER_ASSIGNED") && (
           <Button className="flex-1" size="lg" onClick={handleStartJourney} loading={isEnRouteLoading}>
             Start Journey
           </Button>

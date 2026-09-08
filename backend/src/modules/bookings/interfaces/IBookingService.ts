@@ -10,4 +10,6 @@ export interface IBookingService {
   workerEnRoute(id: string, userId: string): Promise<Booking>;
   verifyStartOtp(id: string, userId: string, code: string): Promise<Booking>;
   completeBooking(id: string, userId: string): Promise<Booking>;
+  settlePayment(id: string, userId: string): Promise<Booking>;
+  settleOfflinePayment(id: string, userId: string): Promise<Booking>;
 }

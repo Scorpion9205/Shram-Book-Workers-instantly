@@ -51,10 +51,19 @@ class RabbitMQConnection {
             }
         );
 
+        try {
+            await this.channel.deleteQueue(QUEUES.NOTIFICATION);
+        } catch (err) {
+            // Ignore if queue does not exist
+        }
+
         await this.channel.assertQueue(
             QUEUES.NOTIFICATION,
             {
                 durable: true,
+                arguments: {
+                    "x-dead-letter-exchange": "shram.dlx",
+                },
             }
         );
 

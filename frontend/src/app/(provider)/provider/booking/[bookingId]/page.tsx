@@ -11,14 +11,77 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { BookingTimeline } from "@/components/cards/BookingTimeline";
 import { ReviewDialog } from "@/components/dialogs/ReviewDialog";
 import { EmptyState } from "@/components/cards/EmptyState";
-import { useGetBookingByIdQuery } from "@/features/booking/bookingApi";
+import { useGetBookingByIdQuery, useSettleBookingMutation, useCreatePaymentOrderMutation } from "@/features/booking/bookingApi";
 import { useSocket } from "@/providers/SocketProvider";
+import { toast } from "sonner";
 
 export default function ProviderBookingDetailPage({ params }: { params: Promise<{ bookingId: string }> }) {
   const { bookingId } = use(params);
   const { data: booking, isLoading, isError, refetch } = useGetBookingByIdQuery(bookingId);
+  const [settleBooking, { isLoading: isSettling }] = useSettleBookingMutation();
+  const [createPaymentOrder, { isLoading: isPaying }] = useCreatePaymentOrderMutation();
   const [reviewOpen, setReviewOpen] = useState(false);
   const { socket } = useSocket();
+
+  async function handleSettle() {
+    try {
+      await settleBooking(bookingId).unwrap();
+      toast.success("Payment confirmed and released to worker!");
+    } catch (err: any) {
+      toast.error(err?.data?.message || "Failed to settle payment.");
+    }
+  }
+
+  function loadRazorpayScript(): Promise<boolean> {
+    return new Promise((resolve) => {
+      if ((window as any).Razorpay) {
+        resolve(true);
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  }
+
+  async function handleOnlinePayment() {
+    const loaded = await loadRazorpayScript();
+    if (!loaded) {
+      toast.error("Failed to load Razorpay SDK. Check your network.");
+      return;
+    }
+
+    try {
+      const orderData = await createPaymentOrder(bookingId).unwrap();
+      const options = {
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_U1bE9pYpZlZ1eW", // Razorpay test key ID
+        amount: orderData.amount,
+        currency: orderData.currency,
+        name: "Shram Bookings",
+        description: `Payment for booking #${bookingId}`,
+        order_id: orderData.orderId,
+        handler: async function (response: any) {
+          toast.success("Payment captured successfully!");
+          refetch();
+        },
+        prefill: {
+          name: booking?.provider?.name || "",
+          email: booking?.provider?.email || "",
+          contact: booking?.provider?.phone || "",
+        },
+        theme: {
+          color: "#4F46E5",
+        },
+      };
+
+      const paymentObject = new (window as any).Razorpay(options);
+      paymentObject.open();
+    } catch (err: any) {
+      toast.error(err?.data?.message || "Failed to initiate online payment.");
+    }
+  }
 
   useEffect(() => {
     if (!socket) return;
@@ -183,6 +246,16 @@ export default function ProviderBookingDetailPage({ params }: { params: Promise<
         </div>
 
       </div>
+      {(booking.status === "CREATED" || booking.status === "PAYMENT_PENDING") && booking.paymentMode === "ONLINE" && (
+        <Button className="w-full text-white bg-indigo-600 hover:bg-indigo-700" size="lg" onClick={handleOnlinePayment} loading={isPaying}>
+          Pay Online (₹{booking.amount})
+        </Button>
+      )}
+      {booking.status === "WORK_COMPLETED" && (
+        <Button className="w-full text-white bg-emerald-600 hover:bg-emerald-700" size="lg" onClick={handleSettle} loading={isSettling}>
+          Confirm & Release Payment
+        </Button>
+      )}
       {(booking.status === "WORK_COMPLETED" || booking.status === "PAYMENT_SETTLED") && !booking.review && (
         <Button className="w-full" size="lg" variant="outline" onClick={() => setReviewOpen(true)}>
           <Star className="size-4" /> Rate this Worker

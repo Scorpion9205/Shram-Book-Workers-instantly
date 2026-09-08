@@ -12,37 +12,28 @@ import { authenticate } from '../middleware/authenticate.middleware.js';
 import { authorize } from '../middleware/role.middleware.js';
 import { UserRole } from '../../../core/enums/Role.js';
 
+import { ResendProvider } from '../../../infrastructure/providers/email/ResendProvider.js';
+import { ExotelProvider } from '../../../infrastructure/providers/sms/ExotelProvider.js';
+import { env } from '../../../config/env.js';
+
 // Resolve dependencies manually to maintain compatibility with existing route imports in app.ts
 const prisma = PrismaService.getInstance();
 const cache = (global as any).deps?.cache || new CacheService(redis);
 const userRepo = new AuthRepository(prisma);
 const otpRepo = new OTPRepository(prisma);
 
-// Simple providers for Phase 3 stubbing (replaced fully in Phase 8)
-const emailProvider = {
-  send: async (to: string, subject: string, body: string) => {
-    console.log(`[Email Mock] To: ${to} | Subject: ${subject} | Body: ${body}`);
-  },
-  sendBatch: async (messages: any) => {
-    console.log(`[Email Mock] Batch send requested`, messages);
-  },
-};
-
-const smsProvider = {
-  send: async (to: string, body: string) => {
-    console.log(`[SMS Mock] To: ${to} | Body: ${body}`);
-  },
-};
+const emailProvider = new ResendProvider(env.RESEND_API_KEY, env.EMAIL_FROM);
+const smsProvider = new ExotelProvider(env.EXOTEL_API_KEY, env.EXOTEL_API_TOKEN, env.EXOTEL_SID, env.EXOTEL_FROM);
 
 const otpService = new OTPService(otpRepo, cache, emailProvider, smsProvider);
 const tokenService = new TokenService(cache);
-const authService = new AuthService(userRepo, otpService, tokenService, cache, prisma);
+const authService = new AuthService(userRepo, otpService, tokenService, cache, prisma, emailProvider, smsProvider);
 const controller = new AuthController(authService, cache);
 
 const router = Router();
 
 // OTP Authentication (Provider/Worker)
-router.post('/signup', controller.requestOTP);
+router.post('/signup', controller.signup);
 router.post('/login', controller.verifyOTP);
 router.post('/send-otp', controller.requestOTP);
 router.post('/verify-otp', controller.verifyOTP);

@@ -24,10 +24,13 @@ export interface BookingResponseDto {
   job?: any;
   instantRequest?: any;
   statusHistory?: any[];
+  startOtp?: string | null;
+  paymentMode?: string;
 }
 
 export class BookingMapper {
-  static toResponse(booking: any): BookingResponseDto {
+  static toResponse(booking: any, currentUser?: any): BookingResponseDto {
+    const isProvider = currentUser && (currentUser.id === booking.providerId || currentUser.userId === booking.providerId);
     return {
       id: booking.id,
       jobId: booking.jobId,
@@ -39,6 +42,7 @@ export class BookingMapper {
       finalFare: booking.finalFare ? Number(booking.finalFare) : null,
       status: booking.status,
       type: booking.type,
+      paymentMode: booking.paymentMode,
       address: booking.address,
       notes: booking.notes,
       durationHours: booking.durationHours ? Number(booking.durationHours) : null,
@@ -51,6 +55,7 @@ export class BookingMapper {
       ...(booking.worker && { worker: booking.worker }),
       ...(booking.job && { job: booking.job }),
       ...(booking.instantRequest && { instantRequest: booking.instantRequest }),
+      ...(isProvider && { startOtp: booking.startOtp }),
       ...(booking.statusHistory && {
         statusHistory: booking.statusHistory.map((h: any) => ({
           id: h.id,
@@ -64,7 +69,7 @@ export class BookingMapper {
     };
   }
 
-  static toResponseList(bookings: any[]): BookingResponseDto[] {
-    return bookings.map(b => this.toResponse(b));
+  static toResponseList(bookings: any[], currentUser?: any): BookingResponseDto[] {
+    return bookings.map(b => this.toResponse(b, currentUser));
   }
 }

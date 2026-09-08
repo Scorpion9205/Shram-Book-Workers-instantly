@@ -10,6 +10,7 @@ import {
   Zap,
   Users,
   UserCog,
+  Mail,
 } from "lucide-react";
 
 export interface NavItem {
@@ -67,4 +68,18 @@ export const agentBottomNavItems: NavItem[] = [
   { label: "Workers", href: "/agent/workers", icon: Users },
   { label: "Bookings", href: "/agent/bookings", icon: CalendarCheck },
   { label: "Profile", href: "/agent/profile", icon: UserCog },
+];
+
+export const adminNavItems: NavItem[] = [
+  { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
+  { label: "Users", href: "/admin/users", icon: Users },
+  { label: "Bookings", href: "/admin/bookings", icon: CalendarCheck },
+  { label: "Settings", href: "/admin/settings", icon: Settings },
+  { label: "Templates", href: "/admin/templates", icon: Mail },
+];
+
+export const adminBottomNavItems: NavItem[] = [
+  { label: "Home", href: "/admin/dashboard", icon: LayoutDashboard },
+  { label: "Users", href: "/admin/users", icon: Users },
+  { label: "Bookings", href: "/admin/bookings", icon: CalendarCheck },
 ];

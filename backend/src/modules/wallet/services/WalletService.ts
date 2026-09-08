@@ -3,8 +3,7 @@ import type { IWalletService } from '../interfaces/IWalletService.js';
 import type { IWalletRepository } from '../interfaces/IWalletRepository.js';
 import type { ITransactionRepository } from '../interfaces/ITransactionRepository.js';
 import type { IWorkerRepository } from '../../workers/interfaces/IWorkerRepository.js';
-import { PrismaService } from '../../../database/prisma/PrismaService.js';
-import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
+import { NotFoundException } from '../../../core/exceptions/index.js';
 
 export enum TransactionType {
   CREDIT = 'CREDIT',
@@ -16,7 +15,6 @@ export class WalletService extends BaseService implements IWalletService {
     private readonly walletRepo: IWalletRepository,
     private readonly transactionRepo: ITransactionRepository,
     private readonly workerRepo: IWorkerRepository,
-    private readonly prisma: PrismaService,
   ) {
     super('WalletService');
   }
@@ -54,49 +52,12 @@ export class WalletService extends BaseService implements IWalletService {
   }
 
   async creditWallet(workerId: string, amount: number, purpose: string, referenceId?: string): Promise<void> {
-    this.log('Crediting worker wallet', { workerId, amount, purpose, referenceId });
-
-    await this.prisma.transaction(async (tx) => {
-      let wallet = await this.walletRepo.findByWorkerId(workerId, tx);
-      if (!wallet) {
-        wallet = await this.walletRepo.create(workerId, tx);
-      }
-
-      const newBalance = Number(wallet.balance) + amount;
-      await this.walletRepo.updateBalance(wallet.id, newBalance, tx);
-
-      await this.transactionRepo.create({
-        walletId: wallet.id,
-        amount,
-        type: TransactionType.CREDIT,
-        reference: `${purpose}:${referenceId || 'SYSTEM'}`,
-      }, tx);
-    });
+    this.log('Crediting worker wallet atomically', { workerId, amount, purpose, referenceId });
+    await this.walletRepo.creditWithTransaction(workerId, amount, purpose, referenceId);
   }
 
-  async debitWallet(workerId: string, amount: number, purpose: string, referenceId?: string): Promise<void> {
-    this.log('Debiting worker wallet', { workerId, amount, purpose, referenceId });
-
-    await this.prisma.transaction(async (tx) => {
-      let wallet = await this.walletRepo.findByWorkerId(workerId, tx);
-      if (!wallet) {
-        wallet = await this.walletRepo.create(workerId, tx);
-      }
-
-      const balance = Number(wallet.balance);
-      if (balance < amount) {
-        throw new BusinessException('INSUFFICIENT_WALLET_BALANCE', 'Insufficient wallet balance for this transaction.');
-      }
-
-      const newBalance = balance - amount;
-      await this.walletRepo.updateBalance(wallet.id, newBalance, tx);
-
-      await this.transactionRepo.create({
-        walletId: wallet.id,
-        amount,
-        type: TransactionType.DEBIT,
-        reference: `${purpose}:${referenceId || 'SYSTEM'}`,
-      }, tx);
-    });
+  async debitWallet(workerId: string, amount: number, purpose: string, referenceId?: string, allowNegative: boolean = false): Promise<void> {
+    this.log('Debiting worker wallet atomically', { workerId, amount, purpose, referenceId, allowNegative });
+    await this.walletRepo.debitWithTransaction(workerId, amount, purpose, referenceId, allowNegative);
   }
 }

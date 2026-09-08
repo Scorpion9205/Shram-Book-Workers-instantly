@@ -1,0 +1,441 @@
+================================================================================
+                    SHRAM PLATFORM: REMEDIATION ROADMAP & IMPLEMENTATION PLAN
+================================================================================
+Source Document: analyzed.txt
+Target Workspace: d:\Shram-BookWorkers-instantly
+Architecture Guide: AGENTS.md
+Date Generated: September 8, 2026
+Status: APPROVED FOR SYSTEMATIC EXECUTION
+================================================================================
+
+TABLE OF CONTENTS
+--------------------------------------------------------------------------------
+1. Executive Assessment & Prioritization Matrix
+2. Phase 1: Cryptographic Security & OTP Hardening (IMMEDIATE / BLOCKER)
+3. Phase 2: Financial Concurrency & Wallet Data Integrity (CRITICAL)
+4. Phase 3: Repository Pattern Enforcement & ORM Boundary Isolation (HIGH)
+5. Phase 4: OOP Class Architecture & DI Boot Sequence Refactoring (HIGH)
+6. Phase 5: Error Handling & Typed Exception Normalization (HIGH)
+7. Phase 6: Database Schema Enhancements & Index Optimization (MEDIUM)
+8. Phase 7: Dynamic Configuration & Elimination of Magic Numbers (MEDIUM)
+9. Phase 8: Frontend State & RTK Query Cache Invalidation Alignment (MEDIUM)
+10. Phase 9: Automated Testing Strategy & Test Coverage Expansion (HIGH)
+11. Execution Checklist, Timelines & Risk Assessment
+================================================================================
+
+
+--------------------------------------------------------------------------------
+1. EXECUTIVE ASSESSMENT & PRIORITIZATION MATRIX
+--------------------------------------------------------------------------------
+A deep architectural audit of the SHRAM platform (documented in analyzed.txt) 
+revealed that while the domain models, event systems, and UI components are rich 
+and feature-complete, several core vulnerabilities and architectural anti-patterns 
+exist that threaten security, financial consistency, and production stability.
+
+This remediation plan organizes all findings into 9 progressive, dependent phases.
+Each phase includes exact file locations, root cause analysis, step-by-step code 
+remediation tasks, and acceptance verification criteria.
+
+Severity Matrix:
+- CRITICAL (P0): Security exploits, predictable OTPs, financial balance race conditions.
+- HIGH (P1): Dual boot crash risks, static method anti-patterns, naked Error throws.
+- MEDIUM (P2): Direct Prisma leaks, missing DB indexes, RTK cache staleness.
+- LOW/MAINT (P3): Incomplete module directory structures, config centralization.
+
+
+--------------------------------------------------------------------------------
+2. PHASE 1: CRYPTOGRAPHIC SECURITY & OTP HARDENING (P0 - IMMEDIATE)
+--------------------------------------------------------------------------------
+Objective: Eliminate predictable pseudo-random OTP generation, standardize OTP 
+lengths, enforce Argon2id hashing for work-start OTPs, and implement JWT token 
+revocation on logout.
+
+Target Files:
+- backend/src/shared/verification/utils/otp.utils.ts
+- backend/src/modules/auth/services/AuthService.ts
+- backend/src/modules/jobs/services/ApplicationService.ts
+- backend/src/modules/instant-requests/services/instant-request.service.ts
+- backend/src/modules/auth/services/OTPService.ts
+
+Detailed Tasks:
+1.1 Centralize OTP Generation Utility:
+    - In `backend/src/shared/verification/utils/otp.utils.ts`, replace `Math.random()` 
+      with Node's built-in `crypto.randomInt(100000, 1000000)`.
+    - Standardize default OTP length to exactly 6 digits across all modules.
+    - Export a unified `generateSecureOtp(digits: number = 6): string` helper.
+
+1.2 Remove Ad-Hoc Inline OTP Generation:
+    - In `backend/src/modules/auth/services/AuthService.ts` (line 51):
+      Remove `Math.floor(100000 + Math.random() * 900000)` and delegate to `OTPService.request()`.
+    - In `backend/src/modules/jobs/services/ApplicationService.ts` (line 115):
+      Replace 4-digit `Math.floor(1000 + Math.random() * 9000)` with `OTPService` invocation 
+      using `OtpPurpose.WORK_START`.
+    - In `backend/src/modules/instant-requests/services/instant-request.service.ts` (lines 405, 760):
+      Replace 4-digit `Math.floor(1000 + Math.random() * 9000)` with 6-digit cryptographically 
+      secure OTP generated via `OTPService`.
+
+1.3 Enforce Work-Start OTP Security Architecture:
+    - Ensure Work-Start OTPs are NEVER stored as plaintext in `Booking.startOtp`.
+    - Work-Start OTP must create a dedicated `Otp` record (`purpose = WORK_START`, `channel = SMS`), 
+      hashed with Argon2id before storage, sent strictly to the Provider's phone number.
+    - Worker enters OTP; backend verifies against the Argon2id hash via `OTPService.verify()`.
+
+1.4 JWT Token Revocation on Logout:
+    - In `backend/src/modules/auth/services/AuthService.ts`, inject `ICacheService`.
+    - Upon `logout(token, refreshToken)`, extract token JTI or hash and write to 
+      Redis blacklist with remaining TTL: `await cache.set(CacheKeys.tokenBlacklist(jti), 'revoked', ttlSeconds)`.
+    - In `authenticate.middleware.ts`, check Redis blacklist before accepting any access token.
+
+Acceptance Criteria:
+[ ] Zero occurrences of `Math.random()` in backend OTP generation code.
+[ ] All OTPs (Auth and Work-Start) are 6-digit numbers.
+[ ] Work-Start OTPs are hashed using Argon2id and verified via `OTPService`.
+[ ] Blacklisted tokens reject requests with 401 Unauthorized immediately after logout.
+
+
+--------------------------------------------------------------------------------
+3. PHASE 2: FINANCIAL CONCURRENCY & WALLET DATA INTEGRITY (P0 - CRITICAL)
+--------------------------------------------------------------------------------
+Objective: Prevent financial lost updates and balance overdraft race conditions 
+in worker wallet operations.
+
+Target Files:
+- backend/src/modules/wallet/services/WalletService.ts
+- backend/src/modules/wallet/repositories/WalletRepository.ts
+- backend/src/modules/wallet/interfaces/IWalletRepository.ts
+
+Root Cause:
+`WalletService.ts` reads balance into memory (`const balance = Number(wallet.balance)`), 
+calculates `newBalance = balance +/- amount`, and writes back `updateBalance(id, newBalance)`. 
+Concurrent operations overwrite each other, causing balance leakage.
+
+Detailed Tasks:
+2.1 Implement Atomic DB Increments/Decrements:
+    - In `IWalletRepository` and `WalletRepository`, add atomic methods:
+      * `incrementBalance(walletId: string, amount: number, tx?: PrismaTransaction): Promise<Wallet>`
+        Implementation:
+        `await prisma.wallet.update({ where: { id: walletId }, data: { balance: { increment: amount } } })`
+      * `decrementBalance(walletId: string, amount: number, allowNegative: boolean, tx?: PrismaTransaction): Promise<Wallet>`
+        Implementation:
+        Use an atomic SQL update with a balance check constraint:
+        If `allowNegative === false`, execute:
+        `await prisma.$executeRaw` or conditional Prisma update:
+        `prisma.wallet.update({ where: { id: walletId, balance: { gte: amount } }, data: { balance: { decrement: amount } } })`
+        If row count == 0, throw `BusinessException('INSUFFICIENT_WALLET_BALANCE')`.
+
+2.2 Eliminate Non-Atomic Operations in `WalletService.ts`:
+    - Refactor `creditWallet` and `debitWallet` to call the atomic repository methods.
+    - Remove in-memory balance additions and subtractions.
+
+2.3 Encapsulate Transactions inside Repository:
+    - Remove direct `this.prisma.transaction(...)` from `WalletService.ts`.
+    - Implement a transaction coordinator pattern or `executeInTransaction` helper on `BaseRepository`.
+
+Acceptance Criteria:
+[ ] Concurrent wallet credit/debit operations maintain mathematically exact balances.
+[ ] No read-modify-write balance cycles exist in `WalletService`.
+[ ] Zero direct `this.prisma.transaction` calls inside `WalletService`.
+
+
+--------------------------------------------------------------------------------
+4. PHASE 3: REPOSITORY PATTERN ENFORCEMENT & ORM BOUNDARY ISOLATION (P1 - HIGH)
+--------------------------------------------------------------------------------
+Objective: Eliminate direct `prisma.*` and `this.prisma.client.*` leaks in services 
+and background jobs, enforcing AGENTS.md Rule #2.
+
+Target Files:
+- backend/src/modules/admin/services/AdminService.ts
+- backend/src/shared/services/pricing/fare.service.ts
+- backend/src/shared/jobs/expire-instant-requests.job.ts
+- backend/src/modules/skills/services/skill.service.ts
+- backend/src/modules/reviews/services/ReviewService.ts
+- backend/src/modules/instant-requests/services/instant-request.service.ts
+
+Detailed Tasks:
+3.1 Refactor `AdminService.ts`:
+    - Create `AdminRepository` extending `BaseRepository`.
+    - Move `this.prisma.client.user.count()`, `workerProfile.count()`, `booking.count()`, 
+      and metric queries out of `AdminService.ts` into `AdminRepository`.
+    - Inject `IAdminRepository` into `AdminService`.
+
+3.2 Refactor `skill.service.ts`:
+    - Create `SkillRepository` implementing `ISkillRepository`.
+    - Move all `prisma.skill.findMany`, `create`, `update` calls into `SkillRepository`.
+    - Inject `ISkillRepository` into `SkillService`.
+
+3.3 Refactor `ReviewService.ts`:
+    - Ensure all queries go through `ReviewRepository`. Remove direct `prisma.review.*` calls.
+
+3.4 Refactor `fare.service.ts`:
+    - Move skill rate lookups from direct `prisma.skill.findUnique(...)` to `ISkillRepository.findById(...)`.
+
+3.5 Refactor Background Job `expire-instant-requests.job.ts`:
+    - Inject `InstantRequestRepository` into the job runner.
+    - Move raw Prisma queries (`prisma.instantRequest.updateMany(...)`) into 
+      `InstantRequestRepository.expirePastRequests(cutoffDate: Date)`.
+
+Acceptance Criteria:
+[ ] `grep_search "prisma."` returns zero matches across all `services/` and `jobs/` directories.
+[ ] All Prisma interactions are strictly contained within `*Repository.ts` classes.
+
+
+--------------------------------------------------------------------------------
+5. PHASE 4: OOP CLASS ARCHITECTURE & DI BOOT SEQUENCE REFACTORING (P1 - HIGH)
+--------------------------------------------------------------------------------
+Objective: Eliminate static methods and naked functions; resolve the unsafe 
+`(global as any).deps` runtime crash hazard in `app.ts` / `server.ts`.
+
+Target Files:
+- backend/src/modules/instant-requests/services/instant-request.service.ts
+- backend/src/shared/services/pricing/fare.service.ts
+- backend/src/app.ts
+- backend/src/server.ts
+- backend/src/infrastructure/bootstrap/app.bootstrap.ts
+
+Detailed Tasks:
+4.1 Convert `InstantRequestService` to Class Instance:
+    - Define interface `IInstantRequestService`.
+    - Convert `InstantRequestService` into an instantiated class extending `BaseService`.
+    - Refactor all static methods (`createInstantRequest`, `acceptRequest`, `placeBid`, etc.) 
+      into instance methods with injected dependencies:
+      `constructor(private readonly instantRequestRepo: IInstantRequestRepository, private readonly cache: ICacheService, private readonly socketService: ISocketService)`.
+
+4.2 Convert `FareService` to Class Instance:
+    - Define interface `IFareService`.
+    - Convert `FareService` to class extending `BaseService`.
+    - Inject `ISkillRepository` and `IPlatformSettingService` via constructor.
+    - Remove `static calculateInstantFare`.
+
+4.3 Eliminate `(global as any).deps` in `app.ts`:
+    - Create a structured `createApp(container: IDependencyContainer)` factory function in `app.ts`.
+    - In `server.ts`, run the async bootstrap sequence first:
+      1. Initialize database (Prisma connection).
+      2. Initialize cache (Redis connection).
+      3. Wire DI container (`wireModules()`).
+      4. Pass fully-wired container to `createApp(container)`.
+      5. Start HTTP server and bind Socket.IO.
+    - Completely remove `(global as any).deps` proxies (`app.use("/api/v1/users", (req, res, next) => (global as any).deps.userRouter(...))`).
+    - Mount routers directly: `app.use("/api/v1/users", container.userRouter)`.
+
+Acceptance Criteria:
+[ ] Zero occurrences of `(global as any).deps` in the codebase.
+[ ] No static methods on `InstantRequestService` or `FareService`.
+[ ] Application initializes cleanly without cold-start undefined routing errors.
+
+
+--------------------------------------------------------------------------------
+6. PHASE 5: ERROR HANDLING & TYPED EXCEPTION NORMALIZATION (P1 - HIGH)
+--------------------------------------------------------------------------------
+Objective: Replace generic `throw new Error(...)` calls with domain-specific 
+typed `AppException` subclasses, ensuring correct HTTP status codes (400, 401, 403, 404, 409).
+
+Target Files:
+- backend/src/modules/instant-requests/services/instant-request.service.ts (~20 occurrences)
+- backend/src/modules/location/services/location.services.ts (~2 occurrences)
+- backend/src/modules/skills/services/skill.service.ts (~1 occurrence)
+- backend/src/modules/dashboard/services/dashboard.service.ts (~1 occurrence)
+- backend/src/modules/auth/services/AuthService.ts (~1 occurrence)
+- backend/src/shared/services/pricing/fare.service.ts (~1 occurrence)
+
+Detailed Tasks:
+5.1 Audit and Replace Generic Errors:
+    - Replace `throw new Error("Worker profile not found")` with:
+      `throw new NotFoundException("Worker profile not found")` (HTTP 404).
+    - Replace `throw new Error("Worker is not available for bookings")` with:
+      `throw new BusinessException("WORKER_UNAVAILABLE", "Worker is not available for bookings")` (HTTP 409).
+    - Replace `throw new Error("This request does not support bidding")` with:
+      `throw new BadRequestException("This request does not support bidding")` (HTTP 400).
+    - Replace `throw new Error("You are not authorized to manage this request")` with:
+      `throw new ForbiddenException("You are not authorized to manage this request")` (HTTP 403).
+    - Replace `throw new Error("Bid amount must be between...")` with:
+      `throw new BadRequestException(`Bid amount must be between ₹${minBid} and ₹${maxBid}`)` (HTTP 400).
+
+5.2 Socket.IO Resilience in `BookingStateService.ts`:
+    - Wrap socket broadcast calls in a try-catch block or safe-emitter utility.
+    - If `getIO()` is not initialized (e.g. during headless jobs or testing), log a 
+      structured warning rather than failing the transaction.
+
+Acceptance Criteria:
+[ ] Zero naked `throw new Error("...")` in domain services and controllers.
+[ ] All API error responses return structured format: `{ success: false, message, errorCode, errors }`.
+[ ] Correct HTTP status codes (400, 401, 403, 404, 409) returned instead of generic 500s.
+
+
+--------------------------------------------------------------------------------
+7. PHASE 6: DATABASE SCHEMA ENHANCEMENTS & INDEX OPTIMIZATION (P2 - MEDIUM)
+--------------------------------------------------------------------------------
+Objective: Fix high-traffic performance bottlenecks and clarify data modeling 
+ambiguities on the Booking aggregate root.
+
+Target Files:
+- backend/prisma/schema.prisma
+- backend/prisma/migrations/
+
+Detailed Tasks:
+6.1 Add High-Traffic Composite Indexes:
+    - On model `Otp`:
+      Add composite index `@@index([identifier, purpose, channel])` and `@@index([expiresAt])`.
+      This eliminates table scans during OTP verification requests.
+    - On model `Booking`:
+      Add index `@@index([scheduledAt])` for calendar/scheduling queries.
+      Add index `@@index([status, createdAt])` for dashboard list filtering.
+
+6.2 Clarify Single vs Multi-Worker Relationship on `Booking`:
+    - Document and codify in `schema.prisma` and `BookingRepository`:
+      * `Booking.workerId`: Used for 1-to-1 Instant Bookings and direct worker assignments.
+      * `BookingWorker`: Join table used for 1-to-N Group Jobs where multiple workers 
+        are assigned under a single Job posting.
+    - Implement a helper method `Booking.getAssignedWorkerIds()` in `Booking.mapper.ts` 
+      to provide a unified view across both assignment modes.
+
+6.3 Generate and Apply Prisma Migration:
+    - Run `npx prisma migrate dev --name add_performance_indexes_and_clean_otp`.
+    - Run `npx prisma generate`.
+
+Acceptance Criteria:
+[ ] Composite indexes added to `Otp` and `Booking` in `schema.prisma`.
+[ ] Database migration executes successfully with zero data loss.
+
+
+--------------------------------------------------------------------------------
+8. PHASE 7: DYNAMIC CONFIGURATION & ELIMINATION OF MAGIC NUMBERS (P2 - MEDIUM)
+--------------------------------------------------------------------------------
+Objective: Eliminate hardcoded constants (fees, multipliers, timeouts) and wire 
+them to `PlatformSetting` with Redis caching.
+
+Target Files:
+- backend/src/shared/services/pricing/fare.service.ts
+- backend/src/modules/instant-requests/services/instant-request.service.ts
+- backend/src/modules/platform-settings/services/PlatformSettingService.ts
+
+Detailed Tasks:
+7.1 Migrate Hardcoded Fare Values:
+    - In `fare.service.ts`, replace `subtotal * 0.10` (10% platform fee) with:
+      `const feePercentage = await this.settingService.getNumber('PLATFORM_FEE_PERCENTAGE', 10);`
+    - Replace fallback base rate `400` with:
+      `const defaultBaseRate = await this.settingService.getNumber('DEFAULT_SKILL_BASE_RATE', 400);`
+
+7.2 Migrate Hardcoded Expiration Durations:
+    - In `instant-request.service.ts`, replace `Date.now() + 30 * 60 * 1000` with:
+      `const expiryMinutes = await this.settingService.getNumber('INSTANT_REQUEST_EXPIRY_MINUTES', 30);`
+      `new Date(Date.now() + expiryMinutes * 60 * 1000);`
+
+7.3 Ensure Platform Settings are Cached in Redis:
+    - Verify `PlatformSettingService` checks `CacheKeys.platformSetting(key)` with a 1-hour TTL 
+      and invalidates on update.
+
+Acceptance Criteria:
+[ ] Zero hardcoded business percentages, timeout minutes, or fallback rates in pricing and request flows.
+[ ] Settings can be updated in `PlatformSetting` and take effect immediately via Redis cache invalidation.
+
+
+--------------------------------------------------------------------------------
+9. PHASE 8: FRONTEND STATE & RTK QUERY CACHE INVALIDATION ALIGNMENT (P2 - MEDIUM)
+--------------------------------------------------------------------------------
+Objective: Ensure RTK Query mutations properly invalidate cache tags across 
+related views, eliminating the need for manual page refreshes.
+
+Target Files:
+- frontend/src/features/instantRequests/instantRequestApi.ts
+- frontend/src/features/booking/bookingApi.ts
+- frontend/src/features/jobs/jobsApi.ts
+- frontend/src/features/dashboard/dashboardApi.ts
+
+Detailed Tasks:
+8.1 Fix Tag Invalidation in `instantRequestApi.ts`:
+    - In `acceptInstantRequestItem` mutation:
+      Ensure `invalidatesTags` includes:
+      `["InstantRequest", "Booking", "DashboardWorker", "DashboardProvider", "MyJobs"]`.
+    - In `createInstantRequest` mutation:
+      Ensure `invalidatesTags` includes:
+      `["InstantRequest", "DashboardProvider", "Booking"]`.
+
+8.2 Align Booking Mutations in `bookingApi.ts`:
+    - Ensure `verifyWorkStartOtp`, `completeWork`, and `cancelBooking` mutations invalidate:
+      `[{ type: "Booking", id: arg.bookingId }, "Booking", "DashboardWorker", "DashboardProvider"]`.
+
+Acceptance Criteria:
+[ ] Accepting an instant request automatically reflects in Worker Dashboard and Provider views without browser refresh.
+[ ] Work-start OTP verification immediately updates the active booking status badge across all open tabs.
+
+
+--------------------------------------------------------------------------------
+10. PHASE 9: AUTOMATED TESTING STRATEGY & TEST COVERAGE EXPANSION (P1 - HIGH)
+--------------------------------------------------------------------------------
+Objective: Expand automated test coverage from 2 isolated test files to cover 
+all core critical services (Auth, Instant Requests, Wallet, Jobs, Bookings).
+
+Target Files:
+- backend/src/modules/auth/tests/AuthService.test.ts [NEW]
+- backend/src/modules/auth/tests/OTPService.test.ts [NEW]
+- backend/src/modules/wallet/tests/WalletService.test.ts [NEW]
+- backend/src/modules/instant-requests/tests/InstantRequestService.test.ts [NEW]
+- backend/src/modules/jobs/tests/JobService.test.ts [NEW]
+- backend/src/tests/factories/ (expand factories for Wallet, InstantRequest, Job)
+
+Detailed Tasks:
+9.1 Unit Test `OTPService`:
+    - Test successful OTP generation and rate limiting enforcement.
+    - Test Argon2id verification with correct and incorrect codes.
+    - Test OTP expiration and maximum attempts lockout (3 attempts).
+
+9.2 Unit Test `WalletService`:
+    - Mock `WalletRepository` and test atomic balance increment.
+    - Test balance decrement with insufficient funds (throws `BusinessException`).
+    - Verify concurrent operations logic.
+
+9.3 Unit Test `InstantRequestService`:
+    - Test instant request creation with items and fare calculation.
+    - Test worker accept flow with Redis SETNX lock acquisition.
+    - Test race condition where two workers attempt to claim the same slot.
+
+9.4 Unit Test `AuthService`:
+    - Test login with valid OTP and invalid OTP.
+    - Test JWT token creation and refresh token cookie handling.
+    - Test token revocation on logout.
+
+Acceptance Criteria:
+[ ] `npx vitest run` executes with 100% pass rate across at least 7 comprehensive test suites.
+[ ] Critical financial and security paths have automated test assertion coverage.
+
+
+--------------------------------------------------------------------------------
+11. EXECUTION CHECKLIST, TIMELINES & RISK ASSESSMENT
+--------------------------------------------------------------------------------
+
+Execution Order & Dependencies:
+  [Phase 1] Cryptographic Security & OTP (Zero dependencies, do FIRST)
+      ↓
+  [Phase 2] Financial Concurrency & Atomic Wallet Updates (Depends on DB understanding)
+      ↓
+  [Phase 3] Repository Pattern Enforcement (Prerequisite for Phase 4)
+      ↓
+  [Phase 4] OOP Class Architecture & DI Boot Sequence (Depends on Repositories)
+      ↓
+  [Phase 5] Typed Exception Refactoring (Can be done in parallel with Phase 4)
+      ↓
+  [Phase 6] Database Schema & Index Migration (Requires DB migration command)
+      ↓
+  [Phase 7] Dynamic Configuration & Platform Settings (Depends on Phase 4)
+      ↓
+  [Phase 8] Frontend RTK Query Tag Invalidation (Independent frontend phase)
+      ↓
+  [Phase 9] Automated Unit & Integration Test Expansion (Validates all phases)
+
+Risk Assessment:
+- HIGH RISK: Phase 2 (Wallet atomic balance) — requires careful testing to ensure existing wallet balances are never lost.
+- MEDIUM RISK: Phase 4 (DI container boot) — changing `app.ts` router mounting requires verifying all API route prefixes.
+- LOW RISK: Phase 1 (OTP crypto) and Phase 5 (Typed Exceptions) — pure code hardening with minimal regression risk.
+
+Estimated Effort:
+- Phase 1 (Security): 2-3 hours
+- Phase 2 (Financial): 3-4 hours
+- Phase 3 (Repositories): 4-5 hours
+- Phase 4 (OOP & DI): 4-5 hours
+- Phase 5 (Exceptions): 2-3 hours
+- Phase 6 (DB Indexes): 1-2 hours
+- Phase 7 (Settings): 2 hours
+- Phase 8 (RTK Query): 1-2 hours
+- Phase 9 (Testing): 6-8 hours
+Total Implementation Window: ~25 - 30 engineering hours.
+================================================================================

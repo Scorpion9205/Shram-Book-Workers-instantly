@@ -19,8 +19,11 @@ function VerifyOtpInner() {
   const router = useRouter();
   const dispatch = useAppDispatch();
   const searchParams = useSearchParams();
-  const identifier =
-    searchParams.get("identifier") || "";
+  
+  const identifier = searchParams.get("identifier") || "";
+  const channel = (searchParams.get("channel") || "SMS") as "EMAIL" | "SMS";
+  const roleParam = searchParams.get("role");
+  const role = roleParam ? (roleParam.toUpperCase() as "WORKER" | "PROVIDER" | "AGENT") : undefined;
 
   const [otp, setOtp] = useState("");
   const [verifyOtp, { isLoading }] = useVerifyOtpMutation();
@@ -39,35 +42,36 @@ function VerifyOtpInner() {
       return;
     }
     try {
-      const result = await verifyOtp({ identifier, otp }).unwrap();
+      const result = await verifyOtp({ channel, identifier, code: otp }).unwrap();
       dispatch(
         setCredentials({
           user: result.user,
           accessToken: result.accessToken,
-          
         })
       );
-      toast.success("Email verified successfully!");
+      toast.success("Verification successful!");
       router.push(dashboardPathForRole(result.user.role));
-    } catch {
-      toast.error("Invalid or expired code. Please try again.");
+    } catch (err: any) {
+      const msg = err?.data?.message || "Invalid or expired code. Please try again.";
+      toast.error(msg);
     }
   }
 
   async function handleResend() {
     try {
-      await resendOtp({ identifier }).unwrap();
+      await resendOtp({ channel, identifier, role }).unwrap();
       setSecondsLeft(RESEND_SECONDS);
       toast.success("A new code has been sent");
-    } catch {
-      toast.error("Couldn't resend code. Please try again.");
+    } catch (err: any) {
+      const msg = err?.data?.message || "Couldn't resend code. Please try again.";
+      toast.error(msg);
     }
   }
 
   return (
     <AuthLayout
-      title="Verify your email"
-      subtitle={identifier ? `Enter the 6-digit code sent to ${identifier}` : "Enter the 6-digit code sent to your phone"}
+      title="Verify your account"
+      subtitle="Enter the 6-digit code sent to both email or mobile"
     >
       <div className="space-y-6">
         <div className="flex justify-center">

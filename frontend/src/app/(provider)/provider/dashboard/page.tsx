@@ -59,7 +59,7 @@ export default function ProviderDashboardPage() {
       >
         <div className="flex items-center gap-3">
           <Avatar className="size-12 ring-2 ring-primary/20">
-            <AvatarImage src={user?.avatarUrl} alt={user?.name} />
+            <AvatarImage src={user?.profileImage} alt={user?.name} />
             <AvatarFallback className="text-base">{user?.name?.[0]?.toUpperCase()}</AvatarFallback>
           </Avatar>
           <div>

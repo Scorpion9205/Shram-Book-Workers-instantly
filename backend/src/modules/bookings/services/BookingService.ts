@@ -122,4 +122,38 @@ export class BookingService extends BaseService implements IBookingService {
       reason: 'Worker completed the work',
     });
   }
+
+  async settlePayment(id: string, userId: string): Promise<Booking> {
+    const booking = await this.getBookingById(id);
+    this.log('Provider is settling payment', { bookingId: id, providerUserId: userId });
+
+    // Validate that the user is the provider of the booking
+    if (booking.providerId !== userId) {
+      throw new BusinessException('UNAUTHORIZED_PROVIDER', 'You are not the provider of this booking');
+    }
+
+    return await this.stateService.transition(id, BookingStatus.PAYMENT_SETTLED, {
+      changedBy: userId,
+      reason: 'Provider confirmed and settled payment',
+    });
+  }
+
+  async settleOfflinePayment(id: string, userId: string): Promise<Booking> {
+    const booking = await this.getBookingById(id) as any;
+    this.log('Worker is confirming offline payment', { bookingId: id, workerUserId: userId });
+
+    // Validate that the caller is the assigned worker
+    if (booking.worker?.userId !== userId) {
+      throw new BusinessException('UNAUTHORIZED_WORKER', 'You are not assigned to this booking');
+    }
+
+    if (booking.paymentMode !== 'OFFLINE') {
+      throw new BusinessException('INVALID_PAYMENT_MODE', 'This booking does not support offline payment');
+    }
+
+    return await this.stateService.transition(id, BookingStatus.PAYMENT_SETTLED, {
+      changedBy: userId,
+      reason: 'Worker confirmed offline payment receipt',
+    });
+  }
 }

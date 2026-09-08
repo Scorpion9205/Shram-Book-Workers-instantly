@@ -7,6 +7,7 @@ import { VerifyOTPSchema } from '../dto/VerifyOTP.dto.js';
 import { AdminLoginSchema } from '../dto/AdminLogin.dto.js';
 import { GoogleAuthSchema } from '../dto/GoogleAuth.dto.js';
 import { RefreshTokenSchema } from '../dto/RefreshToken.dto.js';
+import { signupSchema } from '../validations/auth.validation.js';
 import { z } from 'zod';
 
 export class AuthController extends BaseController {
@@ -20,11 +21,14 @@ export class AuthController extends BaseController {
   requestOTP = async (req: Request, res: Response): Promise<void> => {
     const dto = this.validate(RequestOTPSchema, req.body);
     
-    // Store role temporarily for signup profile creation
-    await this.cache.set(`signup:role:${dto.identifier}`, dto.role, 600); // 10m TTL
-    
     await this.authService.requestOTP(dto.channel, dto.identifier, dto.role);
     this.ok(res, null, `OTP code successfully dispatched to your registered ${dto.channel.toLowerCase()}`);
+  };
+
+  signup = async (req: Request, res: Response): Promise<void> => {
+    const dto = this.validate(signupSchema, req.body);
+    await this.authService.signup(dto);
+    this.ok(res, null, 'OTP code successfully sent to your phone and email.');
   };
 
   verifyOTP = async (req: Request, res: Response): Promise<void> => {
@@ -39,8 +43,9 @@ export class AuthController extends BaseController {
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
-    // Remove temporary signup role cache
+    // Remove temporary signup role and details cache
     await this.cache.del(`signup:role:${dto.identifier}`);
+    await this.cache.del(`signup:data:${dto.identifier}`);
 
     this.ok(res, {
       user: result.user,

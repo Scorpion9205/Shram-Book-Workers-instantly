@@ -9,6 +9,8 @@ import { VALID_TRANSITIONS } from '../constants/booking-transitions.constants.js
 import { BookingEvents } from '../events/booking.events.js';
 import { BusinessException, NotFoundException } from '../../../core/exceptions/index.js';
 import { Logger } from '../../../core/logger/Logger.js';
+import { getIO } from '../../../socket/socket.js';
+import { BookingMapper } from '../mappers/Booking.mapper.js';
 
 export class BookingStateService implements IBookingStateService {
   private readonly logger = new Logger('BookingStateService');
@@ -52,6 +54,47 @@ export class BookingStateService implements IBookingStateService {
 
       return updatedBooking;
     });
+
+    // Emit real-time socket events for booking state transition
+    try {
+      const io = getIO();
+      const mappedBooking = BookingMapper.toResponse(updated, { userId: updated.providerId });
+      
+      const payload = {
+        bookingId: updated.id,
+        status: toStatus,
+      };
+
+      // Emit bookingStatusUpdated for page-level listener
+      io.to(`user:${updated.providerId}`).emit('bookingStatusUpdated', payload);
+      if (updated.workerId) {
+        const workerProfile = await this.prisma.client.workerProfile.findUnique({
+          where: { id: updated.workerId },
+          select: { userId: true },
+        });
+        if (workerProfile) {
+          io.to(`user:${workerProfile.userId}`).emit('bookingStatusUpdated', payload);
+        }
+      }
+
+      // Emit bookingUpdated for global timeline/toast listener
+      io.to(`user:${updated.providerId}`).emit('bookingUpdated', mappedBooking);
+      if (updated.workerId) {
+        const workerProfile = await this.prisma.client.workerProfile.findUnique({
+          where: { id: updated.workerId },
+          select: { userId: true },
+        });
+        if (workerProfile) {
+          io.to(`user:${workerProfile.userId}`).emit('bookingUpdated', mappedBooking);
+        }
+      }
+    } catch (err: any) {
+      if (err?.message === 'Socket not initialized') {
+        this.logger.debug(`Socket.IO not initialized; skipping socket emission for booking ${bookingId}`);
+      } else {
+        this.logger.error(`Failed to emit socket events for transition of booking ${bookingId}`, err);
+      }
+    }
 
     // 3. Emit Domain Event (fire-and-forget, log failures)
     this.emitStatusChanged(bookingId, booking.status, toStatus, meta).catch((err) => {

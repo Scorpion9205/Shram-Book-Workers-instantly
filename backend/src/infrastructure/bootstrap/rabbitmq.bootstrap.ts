@@ -23,6 +23,12 @@ export async function bootstrapRabbitMQ(): Promise<amqp.Connection> {
     // 2. Assert Queues
     logger.info('Asserting queues...');
     // Notifications queue with dead-letter exchange configuration
+    try {
+      await channel.deleteQueue(QueueNames.NOTIFICATION);
+    } catch (e) {
+      // Ignore if queue does not exist
+    }
+
     await channel.assertQueue(QueueNames.NOTIFICATION, {
       durable: true,
       arguments: {

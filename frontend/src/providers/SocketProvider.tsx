@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 import { SOCKET_URL } from "@/lib/constants";
 import { useAppDispatch, useAppSelector } from "@/hooks/redux";
 import { showIncomingInstantRequest } from "@/store/uiSlice";
@@ -23,6 +24,7 @@ export function useSocket() {
 }
 
 export function SocketProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const dispatch = useAppDispatch();
   const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
   const accessToken = useAppSelector((s) => s.auth.accessToken);
@@ -47,7 +49,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     const socket = io(SOCKET_URL, {
       auth: { token: accessToken },
-      transports: ["websocket"],
+      transports: ["polling", "websocket"],
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1500,
@@ -92,9 +94,24 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         started: "Worker has started the job",
         completed: "Job marked as completed",
         cancelled: "Booking was cancelled",
+        WORKER_ASSIGNED: "Worker has been assigned to the booking",
+        WORKER_EN_ROUTE: "Worker is on the way",
+        WORK_STARTED: "Work has started",
+        WORK_COMPLETED: "Work has been completed",
+        CANCELLED_BY_PROVIDER: "Booking was cancelled by provider",
+        CANCELLED_BY_WORKER: "Booking was cancelled by worker",
       };
       const msg = statusMessages[booking.status];
       if (msg) toast.success(msg);
+
+      if (booking.status === "WORKER_ASSIGNED") {
+        if (role?.toLowerCase() === "worker") {
+          toast.success("You have been assigned to a booking!");
+          router.push(`/worker/booking/${booking.id}`);
+        } else if (role?.toLowerCase() === "provider") {
+          router.push(`/provider/booking/${booking.id}`);
+        }
+      }
     });
 
     // --- Realtime notifications ---

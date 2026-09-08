@@ -35,20 +35,26 @@ export const workerApi = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
     createWorkerProfile: builder.mutation<WorkerProfile, Partial<WorkerProfile>>({
       query: (body) => ({ url: "/workers/profile", method: "POST", body }),
-      transformResponse: (response: WorkerProfileResponse) =>
-        normalizeWorkerProfile(response.profile!),
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return normalizeWorkerProfile(data.profile || data.worker || data);
+      },
       invalidatesTags: ["WorkerProfile"],
     }),
     getMyWorkerProfile: builder.query<WorkerProfile, void>({
       query: () => "/workers/me",
-      transformResponse: (response: WorkerProfileResponse) =>
-        normalizeWorkerProfile(response.worker!),
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return normalizeWorkerProfile(data.worker || data.profile || data);
+      },
       providesTags: ["WorkerProfile"],
     }),
     updateMyWorkerProfile: builder.mutation<WorkerProfile, Partial<WorkerProfile>>({
       query: (body) => ({ url: "/workers/me", method: "PATCH", body }),
-      transformResponse: (response: WorkerProfileResponse) =>
-        normalizeWorkerProfile(response.worker!),
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return normalizeWorkerProfile(data.worker || data.profile || data);
+      },
       invalidatesTags: ["WorkerProfile"],
     }),
     updateAvailability: builder.mutation<{ isAvailable: boolean }, { isAvailable: boolean }>({

@@ -11,7 +11,7 @@ export interface SignupPayload {
   name: string;
   phone: string;
   email?: string;
-  password: string;
+  password?: string;
   role: "worker" | "provider" | "agent";
 }
 
@@ -36,12 +36,15 @@ export interface ChangePasswordPayload {
 }
 
 export interface OtpPayload {
+  channel: "EMAIL" | "SMS";
   identifier: string;
+  role?: "WORKER" | "PROVIDER" | "AGENT";
 }
 
 export interface VerifyOtpPayload {
+  channel: "EMAIL" | "SMS";
   identifier: string;
-  otp: string;
+  code: string;
 }
 
 export interface ForgotPasswordPayload {
@@ -61,14 +64,18 @@ const normalizeRole = (role: BackendRole): User["role"] =>
   role.toLowerCase() as User["role"];
 
 const normalizeAuthResponse = (
-  response: BackendAuthResponse
-): AuthResponse => ({
-  ...response,
-  user: {
-    ...response.user,
-    role: normalizeRole(response.user.role),
-  },
-});
+  response: any
+): AuthResponse => {
+  const authData = response.data || response;
+  return {
+    user: {
+      ...authData.user,
+      role: normalizeRole(authData.user.role),
+    },
+    accessToken: authData.accessToken,
+    refreshToken: authData.refreshToken,
+  };
+};
 
 export const authApi = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
@@ -85,6 +92,11 @@ export const authApi = apiSlice.injectEndpoints({
     }),
     login: builder.mutation<AuthResponse, LoginPayload>({
       query: (body) => ({ url: "/auth/login", method: "POST", body }),
+      transformResponse: normalizeAuthResponse,
+      invalidatesTags: ["User"],
+    }),
+    adminLogin: builder.mutation<AuthResponse, { email: string; password?: string }>({
+      query: (body) => ({ url: "/auth/admin/login", method: "POST", body }),
       transformResponse: normalizeAuthResponse,
       invalidatesTags: ["User"],
     }),
@@ -119,7 +131,7 @@ export const authApi = apiSlice.injectEndpoints({
       transformResponse: normalizeAuthResponse,
     }),
     resendOtp: builder.mutation<{ success: boolean }, OtpPayload>({
-      query: (body) => ({ url: "/auth/resend-otp", method: "POST", body }),
+      query: (body) => ({ url: "/auth/send-otp", method: "POST", body }),
     }),
   }),
 });
@@ -127,6 +139,7 @@ export const authApi = apiSlice.injectEndpoints({
 export const {
   useSignupMutation,
   useLoginMutation,
+  useAdminLoginMutation,
   useRefreshTokenMutation,
   useLogoutMutation,
   useForgotPasswordMutation,

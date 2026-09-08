@@ -5,7 +5,7 @@ import { UserRole } from '../../../core/enums/Role.js';
 export const RequestOTPSchema = z.object({
   channel: z.nativeEnum(OTPChannel),
   identifier: z.string().min(1, 'Identifier is required'),
-  role: z.nativeEnum(UserRole),
+  role: z.nativeEnum(UserRole).optional(),
 }).refine((data) => {
   if (data.channel === OTPChannel.EMAIL) {
     return z.string().email().safeParse(data.identifier).success;

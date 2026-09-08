@@ -12,7 +12,8 @@ export const roleMiddleware = (...allowedRoles:UserRole[])=>{
             })
         }
 
-        if(!allowedRoles.includes(req.user.role as UserRole)){
+        const userRole = (req.user.role || '').toUpperCase() as UserRole;
+        if(!allowedRoles.includes(userRole)){
             return res.status(403).json({
                 success:false,
                 message:"Forbidden",

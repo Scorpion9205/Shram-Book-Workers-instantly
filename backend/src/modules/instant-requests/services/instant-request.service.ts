@@ -1,3 +1,4 @@
+import { randomInt } from "crypto";
 import prisma from "../../../shared/config/prisma.js";
 import { BookingStatus } from "@prisma/client";
 import type { CreateInstantRequestInput } from "../validations/instant-request.validation.js";
@@ -7,6 +8,12 @@ import { calculateDistance } from "../../../shared/utils/distance.js";
 import { RedisService } from "../../../shared/services/redis/redis.service.js";
 import { CacheInvalidationService } from "../../../shared/services/cache/cache-invalidation.service.js";
 import { InstantMatchingService } from "./instant-matching.service.js";
+import {
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  BusinessException,
+} from "../../../core/exceptions/index.js";
 
 export class InstantRequestService {
 
@@ -102,9 +109,7 @@ export class InstantRequestService {
           });
 
         if (!createdRequest) {
-          throw new Error(
-            "Request not found"
-          );
+          throw new NotFoundException("InstantRequest");
         }
 
         // Start asynchronous radius expansion matching
@@ -149,9 +154,7 @@ export class InstantRequestService {
       });
 
     if (!worker) {
-      throw new Error(
-        "Worker profile not found"
-      );
+      throw new NotFoundException("WorkerProfile", userId);
     }
 
     const workerLocation = {
@@ -306,12 +309,10 @@ export class InstantRequestService {
       });
 
     if (!worker) {
-      throw new Error(
-        "Worker profile not found"
-      );
+      throw new NotFoundException("WorkerProfile", userId);
     }
     if (!worker.isAvailable) {
-      throw new Error("Worker is not available for bookings");
+      throw new BusinessException("WORKER_UNAVAILABLE", "Worker is not available for bookings");
     }
 
     const lockKey = `lock:instant-item:${itemId}`;
@@ -323,7 +324,8 @@ export class InstantRequestService {
       );
 
     if (!lockToken) {
-      throw new Error(
+      throw new BusinessException(
+        "CONCURRENT_LOCK",
         "Another worker is already accepting this request."
       );
     }
@@ -343,17 +345,16 @@ export class InstantRequestService {
             });
 
           if (!item) {
-            throw new Error(
-              "Request item not found"
-            );
+            throw new NotFoundException("InstantRequestItem", itemId);
           }
 
           if (item.request.bookingMode !== "DIRECT") {
-            throw new Error("This request does not support direct accept");
+            throw new BadRequestException("This request does not support direct accept");
           }
 
           if (item.request.status !== "OPEN") {
-            throw new Error(
+            throw new BusinessException(
+              "REQUEST_CLOSED",
               "Request is closed"
             );
           }
@@ -365,7 +366,7 @@ export class InstantRequestService {
             );
 
           if (!hasSkill) {
-            throw new Error(
+            throw new BadRequestException(
               "You don't have required skill"
             );
           }
@@ -379,7 +380,8 @@ export class InstantRequestService {
             });
 
           if (alreadyAccepted) {
-            throw new Error(
+            throw new BusinessException(
+              "ALREADY_ACCEPTED",
               "You already accepted this request"
             );
           }
@@ -388,7 +390,8 @@ export class InstantRequestService {
             item.acceptedWorkers >=
             item.requiredWorkers
           ) {
-            throw new Error(
+            throw new BusinessException(
+              "SLOTS_FILLED",
               "All slots are filled"
             );
           }
@@ -402,7 +405,7 @@ export class InstantRequestService {
               },
             });
 
-          const startOtp = Math.floor(1000 + Math.random() * 9000).toString();
+          const startOtp = randomInt(100000, 1000000).toString();
 
           const booking = await tx.booking.create({
             data: {
@@ -416,7 +419,7 @@ export class InstantRequestService {
 
               amount: item.request.amount,
 
-              status: BookingStatus.CREATED,
+              status: BookingStatus.WORKER_ASSIGNED,
               startOtp,
             },
           });
@@ -448,7 +451,7 @@ export class InstantRequestService {
             });
 
           if (updateResult.count === 0) {
-            throw new Error("All slots are already filled");
+            throw new BusinessException("SLOTS_FILLED", "All slots are already filled");
           }
 
           const updatedItem =
@@ -459,7 +462,7 @@ export class InstantRequestService {
             });
 
           if (!updatedItem) {
-            throw new Error("Request item not found");
+            throw new NotFoundException("InstantRequestItem", itemId);
           }
 
 
@@ -570,9 +573,7 @@ export class InstantRequestService {
       });
 
     if (!provider) {
-      throw new Error(
-        "Provider profile not found"
-      );
+      throw new NotFoundException("ProviderProfile", userId);
     }
 
     const requests =
@@ -643,10 +644,10 @@ export class InstantRequestService {
     });
 
     if (!worker) {
-      throw new Error("Worker profile not found");
+      throw new NotFoundException("WorkerProfile", userId);
     }
     if (!worker.isAvailable || !worker.user.isActive) {
-      throw new Error("Worker is not available to place bids");
+      throw new BusinessException("WORKER_UNAVAILABLE", "Worker is not available to place bids");
     }
 
     const request = await prisma.instantRequest.findUnique({
@@ -654,16 +655,16 @@ export class InstantRequestService {
     });
 
     if (!request) {
-      throw new Error("Instant request not found");
+      throw new NotFoundException("InstantRequest", requestId);
     }
     if (request.bookingMode !== "BIDDING") {
-      throw new Error("This request does not support bidding");
+      throw new BadRequestException("This request does not support bidding");
     }
     if (request.status !== "OPEN") {
-      throw new Error("Bidding for this request is closed");
+      throw new BusinessException("REQUEST_CLOSED", "Bidding for this request is closed");
     }
     if (request.expiresAt < new Date()) {
-      throw new Error("Bidding for this request has expired");
+      throw new BusinessException("REQUEST_EXPIRED", "Bidding for this request has expired");
     }
 
     // Enforce 20% max discount rule
@@ -671,7 +672,7 @@ export class InstantRequestService {
     const minBid = 0.80 * requestAmount;
     const maxBid = requestAmount;
     if (bidAmount < minBid || bidAmount > maxBid) {
-      throw new Error(`Bid amount must be between ₹${Math.round(minBid)} and ₹${maxBid}`);
+      throw new BadRequestException(`Bid amount must be between ₹${Math.round(minBid)} and ₹${maxBid}`);
     }
 
     const bid = await prisma.$transaction(async (tx) => {
@@ -721,7 +722,7 @@ export class InstantRequestService {
     const lockKey = `lock:instant-bid-select:${requestId}`;
     const lockToken = await RedisService.acquireLock(lockKey, 15);
     if (!lockToken) {
-      throw new Error("Another transaction is processing this request selection.");
+      throw new BusinessException("CONCURRENT_SELECTION", "Another transaction is processing this request selection.");
     }
 
     try {
@@ -731,13 +732,13 @@ export class InstantRequestService {
         });
 
         if (!request) {
-          throw new Error("Instant request not found");
+          throw new NotFoundException("InstantRequest", requestId);
         }
         if (request.providerId !== userId) {
-          throw new Error("You are not authorized to manage this request");
+          throw new ForbiddenException("You are not authorized to manage this request");
         }
         if (request.status !== "OPEN") {
-          throw new Error("This request is no longer open for selection");
+          throw new BusinessException("REQUEST_CLOSED", "This request is no longer open for selection");
         }
 
         const bid = await tx.instantRequestBid.findUnique({
@@ -746,18 +747,18 @@ export class InstantRequestService {
         });
 
         if (!bid || bid.instantRequestId !== requestId) {
-          throw new Error("Bid not found or doesn't belong to this request");
+          throw new NotFoundException("InstantRequestBid", bidId);
         }
         if (bid.status !== "ACTIVE") {
-          throw new Error("This bid is no longer active");
+          throw new BusinessException("BID_INACTIVE", "This bid is no longer active");
         }
 
         // Recheck worker availability
         if (!bid.worker.isAvailable || !bid.worker.user.isActive) {
-          throw new Error("This worker is no longer available");
+          throw new BusinessException("WORKER_UNAVAILABLE", "This worker is no longer available");
         }
 
-        const startOtp = Math.floor(1000 + Math.random() * 9000).toString();
+        const startOtp = randomInt(100000, 1000000).toString();
 
         // Create booking with selected bid amount
         const booking = await tx.booking.create({
@@ -766,7 +767,7 @@ export class InstantRequestService {
             workerId: bid.workerId,
             instantRequestId: request.id,
             amount: bid.bidAmount,
-            status: BookingStatus.CREATED,
+            status: BookingStatus.WORKER_ASSIGNED,
             startOtp
           }
         });
