@@ -1,0 +1,560 @@
+================================================================================
+                         SHRAM PLATFORM: COMPREHENSIVE TECHNICAL AUDIT
+                      FUNCTIONALITY, FLOWS & SEARCH BARS ANALYSIS
+================================================================================
+Author: Senior Software Engineer (Staff / Principal Level)
+Date: September 9, 2026
+Workspace: d:\Shram-BookWorkers-instantly
+Architecture Baseline: AGENTS.md & analyzed.txt
+Status: COMPLETED (Read-Only Forensic Audit Before Writing Any Code)
+================================================================================
+
+TABLE OF CONTENTS
+--------------------------------------------------------------------------------
+1. Executive Forensic Summary
+2. Root-Cause Analysis: Why Search Bars & Inputs Are Not Working
+   2.1 Address & Location Autocomplete Search Bar (Critical Failure)
+   2.2 Worker Job Feed Search Bar & Filters (Critical Failure)
+   2.3 Admin User Directory Search & Role Filter (Validation 400 Failure)
+   2.4 Admin System Bookings Search Bar (Ignored Query Failure)
+3. End-to-End Flow Analysis (Working vs. Broken Evaluation)
+   3.1 Flow 1: Authentication, OTP & Onboarding
+   3.2 Flow 2: Instant Request & Matching Engine (Uber-Style)
+   3.3 Flow 3: Job Feed, Search, Posting & Application Flow
+   3.4 Flow 4: Booking Lifecycle & Work-Start OTP Verification
+   3.5 Flow 5: Payment Processing & Offline/Online Settlement
+   3.6 Flow 6: Worker Wallet, Transactions & Payouts
+   3.7 Flow 7: Live Geolocation & Real-Time Tracking
+   3.8 Flow 8: Reviews, Ratings & Reputation System
+   3.9 Flow 9: Agency & Multi-Worker Group Flow
+   3.10 Flow 10: Admin Platform Controls & Configurations
+   3.11 Flow 11: Real-Time Messaging / Chat System
+4. Component & Page Health Matrix (Frontend & Backend)
+5. Prioritized Remediation Roadmap (Step-by-Step Implementation Guide)
+================================================================================
+
+
+--------------------------------------------------------------------------------
+1. EXECUTIVE FORENSIC SUMMARY
+--------------------------------------------------------------------------------
+Following a comprehensive audit of every component, route, service, repository, 
+hook, and page across both the frontend (Next.js 15) and backend (Express 5 + Prisma), 
+the system demonstrates strong domain modeling, cryptographically secure OTP generation, 
+atomic wallet balance transactions, and strict TypeScript compilation (0 errors across 
+both repos with 38 passing Vitest unit tests).
+
+HOWEVER, several core end-user features are silently broken or completely disconnected 
+between the UI and API layers. Most notably:
+1. All search bars (Address Search, Job Feed Search, Admin User Search by Role, and 
+   Admin Booking ID Search) fail to execute their intended function due to missing 
+   hook implementations, ignored query parameters on the backend, or casing mismatches.
+2. The Work-Start OTP input in the Worker UI is hard-limited to 4 digits (`maxLength={4}`), 
+   while the backend produces 6-digit secure OTPs, locking workers out of starting jobs.
+3. Online Razorpay payments lack a client-side verification endpoint (`/payments/verify`), 
+   relying solely on external webhooks which fail in local development or unstable networks.
+4. Worker live location socket broadcasts (`worker:location_update`) are ignored by the 
+   backend Socket.IO server, and the Provider live tracking card is an unrendered placeholder.
+5. Worker Wallet management has a fully operational backend API, but zero frontend UI pages.
+6. The Agent bookings query in `BookingController` fails because `agentId` is queried against 
+   `User.id` instead of `AgentProfile.id`.
+
+
+================================================================================
+2. ROOT-CAUSE ANALYSIS: WHY SEARCH BARS & INPUTS ARE NOT WORKING
+================================================================================
+
+--------------------------------------------------------------------------------
+2.1 Address & Location Autocomplete Search Bar (CRITICAL FAILURE)
+--------------------------------------------------------------------------------
+Affected Components:
+- `frontend/src/components/ui/AddressSearch.tsx`
+- `frontend/src/hooks/useGoogleMapsScript.ts`
+- `frontend/src/app/(provider)/provider/instant-hire/page.tsx`
+- `frontend/src/app/(provider)/provider/jobs/create/page.tsx`
+
+Root Cause:
+1. In `frontend/src/hooks/useGoogleMapsScript.ts` (lines 11-13):
+   ```typescript
+   export function useGoogleMapsScript() {
+     return false; // Hardcoded stub!
+   }
+   ```
+   The hook literally returns `false` constantly. It never injects the Google Maps Places 
+   script (`https://maps.googleapis.com/maps/api/js?key=...&libraries=places`).
+2. In `AddressSearch.tsx` (lines 34-39):
+   ```typescript
+   const isMapsLoaded = useGoogleMapsScript();
+   useEffect(() => {
+     if (!isMapsLoaded || !inputRef.current || !window.google?.maps?.places) return;
+     const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, ...);
+   ```
+   Because `isMapsLoaded` is always `false`, the Google Places Autocomplete instance 
+   is NEVER created. No suggestions dropdown ever renders when the user types.
+3. Fallback Lat/Lng Corruption (lines 128-133 of `AddressSearch.tsx`):
+   When the user types an address manually, the component executes:
+   ```typescript
+   onChange({
+     address: val,
+     lat: 0,
+     lng: 0,
+     placeId: "manual_input",
+   });
+   ```
+   It passes `lat: 0, lng: 0` (Null Island in the Atlantic Ocean) to the form state!
+4. Downstream Impact:
+   - In `instant-hire/page.tsx`, the request is sent with `latitude: 0, longitude: 0`.
+   - In `jobs/create/page.tsx`, the job is posted with `latitude: 0, longitude: 0`.
+   - The backend spatial index (`Redis Geo` / `InstantMatchingService`) searches for 
+     workers within radius of (0, 0). It never finds any workers, causing the instant hire 
+     flow to hang forever in the "Searching nearby workers…" loading state!
+
+Remediation Required:
+- Implement dynamic script loading in `useGoogleMapsScript.ts` with error handling.
+- Provide a robust OpenStreetMap (Nominatim) or browser-geocoded fallback in `AddressSearch.tsx` 
+  when Google Maps API key is absent or invalid, resolving real lat/lng coordinates.
+
+
+--------------------------------------------------------------------------------
+2.2 Worker Job Feed Search Bar & Filters (CRITICAL FAILURE)
+--------------------------------------------------------------------------------
+Affected Components:
+- `frontend/src/app/(worker)/worker/jobs/page.tsx`
+- `frontend/src/components/forms/JobFilterBar.tsx`
+- `frontend/src/features/jobs/jobsApi.ts`
+- `backend/src/modules/jobs/routes/job.routes.ts`
+- `backend/src/modules/jobs/controllers/JobController.ts`
+- `backend/src/modules/jobs/services/JobService.ts`
+
+Root Cause:
+1. Frontend Query Generation:
+   In `jobsApi.ts`, `getJobs` builds a query string with filters:
+   `GET /api/v1/jobs?search=carpenter&category=carpentry&sort=latest&page=1&pageSize=12`
+2. Backend Controller Disconnect (`JobController.ts`, lines 23-27):
+   ```typescript
+   getAllJobs = async (req: Request, res: Response): Promise<void> => {
+     const user = (req as any).user;
+     const result = await this.jobService.getAllJobs(user.userId);
+     this.ok(res, result.jobs, 'Jobs retrieved successfully');
+   };
+   ```
+   `JobController.getAllJobs` completely DISCARDS `req.query`!
+   It does not read or validate `search`, `category`, `minSalary`, `sort`, or pagination.
+3. Backend Service Disconnect (`JobService.ts`, lines 61-119):
+   `getAllJobs(userId: string)` takes only `userId`. It extracts worker skills and executes:
+   ```typescript
+   const jobs = await this.jobRepo.findManyOpenBySkillIds(skillIds);
+   const result = { jobs };
+   await this.cache.set(cacheKey, result, 120);
+   return result;
+   ```
+   It queries all open jobs matching skill IDs with ZERO search term matching, and caches 
+   the entire array in Redis for 120 seconds.
+4. Input UX Bug in `JobFilterBar.tsx` (lines 20-25):
+   `<Input defaultValue={filters.search} ... />` is an uncontrolled input that desynchronizes 
+   from the parent filter state.
+
+Remediation Required:
+- Create `GetJobsQueryDto` validating `search`, `category`, `minSalary`, `maxSalary`, `sort`, `page`, `limit`.
+- Pass the filter DTO from `JobController` to `JobService.getAllJobs(userId, filter)`.
+- Update `JobRepository` to execute Prisma filters with `contains` (case-insensitive) on title/description.
+- Update `JobFilterBar.tsx` to use controlled inputs (`value={filters.search || ""}`).
+
+
+--------------------------------------------------------------------------------
+2.3 Admin User Directory Search & Role Filter (VALIDATION 400 FAILURE)
+--------------------------------------------------------------------------------
+Affected Components:
+- `frontend/src/app/(admin)/admin/users/page.tsx`
+- `backend/src/modules/admin/controllers/AdminController.ts`
+- `backend/src/core/enums/Role.ts`
+
+Root Cause:
+1. In `AdminUsersPage` (`admin/users/page.tsx`, lines 84-88):
+   ```tsx
+   <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
+     <option value="">All Roles</option>
+     <option value="worker">Worker</option>
+     <option value="provider">Provider</option>
+     <option value="agent">Agent</option>
+   </select>
+   ```
+   The option values are LOWERCASE (`"worker"`, `"provider"`, `"agent"`).
+2. In `AdminController.ts` (lines 10-17):
+   ```typescript
+   const GetUsersQuerySchema = z.object({
+     role: z.nativeEnum(UserRole).optional(),
+     ...
+   });
+   ```
+   `UserRole` in `core/enums/Role.ts` is defined as:
+   `PROVIDER = 'PROVIDER'`, `WORKER = 'WORKER'`, `AGENT = 'AGENT'`, `ADMIN = 'ADMIN'` (UPPERCASE).
+3. Result:
+   When an admin filters by role (e.g. selects "Worker"), the frontend sends `GET /admin/users?role=worker`.
+   Zod schema validation immediately throws a `400 Bad Request` with:
+   `"Invalid enum value. Expected 'PROVIDER' | 'WORKER' | 'AGENT' | 'ADMIN', received 'worker'"`.
+   The user directory crashes and displays an error toast.
+
+Remediation Required:
+- Update `admin/users/page.tsx` option values to uppercase (`"WORKER"`, `"PROVIDER"`, `"AGENT"`) 
+  or transform to uppercase in `GetUsersQuerySchema` / `adminApi.ts`.
+
+
+--------------------------------------------------------------------------------
+2.4 Admin System Bookings Search Bar (IGNORED QUERY FAILURE)
+--------------------------------------------------------------------------------
+Affected Components:
+- `frontend/src/app/(admin)/admin/bookings/page.tsx`
+- `backend/src/modules/admin/controllers/AdminController.ts`
+- `backend/src/modules/bookings/repositories/BookingRepository.ts`
+
+Root Cause:
+1. In `AdminBookingsPage` (`admin/bookings/page.tsx`, lines 68-75):
+   `<Input placeholder="Search by Booking ID..." value={search} ... />`
+   Passes `search` to `useGetBookingsQuery`, which sends `GET /admin/bookings?search=booking_123`.
+2. In `AdminController.ts` (lines 23-31):
+   ```typescript
+   const GetBookingsQuerySchema = z.object({
+     page: z.string().optional().transform(...),
+     limit: z.string().optional().transform(...),
+     status: z.nativeEnum(BookingStatus).optional(),
+     providerId: z.string().uuid().optional(),
+     workerId: z.string().uuid().optional(),
+     agentId: z.string().uuid().optional(),
+     type: z.nativeEnum(BookingType).optional(),
+     // "search" is completely missing!
+   });
+   ```
+3. In `BookingRepository.findManyByFilter`:
+   The `whereClause` has no condition for `search`.
+4. Result:
+   Searching by Booking ID in the admin dashboard returns unfiltered results; search does nothing.
+
+Remediation Required:
+- Add `search: z.string().optional()` to `GetBookingsQuerySchema` and `BookingFilter`.
+- Add `whereClause: { id: { contains: filter.search, mode: 'insensitive' } }` or OR condition across 
+  Booking ID, Provider name, and Worker name in `BookingRepository.findManyByFilter`.
+
+
+================================================================================
+3. END-TO-END FLOW ANALYSIS (WORKING VS. BROKEN EVALUATION)
+================================================================================
+
+--------------------------------------------------------------------------------
+3.1 FLOW 1: AUTHENTICATION, OTP & ONBOARDING
+--------------------------------------------------------------------------------
+Architecture: Dual-mode Auth (Argon2id OTP for Workers/Providers, Argon2id Password for Admins/Agents)
+Components: `login/page.tsx`, `signup/page.tsx`, `verify-otp/page.tsx`, `AuthService.ts`, `OTPService.ts`
+
+Status: 95% OPERATIONAL
+- [WORKING] 6-digit cryptographically secure OTP generation (`crypto.randomInt`).
+- [WORKING] Argon2id code hashing before database storage.
+- [WORKING] Rate limiting (1 OTP per minute, 5 OTPs per hour) and max attempt lockouts (3 attempts).
+- [WORKING] Dual-token issuance (15-min Access Token + 7-day Refresh Token).
+- [WORKING] Token blacklisting on logout via Redis.
+- [MINOR BUG] In `frontend/src/features/auth/authApi.ts`, `login` sends `body.role.toUpperCase()`, 
+  while `adminLogin` sends raw credentials. If a user tries admin login via standard OTP, 
+  they are properly rejected (`AuthorizationException`), but the UI doesn't provide a direct 
+  link to `/admin/login`.
+
+
+--------------------------------------------------------------------------------
+3.2 FLOW 2: INSTANT REQUEST & MATCHING ENGINE (UBER-STYLE)
+--------------------------------------------------------------------------------
+Architecture: Provider Request -> Dynamic Fare Calc -> Redis Geo Index -> Progressive Radius Expansion -> Worker Socket Alert -> Redis SETNX Atomic Lock -> Booking Created
+Components: `provider/instant-hire/page.tsx`, `InstantRequestPopup.tsx`, `instant-request.service.ts`, `instant-matching.service.ts`
+
+Status: 60% OPERATIONAL (BLOCKED BY ADDRESS SEARCH & SOCKET TRACKING)
+- [WORKING] Dynamic pricing engine calculating base rate + platform fee percentage via `PlatformSetting`.
+- [WORKING] Distributed locking via `RedisService.acquireLock` (SETNX) preventing double-accepts.
+- [WORKING] `InstantRequestPopup.tsx` plays alert audio, counts down 30s, and enables worker accept.
+- [WORKING] Bidding mode countdown timer and real-time bid submission.
+- [CRITICAL BUG] `AddressSearch.tsx` fails to initialize Google Places because `useGoogleMapsScript` 
+  returns `false`. Instant requests default to `latitude: 0, longitude: 0`. Worker radius expansion 
+  matches workers in the ocean, failing the entire flow.
+- [BROKEN] Live tracking card on Provider booking page is a placeholder string.
+
+
+--------------------------------------------------------------------------------
+3.3 FLOW 3: JOB FEED, SEARCH, POSTING & APPLICATION FLOW
+--------------------------------------------------------------------------------
+Architecture: Provider Posts Job -> Worker Views Feed -> Filter/Search -> Worker Applies -> Provider Reviews -> Accept Creates Booking
+Components: `jobs/create/page.tsx`, `worker/jobs/page.tsx`, `JobCard.tsx`, `JobFilterBar.tsx`, `JobService.ts`, `ApplicationService.ts`
+
+Status: 70% OPERATIONAL (BLOCKED BY SEARCH DISCONNECT & ADDRESS LAT/LNG)
+- [WORKING] Job creation persists title, description, budget, skillId, and required workers.
+- [WORKING] Provider profile auto-upsert on job creation.
+- [WORKING] Worker application submission with proposed bid amount.
+- [WORKING] Provider accepts application -> atomic Booking record created with 6-digit start OTP.
+- [CRITICAL BUG] Job creation address input sets (0, 0) coordinates due to broken `AddressSearch.tsx`.
+- [CRITICAL BUG] Worker job feed search bar and filter selects do nothing because `JobController` 
+  ignores `req.query` and `JobService.getAllJobs` does not support search filtering.
+
+
+--------------------------------------------------------------------------------
+3.4 FLOW 4: BOOKING LIFECYCLE & WORK-START OTP VERIFICATION
+--------------------------------------------------------------------------------
+Architecture: Booking State Machine (CREATED -> WORKER_ASSIGNED -> WORKER_EN_ROUTE -> OTP_VERIFIED -> WORK_STARTED -> WORK_COMPLETED -> PAYMENT_SETTLED)
+Components: `BookingStateService.ts`, `BookingService.ts`, `provider/booking/[bookingId]/page.tsx`, `worker/booking/[bookingId]/page.tsx`
+
+Status: 65% OPERATIONAL (BLOCKED BY WORKER OTP INPUT LENGTH)
+- [WORKING] Strict FSM transition enforcement in `BookingStateService.ts`.
+- [WORKING] State transition history logging in `BookingStatusHistory`.
+- [WORKING] Provider view displays `booking.startOtp` clearly once worker is en-route.
+- [WORKING] Cancel booking with role policy checks and RTK cache invalidation.
+- [CRITICAL BUG] In `frontend/src/app/(worker)/worker/booking/[bookingId]/page.tsx` (line 207):
+  `<Input id="start-otp" maxLength={4} placeholder="e.g. 1234" />`
+  The worker UI restricts input to 4 characters. The backend generates 6-digit OTPs 
+  (`randomInt(100000, 1000000)`). The worker CANNOT enter the 6-digit OTP. 
+  The booking can NEVER transition from `WORKER_EN_ROUTE` to `WORK_STARTED`!
+
+
+--------------------------------------------------------------------------------
+3.5 FLOW 5: PAYMENT PROCESSING & OFFLINE/ONLINE SETTLEMENT
+--------------------------------------------------------------------------------
+Architecture: Razorpay Order Creation -> Client Checkout -> Webhook / Client Verification -> Wallet Payout
+Components: `PaymentService.ts`, `RazorpayProvider.ts`, `payment.routes.ts`, `provider/booking/[bookingId]/page.tsx`
+
+Status: 75% OPERATIONAL (OFFLINE WORKS, ONLINE LOCAL VERIFICATION MISSING)
+- [WORKING] Offline settlement (`/bookings/:id/settle-offline`): Worker marks cash received -> Booking transitions to `PAYMENT_SETTLED`.
+- [WORKING] Online Razorpay order creation (`POST /api/v1/payments/orders`) with exact paise conversion.
+- [WORKING] Razorpay Webhook listener with HMAC SHA256 signature verification.
+- [HIGH BUG] No client-side payment verification endpoint (`POST /api/v1/payments/verify`). 
+  When Razorpay modal succeeds in the provider browser, `handler()` only shows a toast and calls `refetch()`. 
+  Because localhost cannot receive external webhooks without a tunnel (ngrok), online payments 
+  remain perpetually in `PAYMENT_PENDING` during local testing.
+
+
+--------------------------------------------------------------------------------
+3.6 FLOW 6: WORKER WALLET, TRANSACTIONS & PAYOUTS
+--------------------------------------------------------------------------------
+Architecture: Atomic Balance Updates (increment/decrement with gte balance check) -> Payout Withdrawals
+Components: `WalletService.ts`, `WalletRepository.ts`, `wallet.routes.ts`
+
+Status: 50% OPERATIONAL (BACKEND COMPLETE, FRONTEND MISSING)
+- [WORKING] Atomic balance increments and decrements preventing financial race conditions.
+- [WORKING] Complete transaction ledger logging (`JOB_PAYOUT`, `WITHDRAWAL`, `REFUND`).
+- [WORKING] 5 passing unit tests verifying concurrency and balance overdraft protection.
+- [CRITICAL BUG] ZERO frontend presence:
+  - There is NO `walletApi.ts` in `frontend/src/features/`.
+  - There is NO `/worker/wallet` page or navigation item in `providerNavItems` or `workerNavItems`.
+  - Workers have no UI to view their wallet balance, inspect transaction history, or request withdrawals.
+
+
+--------------------------------------------------------------------------------
+3.7 FLOW 7: LIVE GEOLOCATION & REAL-TIME TRACKING
+--------------------------------------------------------------------------------
+Architecture: Browser Geolocation -> `useLiveLocation` Hook -> Socket.IO -> Redis Geo -> Map UI
+Components: `useLiveLocation.ts`, `location.controller.ts`, `socket.ts`, `BookingLiveMap.tsx`
+
+Status: 30% OPERATIONAL
+- [WORKING] `useLiveLocation.ts` periodically reads browser GPS coordinates every 10 seconds.
+- [WORKING] HTTP fallback updates `WorkerProfile.latitude/longitude` and Redis Geo via `LocationService`.
+- [BROKEN] Socket Event Dropped: `useLiveLocation.ts` emits `socket.emit("worker:location_update", coords)`. 
+  The backend `backend/src/socket/socket.ts` has no listener for `"worker:location_update"`. The event is dropped.
+- [BROKEN] Map Tracking UI: Provider booking detail page has no interactive map component—only a static 
+  text banner stating "Live map tracking will appear here once the worker is on the way."
+
+
+--------------------------------------------------------------------------------
+3.8 FLOW 8: REVIEWS, RATINGS & REPUTATION SYSTEM
+--------------------------------------------------------------------------------
+Architecture: Post-Completion Review Dialog -> Worker Profile Average Rating Recalculation
+Components: `ReviewDialog.tsx`, `reviewApi.ts`, `ReviewService.ts`, `ReviewRepository.ts`
+
+Status: 95% OPERATIONAL
+- [WORKING] Providers can submit rating (1-5 stars) and comment upon booking completion.
+- [WORKING] Worker average rating and total review counts updated atomically in a database transaction.
+- [WORKING] Reviews displayed on worker and provider profile pages.
+- [MINOR BUG] `ReviewDialog.tsx` imports `{ error } from "console"` (Node.js import inside client component).
+
+
+--------------------------------------------------------------------------------
+3.9 FLOW 9: AGENCY & MULTI-WORKER GROUP FLOW
+--------------------------------------------------------------------------------
+Architecture: Agent Profile -> Linked Workers (`AgentWorker`) -> Agency Bids & Bookings
+Components: `agent/dashboard/page.tsx`, `agent/workers/page.tsx`, `AgentService.ts`, `AgentController.ts`
+
+Status: 65% OPERATIONAL (AGENT BOOKINGS QUERY BUG & PRISMA LEAK)
+- [WORKING] Agent profile creation, worker linking, and agency dashboard counters.
+- [WORKING] Agent application submission on behalf of linked workers.
+- [CRITICAL BUG] In `BookingController.ts` line 42:
+  `...(user.role === 'AGENT' && { agentId: user.id })`
+  `user.id` is the Agent's `User.id`. But in Prisma, `Booking.agentId` references `AgentProfile.id`.
+  `BookingRepository` does not resolve `agentId` from `userId`, so querying `/agents/bookings` 
+  returns zero bookings every time!
+- [ARCHITECTURAL VIOLATION] `AgentService.ts` directly queries `this.prisma.client.booking.*` and 
+  `this.prisma.client.application.*`, violating AGENTS.md Rule #2.
+
+
+--------------------------------------------------------------------------------
+3.10 FLOW 10: ADMIN PLATFORM CONTROLS & CONFIGURATIONS
+--------------------------------------------------------------------------------
+Architecture: Admin Dashboard -> System Metrics -> User Management -> Setting Overrides -> Notification Templates
+Components: `admin/dashboard/page.tsx`, `admin/users/page.tsx`, `admin/bookings/page.tsx`, `admin/settings/page.tsx`, `AdminService.ts`
+
+Status: 75% OPERATIONAL (ROLE FILTER 400 & SEARCH DISCONNECT)
+- [WORKING] Admin system dashboard counters (total users, active bookings, revenue metrics).
+- [WORKING] Real-time platform settings updates with Redis cache invalidation.
+- [WORKING] Transactional notification templates editor (Email & SMS body/subject).
+- [WORKING] User account suspension and manual worker profile verification.
+- [CRITICAL BUG] Role filter in `admin/users/page.tsx` sends lowercase strings, causing Zod 400 validation error.
+- [HIGH BUG] Booking search by ID in `admin/bookings/page.tsx` is discarded by backend.
+
+
+--------------------------------------------------------------------------------
+3.11 FLOW 11: REAL-TIME MESSAGING / CHAT SYSTEM
+--------------------------------------------------------------------------------
+Architecture: Provider <-> Worker in-app chat thread per booking
+Components: `frontend/src/store/chatSlice.ts`, `backend/prisma/schema.prisma` (`ChatThread`, `ChatMessage`)
+
+Status: 10% (DATA MODEL ONLY, ZERO IMPLEMENTATION)
+- [WORKING] `ChatThread` and `ChatMessage` models exist in Prisma schema.
+- [WORKING] `chatSlice.ts` exists in Redux store.
+- [BROKEN] Zero backend chat endpoints, routes, controllers, or socket message relays exist.
+- [BROKEN] Zero frontend chat UI components exist in provider or worker booking detail pages.
+
+
+================================================================================
+4. COMPONENT & PAGE HEALTH MATRIX
+================================================================================
+
+--------------------------------------------------------------------------------
+FRONTEND COMPONENTS & PAGES
+--------------------------------------------------------------------------------
+| Component / Page Path | Flow / Purpose | Health Status | Primary Defect / Issue |
+|-----------------------|----------------|---------------|------------------------|
+| `components/ui/AddressSearch.tsx` | Address Autocomplete | BROKEN | `useGoogleMapsScript` returns false; fallback yields (0, 0) coords |
+| `hooks/useGoogleMapsScript.ts` | Script Loader | BROKEN | Hardcoded stub returning false; never injects Google Places script |
+| `components/forms/JobFilterBar.tsx` | Job Feed Search & Filter | PARTIAL | Uncontrolled input; backend ignores search query params |
+| `app/(worker)/worker/jobs/page.tsx` | Worker Job Feed | PARTIAL | Infinite scroll works, but search and filters do not alter results |
+| `app/(worker)/worker/booking/[bookingId]/page.tsx` | Worker Booking Detail | BROKEN | `maxLength={4}` blocks worker from entering 6-digit start OTP |
+| `app/(provider)/provider/instant-hire/page.tsx` | Instant Request Creation | PARTIAL | Address input sends (0, 0) coords; matching stalls in ocean |
+| `app/(provider)/provider/jobs/create/page.tsx` | Job Posting Creation | PARTIAL | Address input sends (0, 0) coords |
+| `app/(provider)/provider/booking/[bookingId]/page.tsx` | Provider Booking Detail | PARTIAL | Shows start OTP, but live tracking map is an empty static card |
+| `app/(admin)/admin/users/page.tsx` | Admin Users Directory | PARTIAL | Lowercase role values crash API with 400 Bad Request |
+| `app/(admin)/admin/bookings/page.tsx` | Admin Bookings Directory | PARTIAL | Search by Booking ID is completely ignored by backend |
+| `app/(admin)/admin/settings/page.tsx` | Platform Settings Editor | HEALTHY | Saves settings and invalidates Redis cache smoothly |
+| `app/(admin)/admin/templates/page.tsx` | Notification Templates | HEALTHY | Edits Email/SMS template subjects and bodies reliably |
+| `features/booking/bookingApi.ts` | Booking RTK Slice | HEALTHY | Invalidation tags aligned; `cancelBooking` mutation added |
+| `features/wallet/walletApi.ts` | Worker Wallet RTK Slice | MISSING | File does not exist; no RTK endpoints for wallet balance |
+| `app/(worker)/worker/wallet/page.tsx` | Worker Wallet UI | MISSING | Page does not exist; workers cannot view balance or withdraw |
+| `components/dialogs/ReviewDialog.tsx` | Post-Work Review Dialog | MINOR DEFECT | Unused Node.js `import { error } from "console"` |
+| `providers/SocketProvider.tsx` | Global Real-Time Provider | HEALTHY | Authenticates socket, handles `newInstantRequest` and `bookingUpdated` |
+| `hooks/useLiveLocation.ts` | Live Geolocation Watcher | PARTIAL | Emits `worker:location_update` which backend Socket.IO drops |
+
+--------------------------------------------------------------------------------
+BACKEND CONTROLLERS, SERVICES & REPOSITORIES
+--------------------------------------------------------------------------------
+| Module / Class File | Layer / Responsibility | Health Status | Primary Defect / Issue |
+|---------------------|------------------------|---------------|------------------------|
+| `jobs/controllers/JobController.ts` | Job HTTP Controller | BROKEN | `getAllJobs` discards `req.query` (`search`, `category`, `sort`, `page`) |
+| `jobs/services/JobService.ts` | Job Domain Logic | BROKEN | `getAllJobs` takes only `userId`; no search term or filter filtering |
+| `admin/controllers/AdminController.ts` | Admin HTTP Controller | PARTIAL | `GetBookingsQuerySchema` lacks `search`; role enum lacks case-insensitivity |
+| `bookings/repositories/BookingRepository.ts` | Booking Data Access | PARTIAL | `findManyByFilter` has no search clause; does not resolve `agentId` |
+| `bookings/services/BookingService.ts` | Booking Domain Logic | HEALTHY | Verifies OTP, en-route, completion, settlement, and cancellation |
+| `bookings/mappers/Booking.mapper.ts` | Booking Response Mapper | HEALTHY | Unified `getAssignedWorkerIds` bridges 1-to-1 and 1-to-N workers |
+| `instant-requests/services/instant-request.service.ts` | Instant Request Logic | HEALTHY | Dynamic pricing, 6-digit OTPs, SETNX locking, typed exceptions |
+| `instant-requests/services/instant-matching.service.ts` | Radius Expansion Matching | HEALTHY | Progressive geographic matching via Redis Geo index |
+| `socket/socket.ts` | Socket.IO Server Engine | PARTIAL | Missing event listener for `worker:location_update` |
+| `payments/routes/payment.routes.ts` | Payment HTTP Routes | PARTIAL | Lacks `POST /verify` client-side payment confirmation endpoint |
+| `agents/services/AgentService.ts` | Agency Domain Logic | ARCH VIOLATION | Direct `this.prisma.client.*` calls violate Repository pattern |
+| `location/services/location.services.ts` | Location Domain Logic | ARCH VIOLATION | Static methods and direct `prisma.*` without Repository layer |
+| `wallet/services/WalletService.ts` | Financial Concurrency | HEALTHY | Atomic increment/decrement balance updates; 5 passing tests |
+| `wallet/repositories/WalletRepository.ts` | Wallet Data Access | HEALTHY | Conditional updates (`balance: { gte: amount }`) prevent overdrafts |
+
+
+================================================================================
+5. PRIORITIZED REMEDIATION ROADMAP (STEP-BY-STEP IMPLEMENTATION GUIDE)
+================================================================================
+
+Phase A: Search Bars & Address Input Restoration (IMMEDIATE)
+--------------------------------------------------------------------------------
+Task A.1 — Restore Google Places & Fallback Geocoding in `AddressSearch.tsx`
+1. In `frontend/src/hooks/useGoogleMapsScript.ts`:
+   - Replace the `return false;` stub with dynamic script loading using 
+     `process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`.
+   - Track `isLoaded` and `loadError` states.
+2. In `frontend/src/components/ui/AddressSearch.tsx`:
+   - Initialize Google Places Autocomplete when maps script loads.
+   - When Google Maps is unavailable or API key is absent, provide an intelligent 
+     fallback: use OpenStreetMap (Nominatim API) debounced search or browser 
+     `navigator.geolocation` so real coordinates are ALWAYS resolved.
+   - NEVER pass `(0, 0)` coordinates to parent forms.
+
+Task A.2 — Restore Worker Job Feed Search & Filter Engine
+1. In `backend/src/modules/jobs/dto/GetJobsQuery.dto.ts`:
+   - Define schema for `search`, `category`, `minSalary`, `maxSalary`, `sort`, `page`, `limit`.
+2. In `backend/src/modules/jobs/controllers/JobController.ts`:
+   - Extract and validate `req.query` in `getAllJobs`.
+3. In `backend/src/modules/jobs/services/JobService.ts` & `JobRepository.ts`:
+   - Add search and category filtering to `jobRepo.findManyOpenBySkillIds`:
+     `where: { title: { contains: search, mode: 'insensitive' }, ... }`.
+   - Support sorting (`latest`, `highest_salary`, `nearest`).
+4. In `frontend/src/components/forms/JobFilterBar.tsx`:
+   - Bind controlled `value={filters.search || ""}` to input.
+
+Task A.3 — Fix Admin User Directory Role Filter Crash
+1. In `frontend/src/app/(admin)/admin/users/page.tsx`:
+   - Change `<option value="worker">` to `<option value="WORKER">`, `"PROVIDER"`, `"AGENT"`.
+2. In `backend/src/modules/admin/controllers/AdminController.ts`:
+   - Make `GetUsersQuerySchema.role` case-insensitive:
+     `z.string().optional().transform(val => val ? val.toUpperCase() as UserRole : undefined)`.
+
+Task A.4 — Add Search by Booking ID to Admin Bookings
+1. In `backend/src/modules/admin/controllers/AdminController.ts`:
+   - Add `search: z.string().optional()` to `GetBookingsQuerySchema`.
+2. In `backend/src/modules/bookings/repositories/BookingRepository.ts`:
+   - Add `OR: [{ id: { contains: filter.search, mode: 'insensitive' } }]` to `whereClause`.
+
+
+Phase B: Core Flow Unblocking & Critical Fixes
+--------------------------------------------------------------------------------
+Task B.1 — Fix Worker Start OTP Input Length Mismatch
+1. In `frontend/src/app/(worker)/worker/booking/[bookingId]/page.tsx` (line 207):
+   - Change `maxLength={4}` to `maxLength={6}`.
+   - Change placeholder `"e.g. 1234"` to `"e.g. 123456"`.
+   - Change error toast from `"Please enter the 4-digit start OTP"` to `"Please enter the 6-digit start OTP"`.
+
+Task B.2 — Add Client-Side Payment Verification Endpoint
+1. In `backend/src/modules/payments/routes/payment.routes.ts` & `PaymentController.ts`:
+   - Add `POST /verify` endpoint taking `{ bookingId, razorpayPaymentId, razorpayOrderId, razorpaySignature }`.
+   - Verify HMAC SHA256 signature in `PaymentService.ts`.
+   - On success, transition booking to `PAYMENT_CONFIRMED` immediately.
+2. In `frontend/src/app/(provider)/provider/booking/[bookingId]/page.tsx`:
+   - In Razorpay `handler(response)`, call `verifyPaymentMutation` before refetching.
+
+Task B.3 — Resolve Agent Bookings Query Mismatch
+1. In `backend/src/modules/bookings/repositories/BookingRepository.ts`:
+   - When `filter.agentId` is supplied, check if it matches an `AgentProfile.id`; 
+     if not, look up `agentProfile.findUnique({ where: { userId: filter.agentId } })` 
+     to resolve the correct profile ID.
+
+
+Phase C: Feature Completion & Missing Interfaces
+--------------------------------------------------------------------------------
+Task C.1 — Build Frontend Worker Wallet & Payout Interface
+1. Create `frontend/src/features/wallet/walletApi.ts`:
+   - Endpoints: `getWalletBalance`, `getTransactions`, `withdrawFunds`.
+2. Create `frontend/src/app/(worker)/worker/wallet/page.tsx`:
+   - Display Current Balance card, Quick Withdrawal modal/form (UPI ID / Bank details), 
+     and recent Transaction History ledger.
+3. Add "Wallet" to `workerNavItems` in `frontend/src/lib/constants/nav.ts`.
+
+Task C.2 — Connect Live Geolocation Socket Relay & Map Rendering
+1. In `backend/src/socket/socket.ts`:
+   - Add listener for `"worker:location_update"`:
+     Broadcast to active booking rooms: `io.to(`booking:${bookingId}`).emit("worker:location_moved", coords)`.
+2. In `frontend/src/app/(provider)/provider/booking/[bookingId]/page.tsx`:
+   - Replace static text card with an interactive map component showing provider marker, 
+     worker marker, and live movement when status is `WORKER_EN_ROUTE`.
+
+Task C.3 — Eliminate Remaining Direct Prisma Leaks in Services
+1. In `backend/src/modules/agents/services/AgentService.ts`:
+   - Move direct `this.prisma.client.booking.*` and `this.prisma.client.application.*` 
+     queries into `AgentRepository` or `BookingRepository`.
+2. In `backend/src/modules/location/services/location.services.ts`:
+   - Refactor to OOP class implementing `ILocationService` and inject a dedicated 
+     `WorkerRepository` / `LocationRepository`.
+================================================================================
+END OF ANALYSIS REPORT
+================================================================================

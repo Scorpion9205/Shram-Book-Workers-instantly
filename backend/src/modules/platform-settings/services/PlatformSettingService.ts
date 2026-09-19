@@ -49,4 +49,14 @@ export class PlatformSettingService extends BaseService {
     const cacheKey = CacheKeys.platformSetting(key);
     await this.cache.del(cacheKey);
   }
+
+  async getNumber(key: string, defaultValue: number): Promise<number> {
+    try {
+      const val = await this.getSetting(key);
+      const num = Number(val);
+      return isNaN(num) ? defaultValue : num;
+    } catch {
+      return defaultValue;
+    }
+  }
 }

@@ -58,6 +58,7 @@ export const bookingApi = apiSlice.injectEndpoints({
       },
       invalidatesTags: (result, error, bookingId) => [
         { type: "Booking", id: bookingId },
+        "Booking",
         "DashboardWorker",
         "DashboardProvider",
       ],
@@ -85,6 +86,7 @@ export const bookingApi = apiSlice.injectEndpoints({
       },
       invalidatesTags: (result, error, { bookingId }) => [
         { type: "Booking", id: bookingId },
+        "Booking",
         "DashboardWorker",
         "DashboardProvider",
       ],
@@ -111,6 +113,7 @@ export const bookingApi = apiSlice.injectEndpoints({
       },
       invalidatesTags: (result, error, bookingId) => [
         { type: "Booking", id: bookingId },
+        "Booking",
         "DashboardWorker",
         "DashboardProvider",
       ],
@@ -136,6 +139,7 @@ export const bookingApi = apiSlice.injectEndpoints({
       },
       invalidatesTags: (result, error, bookingId) => [
         { type: "Booking", id: bookingId },
+        "Booking",
         "DashboardWorker",
         "DashboardProvider",
       ],
@@ -161,6 +165,34 @@ export const bookingApi = apiSlice.injectEndpoints({
       },
       invalidatesTags: (result, error, bookingId) => [
         { type: "Booking", id: bookingId },
+        "Booking",
+        "DashboardWorker",
+        "DashboardProvider",
+      ],
+    }),
+    cancelBooking: builder.mutation<Booking, { bookingId: string; reason?: string }>({
+      query: ({ bookingId, reason }) => ({
+        url: `/bookings/${bookingId}/cancel`,
+        method: "PATCH",
+        body: { reason },
+      }),
+      transformResponse: (response: any) =>
+        response.data?.booking || response.booking || response.data || response,
+      async onQueryStarted({ bookingId }, { dispatch, queryFulfilled }) {
+        const patch = dispatch(
+          bookingApi.util.updateQueryData("getBookingById", bookingId, (draft) => {
+            draft.status = "CANCELLED_BY_PROVIDER";
+          })
+        );
+        try {
+          await queryFulfilled;
+        } catch {
+          patch.undo();
+        }
+      },
+      invalidatesTags: (result, error, { bookingId }) => [
+        { type: "Booking", id: bookingId },
+        "Booking",
         "DashboardWorker",
         "DashboardProvider",
       ],
@@ -182,6 +214,7 @@ export const bookingApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: (result, error, { bookingId }) => [
         { type: "Booking", id: bookingId },
+        "Booking",
         "DashboardWorker",
         "DashboardProvider",
       ],
@@ -198,6 +231,7 @@ export const {
   useCompleteBookingMutation,
   useSettleBookingMutation,
   useSettleOfflineBookingMutation,
+  useCancelBookingMutation,
   useCreatePaymentOrderMutation,
   useSubmitReviewMutation,
 } = bookingApi;

@@ -67,7 +67,7 @@ export class InstantRequestService {
               skillId: items[0]?.skillId || null,
               expiresAt: new Date(
                 Date.now() +
-                30 * 60 * 1000
+                ((Number((await tx.platformSetting.findUnique({ where: { key: "INSTANT_REQUEST_EXPIRY_MINUTES" } }))?.value) || 30) * 60 * 1000)
               ),
             },
           });

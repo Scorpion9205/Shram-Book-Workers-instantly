@@ -96,4 +96,50 @@ export class ReviewRepository extends BaseRepository<Review> implements IReviewR
       },
     });
   }
+
+  async createWithWorkerRatingUpdate(
+    reviewData: {
+      bookingId: string;
+      providerId: string;
+      workerId: string;
+      rating: number;
+      comment?: string | null;
+    },
+    workerId: string,
+  ): Promise<Review> {
+    return this.prisma.transaction(async (tx) => {
+      const review = await tx.review.create({
+        data: {
+          bookingId: reviewData.bookingId,
+          providerId: reviewData.providerId,
+          workerId: reviewData.workerId,
+          rating: reviewData.rating,
+          comment: reviewData.comment ?? null,
+        },
+      });
+
+      const worker = await tx.workerProfile.findUnique({
+        where: { id: workerId },
+        select: { rating: true, totalReviews: true },
+      });
+
+      if (worker) {
+        const newRating =
+          (Number(worker.rating) * worker.totalReviews + reviewData.rating) /
+          (worker.totalReviews + 1);
+
+        await tx.workerProfile.update({
+          where: { id: workerId },
+          data: {
+            rating: Number(newRating.toFixed(2)),
+            totalReviews: {
+              increment: 1,
+            },
+          },
+        });
+      }
+
+      return review;
+    });
+  }
 }

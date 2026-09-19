@@ -1,99 +1,28 @@
-import prisma from "../../../shared/config/prisma.js";
+import { SkillRepository } from "../repositories/SkillRepository.js";
 import { BadRequestException } from "../../../core/exceptions/index.js";
 
-
+const skillRepository = new SkillRepository();
 
 export class SkillService {
+  static async getSkills() {
+    return await skillRepository.findAllOrderedByName();
+  }
 
-    static async getSkills() {
-        return await prisma.skill.findMany({
-            orderBy: {
-                name: "asc"
-            }
-        });
+  static async assignSkills(userId: string, skillIds: string[]) {
+    const uniqueSkillIds = Array.from(new Set(skillIds));
+    const worker = await skillRepository.upsertWorkerProfile(userId);
+
+    const skills = await skillRepository.findManyByIds(uniqueSkillIds);
+
+    if (skills.length !== uniqueSkillIds.length) {
+      throw new BadRequestException("Invalid skill selected");
     }
 
-    static async assignSkills(
-        userId: string,
-        skillIds: string[]
-    ) {
-        const uniqueSkillIds =
-            Array.from(new Set(skillIds));
+    return await skillRepository.assignWorkerSkills(worker.id, uniqueSkillIds);
+  }
 
-        const worker =
-            await prisma.workerProfile.upsert({
-                where: {
-                    userId
-                },
-                update: {},
-                create: {
-                    userId
-                },
-            });
-
-        const skills =
-            await prisma.skill.findMany({
-                where: {
-                    id: {
-                        in: uniqueSkillIds
-                    }
-                }
-            });
-
-        if (skills.length !== uniqueSkillIds.length) {
-            throw new BadRequestException(
-                "Invalid skill selected"
-            );
-        }
-
-        await prisma.workerSkill.deleteMany({
-            where: {
-                workerId: worker.id
-            }
-        });
-
-        await prisma.workerSkill.createMany({
-            data: uniqueSkillIds.map(skillId => ({
-                workerId: worker.id,
-                skillId
-            }))
-        });
-
-        const workerSkills = await prisma.workerSkill.findMany({
-            where: {
-                workerId: worker.id,
-            },
-            include: {
-                skill: true,
-            },
-        });
-
-        return workerSkills.map((item) => item.skill);
-    }
-
-    static async getMySkills(
-        userId: string
-    ) {
-        const worker =
-            await prisma.workerProfile.upsert({
-                where: {
-                    userId
-                },
-                update: {},
-                create: {
-                    userId
-                },
-            });
-
-        const workerSkills = await prisma.workerSkill.findMany({
-            where: {
-                workerId: worker.id,
-            },
-            include: {
-                skill: true,
-            },
-        });
-
-        return workerSkills.map((item) => item.skill);
-    }
+  static async getMySkills(userId: string) {
+    const worker = await skillRepository.upsertWorkerProfile(userId);
+    return await skillRepository.getWorkerSkills(worker.id);
+  }
 }

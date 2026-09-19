@@ -72,4 +72,37 @@ export class BookingMapper {
   static toResponseList(bookings: any[], currentUser?: any): BookingResponseDto[] {
     return bookings.map(b => this.toResponse(b, currentUser));
   }
+
+  /**
+   * Returns a unified list of worker IDs assigned to this booking.
+   *
+   * Architecture Note (1-to-1 vs 1-to-N Worker Assignment):
+   * - 1-to-1 Assignment (Instant Bookings / Direct Request):
+   *   The assigned worker is stored directly in `booking.workerId`.
+   * - 1-to-N Assignment (Group Jobs / Multi-Worker Bookings):
+   *   Workers are linked via the `BookingWorker` join table or accepted `JobApplication` records.
+   *
+   * This helper extracts worker IDs across both assignment topologies uniformly.
+   */
+  static getAssignedWorkerIds(booking: any): string[] {
+    const ids: string[] = [];
+    if (booking.workerId && !ids.includes(booking.workerId)) {
+      ids.push(booking.workerId);
+    }
+    if (Array.isArray(booking.bookingWorkers)) {
+      for (const bw of booking.bookingWorkers) {
+        if (bw.workerId && !ids.includes(bw.workerId)) {
+          ids.push(bw.workerId);
+        }
+      }
+    }
+    if (Array.isArray(booking.job?.applications)) {
+      for (const app of booking.job.applications) {
+        if (app.status === 'ACCEPTED' && app.workerId && !ids.includes(app.workerId)) {
+          ids.push(app.workerId);
+        }
+      }
+    }
+    return ids;
+  }
 }

@@ -5,7 +5,6 @@ import type { IReviewRepository } from '../interfaces/IReviewRepository.js';
 import type { IBookingRepository } from '../../bookings/interfaces/IBookingRepository.js';
 import type { IWorkerRepository } from '../../workers/interfaces/IWorkerRepository.js';
 import { BookingStatus } from '@prisma/client';
-import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
 
 export class ReviewService extends BaseService implements IReviewService {
@@ -13,7 +12,6 @@ export class ReviewService extends BaseService implements IReviewService {
     private readonly reviewRepo: IReviewRepository,
     private readonly bookingRepo: IBookingRepository,
     private readonly workerRepo: IWorkerRepository,
-    private readonly prisma: PrismaService,
   ) {
     super('ReviewService');
   }
@@ -44,42 +42,18 @@ export class ReviewService extends BaseService implements IReviewService {
       throw new BusinessException('WORKER_NOT_ASSIGNED', 'Worker not assigned to this booking');
     }
 
-    return await this.prisma.client.$transaction(async (tx) => {
-      const review = await this.reviewRepo.create({
-        bookingId,
-        providerId,
-        workerId,
-        rating: data.rating,
-        comment: data.comment ?? null,
-      }, tx);
+    const worker = await this.workerRepo.findById(workerId);
+    if (!worker) {
+      throw new NotFoundException('WorkerProfile', workerId);
+    }
 
-      const worker = await this.workerRepo.findById(workerId, tx);
-      if (!worker) {
-        throw new NotFoundException('WorkerProfile', workerId);
-      }
-
-      const newRating =
-        (worker.rating * worker.totalReviews + data.rating) /
-        (worker.totalReviews + 1);
-
-      await this.workerRepo.updateProfile(worker.userId, {
-        dailyRate: worker.dailyRate as any, // Keep existing rate
-        experience: worker.experience,
-      }, tx);
-
-      // Explicitly update totalReviews and rating on workerProfile
-      await tx.workerProfile.update({
-        where: { id: workerId },
-        data: {
-          rating: Number(newRating.toFixed(2)),
-          totalReviews: {
-            increment: 1,
-          },
-        },
-      });
-
-      return review;
-    });
+    return await this.reviewRepo.createWithWorkerRatingUpdate({
+      bookingId,
+      providerId,
+      workerId,
+      rating: data.rating,
+      comment: data.comment ?? null,
+    }, workerId);
   }
 
   async getWorkerRating(workerId: string): Promise<any> {

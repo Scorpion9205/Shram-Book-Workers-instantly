@@ -135,7 +135,6 @@ export async function wireModules(
     reviewRepo,
     bookingRepo,
     workerRepo,
-    prismaService,
   );
   const agentService = new AgentService(
     agentRepo,

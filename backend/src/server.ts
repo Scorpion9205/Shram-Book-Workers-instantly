@@ -1,16 +1,14 @@
 import http from "http";
-import dotenv from "dotenv"
+import dotenv from "dotenv";
 dotenv.config();
-import "./shared/config/redis.js" // Keep legacy redis config active
+import "./shared/config/redis.js"; // Keep legacy redis config active
 
-import app from "./app.js";
+import { createApp } from "./app.js";
 import { env } from "./config/env.js";
 import { startExpireInstantRequestsJob } from "./shared/jobs/expire-instant-requests.job.js";
 import { rabbitMQ } from "./shared/queue/connection/rabbitmq.connection.js";
 import { startEmailConsumer } from "./shared/email/consumers/email.consumer.js";
-import {
-  initializeSocket,
-} from "./socket/socket.js";
+import { initializeSocket } from "./socket/socket.js";
 
 // New Infrastructure Imports
 import { PrismaService } from "./database/prisma/PrismaService.js";
@@ -22,42 +20,37 @@ import { Logger } from "./core/logger/Logger.js";
 const logger = new Logger('ServerBoot');
 const PORT = env.PORT;
 
-const server =
-  http.createServer(app);
+async function bootstrap() {
+  try {
+    logger.info('Starting infrastructure initialization...');
+    const prismaService = PrismaService.getInstance();
+    await prismaService.connect();
 
-initializeSocket(server);
+    const newRedisClient = createRedisClient();
+    const newRabbitConn = await bootstrapRabbitMQ();
 
-// Boot legacy queue + email consumer
-await rabbitMQ.connect();
-await startEmailConsumer();
+    // Boot legacy queue + email consumer
+    await rabbitMQ.connect();
+    await startEmailConsumer();
 
-// Boot new infrastructure (Prisma, Redis, RabbitMQ)
-try {
-  logger.info('Starting new infrastructure initialization...');
-  const prismaService = PrismaService.getInstance();
-  await prismaService.connect();
+    // Wire DI container
+    const dependencies = await wireModules(prismaService, newRedisClient, newRabbitConn);
+    (global as any).deps = dependencies;
 
-  const newRedisClient = createRedisClient();
-  const newRabbitConn = await bootstrapRabbitMQ();
+    // Create fully-wired Express app with typed routes
+    const app = createApp(dependencies);
+    const server = http.createServer(app);
 
-  // Wire DI container
-  const dependencies = await wireModules(prismaService, newRedisClient, newRabbitConn);
-  
-  // Expose dependencies globally or pass to request context if needed in later phases
-  (global as any).deps = dependencies;
-  logger.info('New infrastructure initialized successfully');
-} catch (err) {
-  logger.error('Failed to initialize new infrastructure', err);
-  process.exit(1);
+    initializeSocket(server);
+
+    server.listen(PORT, () => {
+      logger.info(`Server running on port ${PORT}`);
+      startExpireInstantRequestsJob();
+    });
+  } catch (err) {
+    logger.error('Failed to initialize infrastructure', err);
+    process.exit(1);
+  }
 }
 
-server.listen(PORT, () => {
-
-  console.log(
-    `Server running on port ${PORT}`
-  );
-  startExpireInstantRequestsJob();
-
-});
-
-
+bootstrap();
