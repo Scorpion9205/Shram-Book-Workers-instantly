@@ -31,7 +31,7 @@ export function AddressSearch({ value = "", onChange, placeholder = "Search addr
   }, [value]);
 
   useEffect(() => {
-    if (!isMapsLoaded || !inputRef.current || !window.google?.maps) return;
+    if (!isMapsLoaded || !inputRef.current || !window.google?.maps?.places) return;
 
     const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, {
       componentRestrictions: { country: "in" },
@@ -122,7 +122,16 @@ export function AddressSearch({ value = "", onChange, placeholder = "Search addr
           ref={inputRef}
           type="text"
           value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
+          onChange={(e) => {
+            const val = e.target.value;
+            setInputValue(val);
+            onChange({
+              address: val,
+              lat: 0,
+              lng: 0,
+              placeId: "manual_input",
+            });
+          }}
           placeholder={placeholder}
           className="pl-9 pr-24"
         />

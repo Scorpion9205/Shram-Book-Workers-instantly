@@ -42,10 +42,25 @@ export class BookingRepository extends BaseRepository<Booking> implements IBooki
     const client = tx ?? this.prisma.client;
     const skip = this.buildSkip(page, limit);
 
+    let resolvedWorkerId = filter.workerId;
+    if (filter.workerId) {
+      try {
+        const workerProfile = await client.workerProfile.findUnique({
+          where: { userId: filter.workerId },
+          select: { id: true },
+        });
+        if (workerProfile) {
+          resolvedWorkerId = workerProfile.id;
+        }
+      } catch (err) {
+        // Fallback silently if query fails
+      }
+    }
+
     const whereClause: Prisma.BookingWhereInput = {
       deletedAt: null,
       ...(filter.providerId && { providerId: filter.providerId }),
-      ...(filter.workerId && { workerId: filter.workerId }),
+      ...(resolvedWorkerId && { workerId: resolvedWorkerId }),
       ...(filter.agentId && { agentId: filter.agentId }),
       ...(filter.status && { status: filter.status }),
       ...(filter.jobId && { jobId: filter.jobId }),
@@ -116,7 +131,7 @@ export class BookingRepository extends BaseRepository<Booking> implements IBooki
           agentId: data.agentId ?? null,
           amount: data.amount,
           estimatedFare: data.estimatedFare,
-          status: data.status || BookingStatus.CREATED,
+          status: data.status || (data.workerId ? BookingStatus.WORKER_ASSIGNED : BookingStatus.CREATED),
           type: data.type as any,
           address: data.address ?? Prisma.DbNull,
         },

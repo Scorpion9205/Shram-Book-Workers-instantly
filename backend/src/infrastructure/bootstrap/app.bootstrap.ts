@@ -16,7 +16,7 @@ import { ReviewRepository, ReviewService, ReviewController, createReviewRouter }
 import { AgentRepository, AgentWorkerRepository, AgentService, AgentController, createAgentRouter } from '../../modules/agents/index.js';
 import { PaymentRepository, RazorpayProvider, PaymentService, PaymentController, createPaymentRouter } from '../../modules/payments/index.js';
 import { WalletRepository, TransactionRepository, WalletService, WalletController, createWalletRouter } from '../../modules/wallet/index.js';
-import { AdminService, AdminController, createAdminRouter } from '../../modules/admin/index.js';
+import { AdminService, AdminController, AdminRepository, createAdminRouter } from '../../modules/admin/index.js';
 import { BookingRepository, BookingStatusHistoryRepository, BookingStateService, BookingService, BookingController, createBookingRouter } from '../../modules/bookings/index.js';
 import { PlatformSettingRepository } from '../../modules/platform-settings/index.js';
 
@@ -95,6 +95,7 @@ export async function wireModules(
   const notificationTemplateRepo = new NotificationTemplateRepository(prismaService);
   const notificationRepo = new NotificationRepository(prismaService);
   const platformSettingRepo = new PlatformSettingRepository(prismaService);
+  const adminRepo = new AdminRepository(prismaService);
 
   // 3. Providers
   const razorpayProvider = new RazorpayProvider(env.RAZORPAY_KEY_ID!, env.RAZORPAY_KEY_SECRET!);
@@ -102,6 +103,7 @@ export async function wireModules(
   const smsProvider = new ExotelProvider(env.EXOTEL_API_KEY, env.EXOTEL_API_TOKEN, env.EXOTEL_SID, env.EXOTEL_FROM);
   const pushProvider = new FirebaseProvider(env.FIREBASE_SERVICE_ACCOUNT);
   const s3Provider = new S3Provider(env.AWS_S3_BUCKET, env.AWS_REGION, env.AWS_ACCESS_KEY_ID, env.AWS_SECRET_ACCESS_KEY);
+  S3Provider.setInstance(s3Provider);
 
   // 4. Services
   const bookingStateService = new BookingStateService(
@@ -111,7 +113,7 @@ export async function wireModules(
     prismaService,
   );
 
-  const userService = new UserService(userRepo, cacheService);
+  const userService = new UserService(userRepo, cacheService, s3Provider);
   const workerService = new WorkerService(workerRepo, cacheService);
   const jobService = new JobService(
     jobRepo,
@@ -151,10 +153,9 @@ export async function wireModules(
     walletRepo,
     transactionRepo,
     workerRepo,
-    prismaService,
   );
   const adminService = new AdminService(
-    prismaService,
+    adminRepo,
     cacheService,
     userRepo,
     bookingRepo,

@@ -27,11 +27,12 @@ export class JobController extends BaseController {
   };
 
   getJobById = async (req: Request, res: Response): Promise<void> => {
+    const user = (req as any).user;
     const jobId = req.params.jobId as string;
     if (!jobId) {
       throw new BusinessException('INVALID_JOB_ID', 'Invalid job id');
     }
-    const job = await this.jobService.getJobById(jobId);
+    const job = await this.jobService.getJobById(jobId, user.userId);
     this.ok(res, job, 'Job retrieved successfully');
   };
 
@@ -62,7 +63,8 @@ export class JobController extends BaseController {
     if (!applicationId) {
       throw new BusinessException('INVALID_APPLICATION_ID', 'Invalid application id');
     }
-    const result = await this.applicationService.acceptApplication(user.userId, applicationId);
+    const { paymentMode } = req.body;
+    const result = await this.applicationService.acceptApplication(user.userId, applicationId, paymentMode);
     this.ok(res, result, 'Application accepted successfully');
   };
 

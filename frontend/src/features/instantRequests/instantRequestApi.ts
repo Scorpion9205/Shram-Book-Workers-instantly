@@ -69,6 +69,7 @@ interface BackendFareResponse {
 }
 
 export const instantRequestApi = apiSlice.injectEndpoints({
+  overrideExisting: true,
   endpoints: (builder) => ({
     createInstantRequest: builder.mutation<InstantRequest, CreateInstantRequestPayload>({
       query: (body) => ({
@@ -93,14 +94,18 @@ export const instantRequestApi = apiSlice.injectEndpoints({
           ],
         },
       }),
-      transformResponse: (response: InstantRequestResponse) =>
-        response.request,
-      invalidatesTags: ["InstantRequest", "DashboardProvider"],
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return data.request || data;
+      },
+      invalidatesTags: ["InstantRequest", "DashboardProvider", "Booking"],
     }),
     getNearbyInstantRequests: builder.query<NearbyInstantRequest[], void>({
       query: () => "/instant-requests/nearby",
-      transformResponse: (response: NearbyInstantRequestsResponse) =>
-        response.requests,
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return data.requests || data;
+      },
       providesTags: ["InstantRequest"],
     }),
     calculateFare: builder.mutation<FareCalculationResult, FareCalculationPayload>({
@@ -116,24 +121,32 @@ export const instantRequestApi = apiSlice.injectEndpoints({
           ],
         },
       }),
-      transformResponse: (response: BackendFareResponse) => ({
-        estimatedFare: response.estimatedFare,
-        subtotal: response.subtotal,
-        platformFee: response.platformFee,
-        quoteId: response.quoteId,
-      }),
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return {
+          estimatedFare: data.estimatedFare,
+          subtotal: data.subtotal,
+          platformFee: data.platformFee,
+          quoteId: data.quoteId,
+        };
+      },
     }),
     acceptInstantRequestItem: builder.mutation<{ bookingId: string }, string>({
       query: (itemId) => ({ url: `/instant-requests/items/${itemId}/accept`, method: "POST" }),
-      transformResponse: (response: { success: boolean; data: { bookingId: string } }) => ({
-        bookingId: response.data.bookingId,
-      }),
-      invalidatesTags: ["InstantRequest", "Booking", "DashboardWorker"],
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return {
+          bookingId: data.bookingId,
+        };
+      },
+      invalidatesTags: ["InstantRequest", "Booking", "DashboardWorker", "DashboardProvider"],
     }),
     getMyInstantRequests: builder.query<InstantRequest[], void>({
       query: () => "/instant-requests/my-requests",
-      transformResponse: (response: InstantRequestsResponse) =>
-        response.requests,
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return data.requests || data;
+      },
       providesTags: ["InstantRequest"],
     }),
   }),

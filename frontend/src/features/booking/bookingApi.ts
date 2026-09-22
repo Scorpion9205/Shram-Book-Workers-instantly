@@ -15,8 +15,8 @@ export const bookingApi = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
     getProviderBookings: builder.query<Booking[], void>({
       query: () => "/bookings/provider",
-      transformResponse: (response: BookingsResponse) =>
-        response.bookings,
+      transformResponse: (response: any) =>
+        response.data?.bookings || response.bookings || response.data || response,
       providesTags: (result) =>
         result
           ? [...result.map((b) => ({ type: "Booking" as const, id: b.id })), "Booking"]
@@ -24,8 +24,8 @@ export const bookingApi = apiSlice.injectEndpoints({
     }),
     getWorkerBookings: builder.query<Booking[], void>({
       query: () => "/bookings/worker",
-      transformResponse: (response: BookingsResponse) =>
-        response.bookings,
+      transformResponse: (response: any) =>
+        response.data?.bookings || response.bookings || response.data || response,
       providesTags: (result) =>
         result
           ? [...result.map((b) => ({ type: "Booking" as const, id: b.id })), "Booking"]
@@ -33,8 +33,8 @@ export const bookingApi = apiSlice.injectEndpoints({
     }),
     getBookingById: builder.query<Booking, string>({
       query: (bookingId) => `/bookings/${bookingId}`,
-      transformResponse: (response: BookingResponse) =>
-        response.booking,
+      transformResponse: (response: any) =>
+        response.data?.booking || response.booking || response.data || response,
       providesTags: (result, error, bookingId) => [{ type: "Booking", id: bookingId }],
     }),
     workerEnRoute: builder.mutation<Booking, string>({
@@ -42,8 +42,8 @@ export const bookingApi = apiSlice.injectEndpoints({
         url: `/bookings/${bookingId}/worker-en-route`,
         method: "PATCH",
       }),
-      transformResponse: (response: BookingResponse) =>
-        response.booking,
+      transformResponse: (response: any) =>
+        response.data?.booking || response.booking || response.data || response,
       async onQueryStarted(bookingId, { dispatch, queryFulfilled }) {
         const patch = dispatch(
           bookingApi.util.updateQueryData("getBookingById", bookingId, (draft) => {
@@ -68,8 +68,8 @@ export const bookingApi = apiSlice.injectEndpoints({
         method: "POST",
         body: { code },
       }),
-      transformResponse: (response: BookingResponse) =>
-        response.booking,
+      transformResponse: (response: any) =>
+        response.data?.booking || response.booking || response.data || response,
       async onQueryStarted({ bookingId }, { dispatch, queryFulfilled }) {
         const patch = dispatch(
           bookingApi.util.updateQueryData("getBookingById", bookingId, (draft) => {
@@ -94,8 +94,8 @@ export const bookingApi = apiSlice.injectEndpoints({
         url: `/bookings/${bookingId}/complete`,
         method: "PATCH",
       }),
-      transformResponse: (response: BookingResponse) =>
-        response.booking,
+      transformResponse: (response: any) =>
+        response.data?.booking || response.booking || response.data || response,
       async onQueryStarted(bookingId, { dispatch, queryFulfilled }) {
         const patch = dispatch(
           bookingApi.util.updateQueryData("getBookingById", bookingId, (draft) => {
@@ -114,6 +114,65 @@ export const bookingApi = apiSlice.injectEndpoints({
         "DashboardWorker",
         "DashboardProvider",
       ],
+    }),
+    settleBooking: builder.mutation<Booking, string>({
+      query: (bookingId) => ({
+        url: `/bookings/${bookingId}/settle`,
+        method: "PATCH",
+      }),
+      transformResponse: (response: any) =>
+        response.data?.booking || response.booking || response.data || response,
+      async onQueryStarted(bookingId, { dispatch, queryFulfilled }) {
+        const patch = dispatch(
+          bookingApi.util.updateQueryData("getBookingById", bookingId, (draft) => {
+            draft.status = "PAYMENT_SETTLED";
+          })
+        );
+        try {
+          await queryFulfilled;
+        } catch {
+          patch.undo();
+        }
+      },
+      invalidatesTags: (result, error, bookingId) => [
+        { type: "Booking", id: bookingId },
+        "DashboardWorker",
+        "DashboardProvider",
+      ],
+    }),
+    settleOfflineBooking: builder.mutation<Booking, string>({
+      query: (bookingId) => ({
+        url: `/bookings/${bookingId}/settle-offline`,
+        method: "PATCH",
+      }),
+      transformResponse: (response: any) =>
+        response.data?.booking || response.booking || response.data || response,
+      async onQueryStarted(bookingId, { dispatch, queryFulfilled }) {
+        const patch = dispatch(
+          bookingApi.util.updateQueryData("getBookingById", bookingId, (draft) => {
+            draft.status = "PAYMENT_SETTLED";
+          })
+        );
+        try {
+          await queryFulfilled;
+        } catch {
+          patch.undo();
+        }
+      },
+      invalidatesTags: (result, error, bookingId) => [
+        { type: "Booking", id: bookingId },
+        "DashboardWorker",
+        "DashboardProvider",
+      ],
+    }),
+    createPaymentOrder: builder.mutation<any, string>({
+      query: (bookingId) => ({
+        url: `/payments/orders`,
+        method: "POST",
+        body: { bookingId },
+      }),
+      transformResponse: (response: any) =>
+        response.data || response,
     }),
     submitReview: builder.mutation<any, { bookingId: string; rating: number; comment?: string }>({
       query: ({ bookingId, rating, comment }) => ({
@@ -137,5 +196,8 @@ export const {
   useWorkerEnRouteMutation,
   useVerifyStartOtpMutation,
   useCompleteBookingMutation,
+  useSettleBookingMutation,
+  useSettleOfflineBookingMutation,
+  useCreatePaymentOrderMutation,
   useSubmitReviewMutation,
 } = bookingApi;

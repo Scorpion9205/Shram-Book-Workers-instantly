@@ -1,6 +1,7 @@
 import type { User } from '@prisma/client';
 import { UserRole } from '../../../core/enums/Role.js';
 import { OTPChannel } from '../enums/index.js';
+import type { SignupInput } from '../validations/auth.validation.js';
 
 export interface AuthResponse {
   user: User;
@@ -9,7 +10,8 @@ export interface AuthResponse {
 }
 
 export interface IAuthService {
-  requestOTP(channel: OTPChannel, identifier: string, role: UserRole): Promise<void>;
+  signup(data: SignupInput): Promise<void>;
+  requestOTP(channel: OTPChannel, identifier: string, role?: UserRole): Promise<void>;
   verifyOTP(channel: OTPChannel, identifier: string, code: string): Promise<AuthResponse>;
   adminLogin(email: string, password: string): Promise<AuthResponse>;
   googleAuth(idToken: string, role: UserRole): Promise<AuthResponse>;

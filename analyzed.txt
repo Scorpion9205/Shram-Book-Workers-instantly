@@ -1,0 +1,235 @@
+================================================================================
+                         SHRAM PROJECT TECHNICAL ANALYSIS REPORT
+================================================================================
+Author: Senior Software Engineer (10+ Years Industry Experience)
+Date: September 8, 2026
+Target System: SHRAM Worker Hiring Platform (Backend & Frontend Monorepo)
+Target Path: d:\Shram-BookWorkers-instantly
+================================================================================
+
+--------------------------------------------------------------------------------
+1. EXECUTIVE SUMMARY & PROJECT OVERVIEW
+--------------------------------------------------------------------------------
+SHRAM is a modern, modular-monolith blue-collar and skilled worker hiring marketplace 
+designed to connect "Providers" (individual homeowners, employers, and companies) 
+with "Workers" (skilled laborers such as electricians, plumbers, masons, carpenters, 
+and technicians) as well as "Agents" (agency managers representing worker groups).
+
+The system supports two core marketplace interaction modes:
+1. Uber-style Instant Request Flow:
+   Providers broadcast immediate work requests. The system uses spatial indexing 
+   (Redis Geo) and progressive radius expansion to locate nearby active workers. 
+   Workers receive real-time notifications via WebSockets (Socket.IO). Worker 
+   acceptance is serialized via atomic distributed locks (Redis SETNX) to guarantee 
+   that matching slots are claimed without race conditions.
+
+2. Job Posting & Application Flow:
+   Providers post structured job requirements specifying location, skill requirement, 
+   budget rate, start/end dates, and required worker counts. Workers or Agents submit 
+   bids/applications. Upon acceptance by the Provider, formal Bookings are created.
+
+Core Tech Stack:
+- Backend: Node.js 20+ / Express 5 / TypeScript (strict mode)
+- ORM & DB: Prisma ORM with PostgreSQL
+- Caching & Geo: Redis (ioredis) for cache, rate limiting, session lock, and Geo-indexing
+- Queue & Event Bus: RabbitMQ (amqplib) for asynchronous background jobs and notifications
+- Real-Time Layer: Socket.IO with Redis Adapter for multi-instance scaling
+- Authentication: Dual-mode Auth — OTP-first (Argon2 hashed) for Workers/Providers, 
+  Argon2id password-based for Admin/Agent, with JWT access + HTTP-only refresh tokens.
+- Frontend: Next.js 15 / TypeScript / RTK Query / TailwindCSS / Google Maps Places API
+
+--------------------------------------------------------------------------------
+2. COMPREHENSIVE ARCHITECTURAL & CODEBASE AUDIT (IDENTIFIED ISSUES)
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+CATEGORY 1: ARCHITECTURAL & DESIGN PATTERN VIOLATIONS (AGENTS.MD COMPLIANCE)
+--------------------------------------------------------------------------------
+[CRITICAL] 1.1 Direct Prisma ORM Access in Services & Background Jobs
+- Location: 
+  - backend/src/modules/admin/services/AdminService.ts
+  - backend/src/shared/services/pricing/fare.service.ts
+  - backend/src/shared/jobs/expire-instant-requests.job.ts
+  - backend/src/modules/skills/services/skill.service.ts
+  - backend/src/modules/reviews/services/ReviewService.ts
+- Issue: Services and background jobs bypass the Repository layer and perform 
+  direct database operations (`this.prisma.client...` or `prisma.skill.findMany(...)`). 
+  This violates Rule #2 in AGENTS.md ("No prisma.* in controllers or services — 
+  only in Repository classes").
+- Impact: Breaks the Layered Architecture, makes unit testing and service mocking 
+  difficult, and leaks database query concerns into domain business logic.
+
+[HIGH] 1.2 Static Methods & Naked Exported Functions instead of Class OOP
+- Location:
+  - backend/src/modules/instant-requests/services/instant-request.service.ts (`static async createInstantRequest`)
+  - backend/src/shared/services/pricing/fare.service.ts (`FareService.calculateInstantFare`)
+- Issue: Violates mandatory OOP rules ("No static methods on Service/Repository 
+  classes. No naked exported async functions").
+- Impact: Hinders Dependency Injection (DI), prevents interface implementation 
+  (`IInstantRequestService`), and hinders unit testing with mock instances.
+
+[HIGH] 1.3 Dual Boot Architecture & Global DI Container Hazard
+- Location:
+  - backend/src/app.ts
+  - backend/src/server.ts
+- Issue: `app.ts` mixes static legacy imports (`app.use("/api/v1/auth", authRoutes)`) 
+  with dynamic global DI container lookups (`app.use("/api/v1/users", (req, res, next) => (global as any).deps.userRouter(...))`).
+  Because `app.ts` is imported at top of `server.ts` BEFORE `(global as any).deps` 
+  is populated by `wireModules()`, any HTTP request arriving during boot will throw 
+  `TypeError: Cannot read properties of undefined (reading 'userRouter')` and crash.
+- Impact: Runtime unhandled exceptions during deployment or restart cold-starts; 
+  bypasses TypeScript type safety by casting to `(global as any)`.
+
+[MEDIUM] 1.4 Incomplete Module File Structures across Domains
+- Location: Multiple domain modules under `backend/src/modules/`
+- Issue: Rule #3 in AGENTS.md mandates a uniform 15-folder structure for every module. 
+  Modules such as `skills`, `location`, `dashboard`, `reviews`, `payments` miss 
+  `policies/`, `permissions/`, `mappers/`, or `tests/` subdirectories and barrels.
+- Impact: Architectural drift and maintenance confusion across developer teams.
+
+--------------------------------------------------------------------------------
+CATEGORY 2: SECURITY, AUTHENTICATION & CRYPTOGRAPHIC VULNERABILITIES
+--------------------------------------------------------------------------------
+[CRITICAL] 2.1 Non-Cryptographic Randomness (Math.random) for Security OTPs
+- Location:
+  - backend/src/shared/verification/utils/otp.utils.ts
+  - backend/src/modules/auth/services/AuthService.ts
+  - backend/src/modules/jobs/services/ApplicationService.ts
+  - backend/src/modules/instant-requests/services/instant-request.service.ts
+- Issue: Authentication OTPs and Work-Start OTPs are generated using 
+  `Math.floor(...) * Math.random()`. `Math.random()` in V8 is powered by xorshift128+, 
+  which is pseudo-random and vulnerable to state reconstruction and OTP prediction attacks.
+- Impact: Attackers can predict authentication or work-start OTP codes and hijack 
+  user accounts or fraudulently complete work bookings.
+- Remedy: Must use `crypto.randomInt(100000, 1000000)` from Node's `crypto` module.
+
+[HIGH] 2.2 Inconsistent OTP Code Length & Work-Start OTP Specification Gap
+- Location:
+  - `ApplicationService.ts` and `instant-request.service.ts` generate 4-digit OTPs (`Math.floor(1000 + Math.random() * 9000)`).
+  - `AuthService.ts` generates 6-digit OTPs (`100000 + Math.random() * 900000`).
+- Issue: Specs mandate uniform 6-digit Argon2id hashed OTPs for all auth and 
+  work-start verification.
+- Impact: 4-digit OTPs have only 10,000 combinations, significantly increasing brute-force risk.
+
+[MEDIUM] 2.3 Absence of Token Revocation / Blacklist on Logout
+- Location: `backend/src/modules/auth/services/AuthService.ts`
+- Issue: Upon logout, refresh cookies are cleared client-side, but JWT access/refresh 
+  tokens are not stored in a Redis token blacklist or revoked in DB.
+- Impact: If a JWT refresh token is intercepted, it remains valid until expiry (7 days).
+
+--------------------------------------------------------------------------------
+CATEGORY 3: FINANCIAL CONCURRENCY & RACE CONDITIONS
+--------------------------------------------------------------------------------
+[CRITICAL] 3.1 Financial Balance Lost Update / Race Condition in Wallet Service
+- Location: `backend/src/modules/wallet/services/WalletService.ts` (lines 65-66, 86-92)
+- Issue: `creditWallet` and `debitWallet` perform non-atomic read-then-write updates:
+    ```typescript
+    const balance = Number(wallet.balance);
+    const newBalance = balance - amount;
+    await this.walletRepo.updateBalance(wallet.id, newBalance, tx);
+    ```
+  Under concurrent operations (e.g. simultaneous payout and deduction):
+  - Thread A reads balance = ₹1000.
+  - Thread B reads balance = ₹1000.
+  - Thread A subtracts ₹300, updates balance to ₹700.
+  - Thread B subtracts ₹500, updates balance to ₹500.
+  Result: Thread A's deduction is overwritten! The wallet holds ₹500 instead of ₹200.
+- Impact: Financial loss, incorrect balance tracking, and potential negative balance exploits.
+- Remedy: Perform atomic increments/decrements at DB level (`balance = balance - amount`) 
+  or acquire pessimistic locks (`SELECT ... FOR UPDATE`).
+
+[HIGH] 3.2 Direct Transaction Invocation in Service Layer
+- Location: `backend/src/modules/wallet/services/WalletService.ts`
+- Issue: Invokes `await this.prisma.transaction(...)` directly inside service methods.
+- Impact: Violates repository pattern abstractions and leaks ORM transaction lifecycle.
+
+--------------------------------------------------------------------------------
+CATEGORY 4: DATABASE SCHEMA & DATA MODELING AMBIGUITIES
+--------------------------------------------------------------------------------
+[HIGH] 4.1 Dual Worker Relationship Ambiguity on Booking Aggregate Root
+- Location: `backend/prisma/schema.prisma` (`model Booking` vs `model BookingWorker`)
+- Issue: `Booking` model contains a scalar `workerId String?` (line 297), while a separate 
+  `BookingWorker` join table allows 1-to-N worker assignments (`bookingId`, `workerId`).
+- Impact: Architectural conflict between single-worker instant bookings and multi-worker 
+  group job postings. Various backend logic paths check `booking.workerId` while others 
+  query `BookingWorker`, creating data inconsistency and missing worker payouts.
+
+[MEDIUM] 4.2 Database Indexing Gaps on High-Traffic Query Paths
+- Location: `backend/prisma/schema.prisma`
+- Issue:
+  - `Otp` table lacks a composite index on `[identifier, purpose, channel]`.
+  - `Booking` table lacks an index on `scheduledAt`.
+- Impact: Full table scans during OTP verification and schedule filtering under heavy load.
+
+--------------------------------------------------------------------------------
+CATEGORY 5: ERROR HANDLING & SYSTEM RESILIENCE
+--------------------------------------------------------------------------------
+[HIGH] 5.1 Naked Generic Error Throwing
+- Location:
+  - `backend/src/modules/instant-requests/services/instant-request.service.ts`
+  - `backend/src/modules/location/services/location.services.ts`
+  - `backend/src/modules/skills/services/skill.service.ts`
+  - `backend/src/modules/dashboard/services/dashboard.service.ts`
+  - `backend/src/modules/auth/services/AuthService.ts`
+- Issue: Dozens of guard clauses execute `throw new Error("Generic message")` instead 
+  of throwing typed `AppException` subclasses (`NotFoundException`, `BadRequestException`, 
+  `BusinessException`, `UnauthorizedException`).
+- Impact: Bypasses `GlobalErrorHandler` status code mapper, producing HTTP 500 
+  Internal Server Error responses instead of proper client status codes (400, 401, 404, 409).
+
+[MEDIUM] 5.2 Unhandled Socket.IO Emission Failures
+- Location: `backend/src/modules/bookings/services/BookingStateService.ts`
+- Issue: When Socket.IO is not initialized (e.g., during integration testing or standalone 
+  worker execution), state transitions log `Error: Socket not initialized`.
+- Impact: Log noise and potential failure propagation if socket call exceptions are unhandled.
+
+--------------------------------------------------------------------------------
+CATEGORY 6: TEST COVERAGE & QUALITY ASSURANCE DEFICITS
+--------------------------------------------------------------------------------
+[CRITICAL] 6.1 Severe Lack of Automated Test Coverage across Modules
+- Location: `backend/src/`
+- Issue: Execution of `npx vitest run` reveals only 2 test files in the entire project:
+  - `src/modules/bookings/tests/BookingStateService.test.ts`
+  - `src/tests/integration/auth.integration.test.ts`
+- Impact: 17 out of 18 backend domain modules (Auth, Instant Requests, Jobs, Wallet, 
+  Payments, Workers, Providers, Admin, Reviews, Pricing, Notifications, etc.) have 
+  ZERO automated test coverage. High risk of regression during updates.
+
+--------------------------------------------------------------------------------
+CATEGORY 7: HARDCODED BUSINESS LOGIC & MAGIC NUMBERS
+--------------------------------------------------------------------------------
+[MEDIUM] 7.1 Hardcoded Expiration & Fare Constants
+- Location:
+  - `instant-request.service.ts`: `expiresAt: new Date(Date.now() + 30 * 60 * 1000)`
+  - `fare.service.ts`: Hardcoded multiplier rates and distance surcharges.
+- Issue: Rule #6 in AGENTS.md prohibits hardcoded rates, templates, or radius values.
+- Impact: Inability to adjust business parameters dynamically via `PlatformSetting` 
+  without code redeployments.
+
+--------------------------------------------------------------------------------
+CATEGORY 8: FRONTEND INFRASTRUCTURE & RTK QUERY ALIGNMENT
+--------------------------------------------------------------------------------
+[MEDIUM] 8.1 Incomplete Cache Invalidation Tags in RTK Query
+- Location: `frontend/src/features/`
+- Issue: Some mutation endpoints (e.g. instant request creation/acceptance) do not 
+  consistently invalidate affected tags (`Bookings`, `InstantRequests`), requiring manual 
+  page refreshes to show updated worker state.
+
+--------------------------------------------------------------------------------
+3. RECOMMENDED REMEDIATION ROADMAP
+--------------------------------------------------------------------------------
+1. Cryptographic Security Fix: Replace `Math.random()` with `crypto.randomInt()` 
+   across all OTP generation utilities immediately.
+2. Financial Race Condition Fix: Update `WalletService` to use atomic Prisma 
+   increments/decrements (`balance: { decrement: amount }`) and push transactions 
+   into `WalletRepository`.
+3. Architectural Clean-Up: Deprecate `(global as any).deps` in `app.ts` / `server.ts`. 
+   Refactor legacy static services (`InstantRequestService`, `FareService`) into 
+   instantiated OOP classes extending `BaseService`.
+4. Exception Refactoring: Replace all naked `throw new Error(...)` calls with typed 
+   `AppException` classes.
+5. Repository Pattern Enforcement: Move direct Prisma calls in `AdminService`, 
+   `skill.service.ts`, and `fare.service.ts` into their respective Repositories.
+6. Test Suite Expansion: Scaffold unit test suites for `AuthService`, `InstantRequestService`, 
+   `WalletService`, and `JobService`.
+================================================================================

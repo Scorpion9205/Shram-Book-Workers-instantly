@@ -9,7 +9,8 @@ import { AuthorizationException } from '../../../core/exceptions/index.js';
 export const authorize = (...roles: UserRole[]) => {
   return (req: Request, _res: Response, next: NextFunction): void => {
     const user = (req as any).user;
-    if (!user || !roles.includes(user.role)) {
+    const userRole = (user?.role || '').toUpperCase() as UserRole;
+    if (!user || !roles.includes(userRole)) {
       throw new AuthorizationException('Access denied. Insufficient permissions.');
     }
     next();

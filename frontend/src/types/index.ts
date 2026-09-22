@@ -1,4 +1,4 @@
-export type UserRole = "worker" | "provider" | "agent";
+export type UserRole = "worker" | "provider" | "agent" | "admin";
 
 export interface User {
   id: string;
@@ -6,9 +6,14 @@ export interface User {
   email?: string;
   phone: string;
   role: UserRole;
-  avatarUrl?: string;
+  profileImage?: string;
   isVerified?: boolean;
+  isActive?: boolean;
   createdAt?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
 }
 
 export interface WorkerProfile {
@@ -97,6 +102,7 @@ export interface Job {
     applications: number;
     bookings: number;
   };
+  hasApplied?: boolean;
 }
 
 export type ApplicationStatus =
@@ -179,6 +185,7 @@ export interface Booking {
 
   completedAt?: string;
   startOtp?: string;
+  paymentMode?: string;
 
   job?: {
     id: string;
@@ -208,6 +215,7 @@ export interface Booking {
     name: string;
     phone?: string;
     profileImage?: string;
+    email?: string;
   };
 
   worker?: {

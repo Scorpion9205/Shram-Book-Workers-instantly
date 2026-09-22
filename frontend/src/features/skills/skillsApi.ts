@@ -18,19 +18,26 @@ export const skillsApi = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
     getSkills: builder.query<Skill[], void>({
       query: () => "/skills",
-      transformResponse: (response: SkillsResponse) => response.skills,
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return data.skills || data;
+      },
       providesTags: ["Skill"],
     }),
     addWorkerSkill: builder.mutation<Skill[], { skillId?: string; skillIds: string[] }>({
       query: (body) => ({ url: "/skills/worker", method: "POST", body }),
-      transformResponse: (response: WorkerSkillsResponse) =>
-        response.skills,
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return data.skills || data;
+      },
       invalidatesTags: ["WorkerSkill", "WorkerProfile"],
     }),
     getWorkerSkills: builder.query<Skill[], void>({
       query: () => "/skills/worker",
-      transformResponse: (response: WorkerSkillsResponse) =>
-       response.skills,
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return data.skills || data;
+      },
       providesTags: ["WorkerSkill"],
     }),
   }),

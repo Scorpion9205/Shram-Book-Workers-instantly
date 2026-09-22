@@ -25,6 +25,7 @@ export const authenticate = async (
 
     (req as any).user = {
       id: payload.userId,
+      userId: payload.userId,
       role: payload.role,
     };
 

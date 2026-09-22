@@ -8,6 +8,9 @@ import { CacheKeys } from '../../../infrastructure/cache/cacheKeys.js';
 import { OTP_CONSTANTS } from '../constants/otp.constants.js';
 import { OTPChannel } from '../enums/OTPChannel.js';
 import { BusinessException, TooManyRequestsException } from '../../../core/exceptions/index.js';
+import React from 'react';
+import { renderEmail } from '../../../shared/email/utils/render-email.js';
+import OtpEmail from '../../../shared/email/templates/OtpEmail.js';
 
 export class OTPService implements IOTPService {
   constructor(
@@ -95,7 +98,16 @@ export class OTPService implements IOTPService {
     const message = `Your SHRAM verification code is ${code}. It is valid for ${OTP_CONSTANTS.EXPIRY_MINUTES} minutes.`;
 
     if (channel === OTPChannel.EMAIL) {
-      await this.emailProvider.send(identifier, 'SHRAM Verification Code', message);
+      try {
+        const body = await renderEmail(React.createElement(OtpEmail, {
+          name: 'User',
+          otp: code
+        }));
+        await this.emailProvider.send(identifier, 'Your SHRAM Verification Code', body);
+      } catch (error) {
+        // Fall back to plain text email if React Email compilation fails
+        await this.emailProvider.send(identifier, 'Your SHRAM Verification Code', message);
+      }
     } else {
       await this.smsProvider.send(identifier, message);
     }

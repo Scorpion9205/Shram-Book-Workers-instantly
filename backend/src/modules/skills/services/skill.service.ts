@@ -1,4 +1,5 @@
 import prisma from "../../../shared/config/prisma.js";
+import { BadRequestException } from "../../../core/exceptions/index.js";
 
 
 
@@ -40,7 +41,7 @@ export class SkillService {
             });
 
         if (skills.length !== uniqueSkillIds.length) {
-            throw new Error(
+            throw new BadRequestException(
                 "Invalid skill selected"
             );
         }

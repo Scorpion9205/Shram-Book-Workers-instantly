@@ -1,4 +1,5 @@
 import type { Application } from '@prisma/client';
+import { randomInt } from 'crypto';
 import { BaseService } from '../../../core/base/BaseService.js';
 import type { IApplicationService } from '../interfaces/IApplicationService.js';
 import type { IApplicationRepository } from '../interfaces/IApplicationRepository.js';
@@ -11,6 +12,8 @@ import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { CacheInvalidationService } from '../../../shared/services/cache/cache-invalidation.service.js';
 import { RoutingKeys } from '../../../infrastructure/queue/queue.constants.js';
 import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
+import { getIO } from '../../../socket/socket.js';
+import { BookingMapper } from '../../bookings/mappers/Booking.mapper.js';
 
 export class ApplicationService extends BaseService implements IApplicationService {
   constructor(
@@ -76,8 +79,8 @@ export class ApplicationService extends BaseService implements IApplicationServi
     return this.applicationRepo.findManyByJobId(jobId);
   }
 
-  async acceptApplication(userId: string, applicationId: string): Promise<any> {
-    this.log('Accepting job application', { providerId: userId, applicationId });
+  async acceptApplication(userId: string, applicationId: string, paymentMode: string = 'ONLINE'): Promise<any> {
+    this.log('Accepting job application', { providerId: userId, applicationId, paymentMode });
 
     const result = await this.prisma.client.$transaction(async (tx) => {
       const application = await this.applicationRepo.findById(applicationId, tx);
@@ -109,8 +112,8 @@ export class ApplicationService extends BaseService implements IApplicationServi
 
       await this.applicationRepo.update(applicationId, { status: 'ACCEPTED' }, tx);
 
-      // Generate random start OTP
-      const startOtp = Math.floor(1000 + Math.random() * 9000).toString();
+      // Generate cryptographically secure 6-digit start OTP
+      const startOtp = randomInt(100000, 1000000).toString();
 
       const booking = await tx.booking.create({
         data: {
@@ -119,7 +122,8 @@ export class ApplicationService extends BaseService implements IApplicationServi
           workerId: application.workerId,
           agentId: application.agentId,
           amount: application.bidAmount ?? 0,
-          status: BookingStatus.CREATED,
+          status: paymentMode === 'OFFLINE' ? BookingStatus.WORKER_ASSIGNED : BookingStatus.CREATED,
+          paymentMode: paymentMode === 'OFFLINE' ? 'OFFLINE' : 'ONLINE',
           startOtp,
         },
       });
@@ -164,7 +168,21 @@ export class ApplicationService extends BaseService implements IApplicationServi
       result.agentUserId,
     );
 
-    return { success: true };
+    // Emit real-time socket events for booking creation
+    try {
+      const io = getIO();
+      const mappedBooking = BookingMapper.toResponse(result.booking, { userId });
+      // Notify provider
+      io.to(`user:${userId}`).emit('bookingUpdated', mappedBooking);
+      // Notify worker
+      if (result.workerUserId) {
+        io.to(`user:${result.workerUserId}`).emit('bookingUpdated', mappedBooking);
+      }
+    } catch (err) {
+      this.logger.error('Failed to emit booking creation socket event', err);
+    }
+
+    return { success: true, bookingId: result.booking.id, paymentMode: result.booking.paymentMode };
   }
 
   async rejectApplication(userId: string, applicationId: string): Promise<any> {

@@ -11,20 +11,26 @@ export const providerApi = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
     createProviderProfile: builder.mutation<ProviderProfile, Partial<ProviderProfile>>({
       query: (body) => ({ url: "/providers/profile", method: "POST", body }),
-      transformResponse: (response: ProviderProfileResponse) =>
-        response.profile!,
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return data.profile || data.provider || data;
+      },
       invalidatesTags: ["ProviderProfile"],
     }),
     getMyProviderProfile: builder.query<ProviderProfile, void>({
       query: () => "/providers/me",
-      transformResponse: (response: ProviderProfileResponse) =>
-        response.provider!,
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return data.provider || data.profile || data;
+      },
       providesTags: ["ProviderProfile"],
     }),
     updateMyProviderProfile: builder.mutation<ProviderProfile, Partial<ProviderProfile>>({
       query: (body) => ({ url: "/providers/me", method: "PATCH", body }),
-      transformResponse: (response: ProviderProfileResponse) =>
-        response.provider!,
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return data.provider || data.profile || data;
+      },
       invalidatesTags: ["ProviderProfile"],
     }),
   }),

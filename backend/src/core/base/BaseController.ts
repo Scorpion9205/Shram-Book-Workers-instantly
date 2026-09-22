@@ -1,6 +1,7 @@
 import type { Response } from 'express';
 import { ResponseBuilder, type PaginationMeta, type FieldError } from '../responses/ResponseBuilder.js';
 import { ValidationException } from '../exceptions/ValidationException.js';
+import { S3Provider } from '../../infrastructure/providers/storage/S3Provider.js';
 import type { ZodSchema, ZodIssue } from 'zod';
 
 /**
@@ -15,22 +16,25 @@ export abstract class BaseController {
   /**
    * 200 OK — single resource or action result
    */
-  protected ok<T>(res: Response, data: T, message: string): void {
-    res.status(200).json(ResponseBuilder.success(data, message));
+  protected async ok<T>(res: Response, data: T, message: string): Promise<void> {
+    const signedData = await S3Provider.signUrlsInObject(data);
+    res.status(200).json(ResponseBuilder.success(signedData, message));
   }
 
   /**
    * 201 Created — resource was created
    */
-  protected created<T>(res: Response, data: T, message: string): void {
-    res.status(201).json(ResponseBuilder.success(data, message));
+  protected async created<T>(res: Response, data: T, message: string): Promise<void> {
+    const signedData = await S3Provider.signUrlsInObject(data);
+    res.status(201).json(ResponseBuilder.success(signedData, message));
   }
 
   /**
    * 202 Accepted — async operation started
    */
-  protected accepted<T>(res: Response, data: T, message: string): void {
-    res.status(202).json(ResponseBuilder.success(data, message));
+  protected async accepted<T>(res: Response, data: T, message: string): Promise<void> {
+    const signedData = await S3Provider.signUrlsInObject(data);
+    res.status(202).json(ResponseBuilder.success(signedData, message));
   }
 
   /**
@@ -43,16 +47,17 @@ export abstract class BaseController {
   /**
    * 200 Paginated list
    */
-  protected paginated<T>(
+  protected async paginated<T>(
     res: Response,
     items: T[],
     total: number,
     page: number,
     limit: number,
     message: string,
-  ): void {
+  ): Promise<void> {
     const meta: PaginationMeta = ResponseBuilder.buildPaginationMeta(total, page, limit);
-    res.status(200).json(ResponseBuilder.success(items, message, meta));
+    const signedItems = await S3Provider.signUrlsInObject(items);
+    res.status(200).json(ResponseBuilder.success(signedItems, message, meta));
   }
 
   /**

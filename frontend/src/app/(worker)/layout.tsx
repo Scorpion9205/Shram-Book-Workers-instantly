@@ -5,9 +5,13 @@ import { DashboardShell } from "@/components/layout/DashboardShell";
 import { workerNavItems, workerBottomNavItems } from "@/lib/constants/nav";
 import { useLiveLocation } from "@/hooks/useLiveLocation";
 import { useGetMyWorkerProfileQuery } from "@/features/worker/workerApi";
+import { useAppSelector } from "@/hooks/redux";
 
 function WorkerLocationTracker() {
-  const { data: profile } = useGetMyWorkerProfileQuery();
+  const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
+  const { data: profile } = useGetMyWorkerProfileQuery(undefined, {
+    skip: !isAuthenticated,
+  });
   useLiveLocation(Boolean(profile?.isAvailable));
   return null;
 }

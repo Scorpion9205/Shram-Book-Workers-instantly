@@ -104,12 +104,14 @@ export default function JobDetailPage({ params }: { params: Promise<{ jobId: str
               </p>
               <Button
                 onClick={() => setOpen(true)}
-                disabled={job.status !== "OPEN"}
+                disabled={job.status !== "OPEN" || job.hasApplied}
               >
                 <CheckCircle2 className="size-4" />
-                {job.status === "OPEN"
-                  ? "Apply Now"
-                  : "Closed"}
+                {job.hasApplied
+                  ? "Already Applied"
+                  : job.status === "OPEN"
+                    ? "Apply Now"
+                    : "Closed"}
               </Button>
             </div>
           </CardContent>

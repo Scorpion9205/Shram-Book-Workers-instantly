@@ -118,13 +118,41 @@ export class JobService extends BaseService implements IJobService {
     return result;
   }
 
-  async getJobById(jobId: string): Promise<any> {
-    this.log('Retrieving job details by id', { jobId });
-    const job = await this.jobRepo.findById(jobId);
+  async getJobById(jobId: string, userId?: string): Promise<any> {
+    this.log('Retrieving job details by id', { jobId, userId });
+    const job = await this.jobRepo.findById(jobId) as any;
     if (!job) {
       throw new NotFoundException('Job', jobId);
     }
-    return job;
+
+    let hasApplied = false;
+    if (userId) {
+      const worker = await this.prisma.client.workerProfile.findUnique({
+        where: { userId }
+      });
+      if (worker) {
+        const app = await this.prisma.client.application.findFirst({
+          where: { jobId, workerId: worker.id }
+        });
+        if (app) {
+          hasApplied = true;
+        }
+      } else {
+        const agent = await this.prisma.client.agentProfile.findUnique({
+          where: { userId }
+        });
+        if (agent) {
+          const app = await this.prisma.client.application.findFirst({
+            where: { jobId, agentId: agent.id }
+          });
+          if (app) {
+            hasApplied = true;
+          }
+        }
+      }
+    }
+
+    return { ...job, hasApplied };
   }
 
   async getProviderJobs(userId: string): Promise<any[]> {

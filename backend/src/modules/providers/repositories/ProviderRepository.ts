@@ -63,9 +63,15 @@ export class ProviderRepository extends BaseRepository<ProviderProfile> implemen
   ): Promise<ProviderProfile> {
     const client = tx ?? this.prisma.client;
     try {
-      return await client.providerProfile.update({
+      return await client.providerProfile.upsert({
         where: { userId },
-        data: {
+        create: {
+          userId,
+          providerType: data.providerType,
+          companyName: data.companyName ?? null,
+          description: data.description ?? null,
+        },
+        update: {
           ...(data.providerType !== undefined && { providerType: data.providerType }),
           ...(data.companyName !== undefined && { companyName: data.companyName }),
           ...(data.description !== undefined && { description: data.description }),

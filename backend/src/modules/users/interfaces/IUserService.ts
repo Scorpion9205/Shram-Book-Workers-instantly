@@ -16,4 +16,6 @@ export interface IUserService {
   ): Promise<Partial<User>>;
   deleteAccount(userId: string): Promise<boolean>;
   changePassword(userId: string, data: any): Promise<boolean>;
+  uploadProfileImage(userId: string, buffer: Buffer, filename: string, mimeType: string): Promise<string>;
+  deleteProfileImage(userId: string): Promise<void>;
 }

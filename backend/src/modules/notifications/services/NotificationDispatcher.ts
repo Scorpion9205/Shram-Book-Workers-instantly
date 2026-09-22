@@ -6,6 +6,17 @@ import type { IUserRepository } from '../../users/interfaces/IUserRepository.js'
 import type { IEmailProvider, ISmsProvider, IPushProvider } from '../../../core/interfaces/IProviders.js';
 import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import { NotificationType, NotificationChannel } from '../enums/NotificationType.js';
+import React from 'react';
+import { renderEmail } from '../../../shared/email/utils/render-email.js';
+import {
+  OtpEmail,
+  WelcomeEmail,
+  BookingCreated,
+  BookingConfirmed,
+  WorkCompleted,
+  PaymentReceipt,
+  BookingCancelled,
+} from '../../../shared/email/templates/index.js';
 
 export class NotificationDispatcher extends BaseService implements INotificationDispatcher {
   constructor(
@@ -42,6 +53,78 @@ export class NotificationDispatcher extends BaseService implements INotification
     channel: NotificationChannel,
     locale: string,
   ): Promise<void> {
+    if (channel === NotificationChannel.EMAIL) {
+      if (user.email) {
+        try {
+          let component: React.ReactElement | null = null;
+          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+          switch (ctx.type) {
+            case NotificationType.OTP_LOGIN:
+              component = React.createElement(OtpEmail, {
+                name: (ctx.data.name as string) || user.name || 'User',
+                otp: (ctx.data.otp as string) || '',
+              });
+              break;
+            case NotificationType.WELCOME:
+              component = React.createElement(WelcomeEmail, {
+                name: (ctx.data.name as string) || user.name || 'User',
+              });
+              break;
+            case NotificationType.BOOKING_CREATED:
+              component = React.createElement(BookingCreated, {
+                name: (ctx.data.name as string) || user.name || 'User',
+                bookingId: (ctx.data.bookingId as string) || '',
+                frontendUrl,
+              });
+              break;
+            case NotificationType.BOOKING_CONFIRMED:
+              component = React.createElement(BookingConfirmed, {
+                providerName: (ctx.data.providerName as string) || user.name || 'User',
+                bookingShortId: (ctx.data.bookingShortId as string) || (ctx.data.bookingId as string) || '',
+                workerName: (ctx.data.workerName as string) || '',
+                frontendUrl,
+              });
+              break;
+            case NotificationType.WORK_COMPLETED:
+              component = React.createElement(WorkCompleted, {
+                providerName: (ctx.data.providerName as string) || user.name || 'User',
+                workerName: (ctx.data.workerName as string) || '',
+                bookingShortId: (ctx.data.bookingShortId as string) || (ctx.data.bookingId as string) || '',
+                frontendUrl,
+              });
+              break;
+            case NotificationType.PAYMENT_RECEIPT:
+              component = React.createElement(PaymentReceipt, {
+                providerName: (ctx.data.providerName as string) || user.name || 'User',
+                bookingShortId: (ctx.data.bookingShortId as string) || (ctx.data.bookingId as string) || '',
+                workerName: (ctx.data.workerName as string) || '',
+                amount: String(ctx.data.amount || ''),
+                frontendUrl,
+              });
+              break;
+            case NotificationType.BOOKING_CANCELLED:
+              component = React.createElement(BookingCancelled, {
+                bookingShortId: (ctx.data.bookingShortId as string) || (ctx.data.bookingId as string) || '',
+                reason: (ctx.data.reason as string) || 'No reason provided',
+                frontendUrl,
+              });
+              break;
+          }
+
+          if (component) {
+            const body = await renderEmail(component);
+            const subject = this.getEmailSubject(ctx.type, ctx.data);
+            await this.emailProvider.send(user.email, subject, body);
+            await this.notificationRepo.create(user.id, subject, body);
+            return;
+          }
+        } catch (error) {
+          this.log('Dynamic email template compilation failed, falling back to DB templates', { type: ctx.type, userId: user.id, error });
+        }
+      }
+    }
+
     const template = await this.resolveTemplate(ctx.type, channel, locale);
     if (!template) {
       this.log('No template found', { type: ctx.type, channel, locale });
@@ -106,6 +189,24 @@ export class NotificationDispatcher extends BaseService implements INotification
 
   private interpolate(template: string, data: Record<string, unknown>): string {
     return template.replace(/\{\{(\w+)\}\}/g, (_, key) => String(data[key] ?? `{{${key}}}`));
+  }
+
+  private getEmailSubject(type: NotificationType, data: Record<string, unknown>): string {
+    const defaults: Record<NotificationType, string> = {
+      [NotificationType.OTP_LOGIN]: 'Your SHRAM Verification Code',
+      [NotificationType.WELCOME]: 'Welcome to SHRAM 🎉',
+      [NotificationType.BOOKING_CREATED]: 'SHRAM: New Booking Created',
+      [NotificationType.BOOKING_CONFIRMED]: 'SHRAM: Booking Confirmed!',
+      [NotificationType.WORK_STARTED]: 'SHRAM: Work Started',
+      [NotificationType.WORK_COMPLETED]: 'SHRAM: Work Completed Alert',
+      [NotificationType.PAYMENT_RECEIPT]: 'Receipt for SHRAM Booking',
+      [NotificationType.BOOKING_CANCELLED]: 'SHRAM: Booking Cancelled',
+      [NotificationType.REVIEW_REQUEST]: 'SHRAM: Review Request',
+      [NotificationType.OTP_WORK_START]: 'SHRAM: Work Start OTP',
+    };
+
+    const raw = defaults[type] || 'SHRAM Alert';
+    return this.interpolate(raw, data);
   }
 
   private async getUserFCMTokens(userId: string): Promise<string[]> {

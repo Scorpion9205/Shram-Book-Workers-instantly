@@ -19,8 +19,10 @@ export const dashboardApi = apiSlice.injectEndpoints({
         const queryString = queryParams.toString();
         return `/dashboard/worker${queryString ? `?${queryString}` : ""}`;
       },
-      transformResponse: (response: DashboardResponse<DashboardWorker>) =>
-        response.dashboard,
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return data.dashboard || data;
+      },
       providesTags: ["DashboardWorker"],
     }),
     getProviderDashboard: builder.query<DashboardProvider, { range?: string; startDate?: string; endDate?: string } | void>({
@@ -34,8 +36,10 @@ export const dashboardApi = apiSlice.injectEndpoints({
         const queryString = queryParams.toString();
         return `/dashboard/provider${queryString ? `?${queryString}` : ""}`;
       },
-      transformResponse: (response: DashboardResponse<DashboardProvider>) =>
-        response.dashboard,
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return data.dashboard || data;
+      },
       providesTags: ["DashboardProvider"],
     }),
   }),

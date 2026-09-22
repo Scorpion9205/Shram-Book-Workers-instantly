@@ -26,9 +26,9 @@ export class ProviderService extends BaseService implements IProviderService {
   async getMyProfile(userId: string): Promise<ProviderProfile> {
     this.log('Fetching provider profile', { userId });
     
-    const profile = await this.providerRepo.findByUserId(userId);
+    let profile = await this.providerRepo.findByUserId(userId);
     if (!profile) {
-      throw new NotFoundException('ProviderProfile', userId);
+      profile = await this.providerRepo.createProfile(userId, {});
     }
 
     return profile;
@@ -39,13 +39,6 @@ export class ProviderService extends BaseService implements IProviderService {
     data: { providerType?: any; companyName?: string | null | undefined; description?: string | null | undefined },
   ): Promise<ProviderProfile> {
     this.log('Updating provider profile details', { userId, data });
-    
-    // Ensure profile exists first
-    const existing = await this.providerRepo.findByUserId(userId);
-    if (!existing) {
-      throw new NotFoundException('ProviderProfile', userId);
-    }
-
     return await this.providerRepo.updateProfile(userId, data);
   }
 }
