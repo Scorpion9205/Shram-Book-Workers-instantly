@@ -36,8 +36,25 @@ export async function bootstrapRabbitMQ(): Promise<amqp.Connection> {
       },
     });
 
-    await channel.assertQueue(QueueNames.ANALYTICS, { durable: true });
-    await channel.assertQueue(QueueNames.CLEANUP, { durable: true });
+    await channel.assertQueue(QueueNames.ANALYTICS, {
+      durable: true,
+      arguments: {
+        'x-dead-letter-exchange': ExchangeNames.DLX,
+      },
+    });
+
+    await channel.assertQueue(QueueNames.CLEANUP, {
+      durable: true,
+      arguments: {
+        'x-dead-letter-exchange': ExchangeNames.DLX,
+      },
+    });
+
+    // Dead-letter queue: catches every message nacked/discarded by the queues above so
+    // failures (e.g. a wallet payout that threw mid-processing) are recoverable instead
+    // of silently vanishing into a fanout exchange with nothing bound to it.
+    await channel.assertQueue(QueueNames.DEAD_LETTER, { durable: true });
+    await channel.bindQueue(QueueNames.DEAD_LETTER, ExchangeNames.DLX, '');
 
     // 3. Bind Queues to Exchange via Routing Keys
     logger.info('Binding queues to exchanges...');

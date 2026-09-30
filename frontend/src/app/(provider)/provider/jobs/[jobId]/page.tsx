@@ -30,7 +30,7 @@ export default function ProviderJobDetailPage({ params }: { params: Promise<{ jo
 
   async function confirmAccept(applicationId: string, paymentMode: "ONLINE" | "OFFLINE") {
     try {
-      const res = await acceptApplication({ applicationId, paymentMode }).unwrap() as any;
+      const res = await acceptApplication({ applicationId, paymentMode, jobId }).unwrap() as any;
       toast.success("Worker accepted! Booking created.");
       setSelectedAppId(null);
       if (res.bookingId) {

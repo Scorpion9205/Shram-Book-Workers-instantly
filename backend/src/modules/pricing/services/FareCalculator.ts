@@ -3,13 +3,17 @@ import type { IPlatformSettingRepository } from '../../platform-settings/interfa
 import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import { CacheKeys } from '../../../infrastructure/cache/cacheKeys.js';
 import { Logger } from '../../../core/logger/Logger.js';
+import { BusinessException } from '../../../core/exceptions/index.js';
 
 export class FareCalculator implements IFareCalculator {
   private readonly logger = new Logger('FareCalculator');
-  private readonly strategies: IPricingStrategy[];
+  // Only these are safe to zero-out on failure — they're additive modifiers, not the
+  // core price. BaseRateStrategy is intentionally excluded: if it fails (e.g. a deleted
+  // skillId), pricing must abort loudly, not silently produce a near-zero fare.
+  private readonly optionalStrategies: IPricingStrategy[];
 
   constructor(
-    baseRateStrategy: IPricingStrategy,
+    private readonly baseRateStrategy: IPricingStrategy,
     distanceStrategy: IPricingStrategy,
     demandStrategy: IPricingStrategy,
     weatherStrategy: IPricingStrategy,
@@ -17,8 +21,7 @@ export class FareCalculator implements IFareCalculator {
     private readonly platformSettingRepo: IPlatformSettingRepository,
     private readonly cache: ICacheService,
   ) {
-    this.strategies = [
-      baseRateStrategy,
+    this.optionalStrategies = [
       distanceStrategy,
       demandStrategy,
       weatherStrategy,
@@ -32,15 +35,19 @@ export class FareCalculator implements IFareCalculator {
       durationHours: context.durationHours,
     });
 
-    // Execute all strategies in parallel
-    const amounts = await Promise.all(
-      this.strategies.map((s) => s.calculate(context).catch((err) => {
+    // Base rate must succeed — let it throw (e.g. NotFoundException on a bad skillId)
+    // rather than being isolated away into a 0 contribution.
+    const baseAmount = await this.baseRateStrategy.calculate(context);
+
+    // Execute optional modifiers in parallel; a failure here degrades gracefully to 0.
+    const optionalAmounts = await Promise.all(
+      this.optionalStrategies.map((s) => s.calculate(context).catch((err) => {
         this.logger.error('Error running pricing strategy', err);
-        return 0; // Failure isolation
+        return 0; // Failure isolation — non-critical modifiers only
       })),
     );
 
-    const rawTotal = amounts.reduce((sum, a) => sum + a, 0);
+    const rawTotal = baseAmount + optionalAmounts.reduce((sum, a) => sum + a, 0);
 
     // Apply min/max fare caps
     const cappedTotal = await this.applyPricingRules(rawTotal, context.skillId);
@@ -49,6 +56,10 @@ export class FareCalculator implements IFareCalculator {
     const finalFare = await this.applyCommission(cappedTotal);
 
     this.logger.info(`Fare calculation finished. Raw: ${rawTotal}, Final: ${finalFare}`);
+
+    if (!(finalFare > 0)) {
+      throw new BusinessException('INVALID_FARE_CALCULATION', 'Calculated fare must be greater than zero');
+    }
 
     return {
       estimatedFare: Math.round(finalFare * 100) / 100, // Round to 2 decimal places

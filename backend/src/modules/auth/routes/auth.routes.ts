@@ -11,6 +11,8 @@ import { redis } from '../../../shared/config/redis.js';
 import { authenticate } from '../middleware/authenticate.middleware.js';
 import { authorize } from '../middleware/role.middleware.js';
 import { UserRole } from '../../../core/enums/Role.js';
+import { rateLimiter } from '../../../shared/middleware/rateLimiter.middleware.js';
+import { requireIdempotencyKey } from '../../../shared/middleware/idempotency.middleware.js';
 
 import { ResendProvider } from '../../../infrastructure/providers/email/ResendProvider.js';
 import { ExotelProvider } from '../../../infrastructure/providers/sms/ExotelProvider.js';
@@ -34,15 +36,15 @@ const router = Router();
 
 // OTP Authentication (Provider/Worker)
 router.post('/signup', controller.signup);
-router.post('/login', controller.verifyOTP);
+router.post('/login', requireIdempotencyKey(), controller.verifyOTP);
 router.post('/send-otp', controller.requestOTP);
-router.post('/verify-otp', controller.verifyOTP);
+router.post('/verify-otp', requireIdempotencyKey(), controller.verifyOTP);
 
 // Google OAuth
 router.post('/google', controller.googleAuth);
 
 // Admin/Agent Hashed Password Authentication
-router.post('/admin/login', controller.adminLogin);
+router.post('/admin/login', rateLimiter('admin-login', 10, 15 * 60, true), controller.adminLogin);
 
 // Token Management
 router.post('/refresh-token', controller.refreshToken);

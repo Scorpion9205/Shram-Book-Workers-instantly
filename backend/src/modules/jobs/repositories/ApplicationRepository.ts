@@ -1,7 +1,9 @@
-import type { Application, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { Application } from '@prisma/client';
 import { BaseRepository } from '../../../core/base/BaseRepository.js';
 import type { IApplicationRepository } from '../interfaces/IApplicationRepository.js';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
+import { ConflictException } from '../../../core/exceptions/index.js';
 
 export class ApplicationRepository extends BaseRepository<Application> implements IApplicationRepository {
   constructor(private readonly prisma: PrismaService) {
@@ -10,7 +12,14 @@ export class ApplicationRepository extends BaseRepository<Application> implement
 
   async create(data: Prisma.ApplicationUncheckedCreateInput, tx?: Prisma.TransactionClient): Promise<Application> {
     const client = tx || this.prisma.client;
-    return client.application.create({ data });
+    try {
+      return await client.application.create({ data });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException('You have already applied to this job');
+      }
+      throw err;
+    }
   }
 
   async findByJobAndWorker(jobId: string, workerId: string, tx?: Prisma.TransactionClient): Promise<Application | null> {

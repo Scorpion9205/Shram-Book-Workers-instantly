@@ -104,6 +104,26 @@ export class BookingRepository extends BaseRepository<Booking> implements IBooki
     }
   }
 
+  async updateStatusIfCurrent(
+    id: string,
+    fromStatus: BookingStatus,
+    toStatus: BookingStatus,
+    tx?: Prisma.TransactionClient,
+  ): Promise<Booking | null> {
+    const client = tx ?? this.prisma.client;
+    try {
+      return await client.booking.update({
+        where: { id, status: fromStatus } as Prisma.BookingWhereUniqueInput,
+        data: { status: toStatus },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+        return null;
+      }
+      throw new DatabaseException('Failed to update booking status', err);
+    }
+  }
+
   async update(
     id: string,
     data: any,

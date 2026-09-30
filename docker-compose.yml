@@ -1,0 +1,100 @@
+name: shram
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: shram
+      POSTGRES_PASSWORD: shram
+      POSTGRES_DB: shram
+    ports:
+      - "5432:5432"
+    volumes:
+      - shram_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shram -d shram"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - shram_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: shram
+      RABBITMQ_DEFAULT_PASS: shram
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - shram_rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    image: node:20-alpine
+    working_dir: /app
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql://shram:shram@postgres:5432/shram?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      RABBITMQ_URL: amqp://shram:shram@rabbitmq:5672
+      FRONTEND_URL: http://localhost:3000
+      PORT: "5000"
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend:/app
+      - shram_api_node_modules:/app/node_modules
+    command: sh -c "npm install && npx prisma generate && npm run dev"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  web:
+    image: node:20-alpine
+    working_dir: /app
+    restart: unless-stopped
+    env_file:
+      - ./frontend/.env
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:5000/api/v1
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - shram_web_node_modules:/app/node_modules
+    command: sh -c "npm install && npm run dev"
+    depends_on:
+      - api
+
+volumes:
+  shram_postgres_data:
+  shram_redis_data:
+  shram_rabbitmq_data:
+  shram_api_node_modules:
+  shram_web_node_modules:

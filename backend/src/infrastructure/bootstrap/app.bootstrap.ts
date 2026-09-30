@@ -19,6 +19,13 @@ import { WalletRepository, TransactionRepository, WalletService, WalletControlle
 import { AdminService, AdminController, AdminRepository, createAdminRouter } from '../../modules/admin/index.js';
 import { BookingRepository, BookingStatusHistoryRepository, BookingStateService, BookingService, BookingController, createBookingRouter } from '../../modules/bookings/index.js';
 import { PlatformSettingRepository } from '../../modules/platform-settings/index.js';
+import {
+  InstantRequestRepository,
+  InstantMatchingService,
+  InstantRequestService,
+  InstantRequestController,
+  createInstantRequestRouter,
+} from '../../modules/instant-requests/index.js';
 
 // Notifications Module Imports
 import {
@@ -59,6 +66,7 @@ export interface AppDependencies {
   adminRouter: Router;
   notificationRouter: Router;
   bookingRouter: Router;
+  instantRequestRouter: Router;
 }
 
 /**
@@ -96,6 +104,7 @@ export async function wireModules(
   const notificationRepo = new NotificationRepository(prismaService);
   const platformSettingRepo = new PlatformSettingRepository(prismaService);
   const adminRepo = new AdminRepository(prismaService);
+  const instantRequestRepo = new InstantRequestRepository(prismaService);
 
   // 3. Providers
   const razorpayProvider = new RazorpayProvider(env.RAZORPAY_KEY_ID!, env.RAZORPAY_KEY_SECRET!);
@@ -178,6 +187,17 @@ export async function wireModules(
     bookingStateService,
     eventPublisher,
   );
+  const instantMatchingService = new InstantMatchingService(
+    instantRequestRepo,
+    cacheService,
+  );
+  const instantRequestService = new InstantRequestService(
+    instantRequestRepo,
+    workerRepo,
+    cacheService,
+    prismaService,
+    instantMatchingService,
+  );
 
   // 5. Controllers
   const userController = new UserController(userService);
@@ -190,6 +210,7 @@ export async function wireModules(
   const adminController = new AdminController(adminService);
   const notificationController = new NotificationController(notificationRepo);
   const bookingController = new BookingController(bookingService, reviewService);
+  const instantRequestController = new InstantRequestController(instantRequestService, cacheService);
 
   // 6. Routers
   const userRouter = createUserRouter(userController);
@@ -202,6 +223,7 @@ export async function wireModules(
   const adminRouter = createAdminRouter(adminController);
   const notificationRouter = createNotificationRouter(notificationController);
   const bookingRouter = createBookingRouter(bookingController);
+  const instantRequestRouter = createInstantRequestRouter(instantRequestController);
 
   // 7. Start Queue Consumers
   try {
@@ -239,5 +261,6 @@ export async function wireModules(
     adminRouter,
     notificationRouter,
     bookingRouter,
+    instantRequestRouter,
   };
 }

@@ -1,62 +1,32 @@
-import {Router} from "express";
-import { InstantRequestController } from "../controllers/instant-request.controller.js";
-import { authMiddleware } from "../../../shared/middleware/auth.middleware.js";
-import { roleMiddleware } from "../../../shared/middleware/role.middleware.js";
+import { Router } from "express";
+import type { InstantRequestController } from "../controllers/instant-request.controller.js";
+import { authenticate } from "../../auth/middleware/authenticate.middleware.js";
+import { authorize } from "../../auth/middleware/role.middleware.js";
 import { rateLimiter } from "../../../shared/middleware/rateLimiter.middleware.js";
+import { UserRole } from "../../../core/enums/Role.js";
 
-const router = Router();
+export function createInstantRequestRouter(controller: InstantRequestController): Router {
+  const router = Router();
 
-router.post(
-  "/",
-  authMiddleware,
-  roleMiddleware("PROVIDER"),rateLimiter(
-    "instant:create",
-    15,
-    60
-  ),
-  InstantRequestController.createInstantRequest
-);
+  router.post(
+    "/",
+    authenticate,
+    authorize(UserRole.PROVIDER),
+    rateLimiter("instant:create", 15, 60),
+    controller.createInstantRequest,
+  );
 
-router.get(
-  "/nearby",
-  authMiddleware,
-  roleMiddleware("WORKER"),
-  InstantRequestController.getNearbyRequests
-);
+  router.get("/nearby", authenticate, authorize(UserRole.WORKER), controller.getNearbyRequests);
 
-router.post(
-  "/calculate-fare",
-  authMiddleware,
-  roleMiddleware("PROVIDER"),
-  InstantRequestController.calculateFare
-);
+  router.post("/calculate-fare", authenticate, authorize(UserRole.PROVIDER), controller.calculateFare);
 
-router.post(
-  "/items/:itemId/accept",
-  authMiddleware,
-  roleMiddleware("WORKER"),
-  InstantRequestController.acceptRequest
-);
+  router.post("/items/:itemId/accept", authenticate, authorize(UserRole.WORKER), controller.acceptRequest);
 
-router.get(
-  "/my-requests",
-  authMiddleware,
-  roleMiddleware("PROVIDER"),
-  InstantRequestController.getMyRequests
-);
+  router.get("/my-requests", authenticate, authorize(UserRole.PROVIDER), controller.getMyRequests);
 
-router.post(
-  "/:id/bids",
-  authMiddleware,
-  roleMiddleware("WORKER"),
-  InstantRequestController.submitBid
-);
+  router.post("/:id/bids", authenticate, authorize(UserRole.WORKER), controller.submitBid);
 
-router.post(
-  "/:id/bids/:bidId/select",
-  authMiddleware,
-  roleMiddleware("PROVIDER"),
-  InstantRequestController.selectBid
-);
+  router.post("/:id/bids/:bidId/select", authenticate, authorize(UserRole.PROVIDER), controller.selectBid);
 
-export default router;
+  return router;
+}

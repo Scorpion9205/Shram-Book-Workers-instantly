@@ -1,4 +1,5 @@
 import { Redis } from 'ioredis';
+import { randomUUID } from 'crypto';
 import type { ICacheService, GeoMember } from '../../core/interfaces/ICacheService.js';
 import { Logger } from '../../core/logger/Logger.js';
 
@@ -137,6 +138,32 @@ export class CacheService implements ICacheService {
       await this.redis.zrem(key, member);
     } catch (err) {
       this.logger.error(`Redis GEOREMOVE error for key ${key} and member ${member}`, err);
+    }
+  }
+
+  async acquireLock(key: string, ttlSeconds = 10): Promise<string | null> {
+    try {
+      const token = randomUUID();
+      const result = await this.redis.set(key, token, 'EX', ttlSeconds, 'NX');
+      return result === 'OK' ? token : null;
+    } catch (err) {
+      this.logger.error(`Redis LOCK error for key ${key}`, err);
+      return null;
+    }
+  }
+
+  async releaseLock(key: string, token: string): Promise<void> {
+    const script = `
+      if redis.call("GET", KEYS[1]) == ARGV[1] then
+        return redis.call("DEL", KEYS[1])
+      else
+        return 0
+      end
+    `;
+    try {
+      await this.redis.eval(script, 1, key, token);
+    } catch (err) {
+      this.logger.error(`Redis UNLOCK error for key ${key}`, err);
     }
   }
 }

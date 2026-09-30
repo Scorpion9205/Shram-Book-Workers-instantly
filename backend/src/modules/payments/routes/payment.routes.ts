@@ -3,6 +3,7 @@ import type { PaymentController } from '../controllers/PaymentController.js';
 import { authenticate } from '../../auth/middleware/authenticate.middleware.js';
 import { authorize } from '../../auth/middleware/role.middleware.js';
 import { UserRole } from '../../../core/enums/Role.js';
+import { requireIdempotencyKey } from '../../../shared/middleware/idempotency.middleware.js';
 
 export function createPaymentRouter(controller: PaymentController): Router {
   const router = Router();
@@ -11,6 +12,7 @@ export function createPaymentRouter(controller: PaymentController): Router {
     '/orders',
     authenticate,
     authorize(UserRole.PROVIDER),
+    requireIdempotencyKey(),
     controller.createOrder,
   );
 

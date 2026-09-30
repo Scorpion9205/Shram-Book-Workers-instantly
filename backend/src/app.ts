@@ -8,7 +8,6 @@ import authRoutes from "./modules/auth/routes/auth.routes.js";
 import locationRoutes from "./modules/location/routes/location.routes.js";
 import providerRoutes from "./modules/providers/routes/provider.routes.js";
 import skillRoutes from "./modules/skills/routes/skill.routes.js";
-import instantRequestRoutes from "./modules/instant-requests/routes/instant-request.routes.js";
 import dashboardRoutes from "./modules/dashboard/routes/dashboard.routes.js";
 import pricingRoutes from "./modules/pricing/routes/pricing.routes.js";
 
@@ -22,6 +21,7 @@ import { idempotencyMiddleware } from "./shared/middleware/idempotency.middlewar
 // Databases configuration
 import prisma from "./shared/config/prisma.js";
 import { redis } from "./shared/config/redis.js";
+import { rabbitMQ } from "./shared/queue/connection/rabbitmq.connection.js";
 
 const app = express();
 
@@ -40,7 +40,13 @@ app.use(
 );
 
 app.use(morgan("dev"));
-app.use(express.json());
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      (req as any).rawBody = buf;
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
@@ -52,7 +58,6 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/location", locationRoutes);
 app.use("/api/v1/providers", providerRoutes);
 app.use("/api/v1/skills", skillRoutes);
-app.use("/api/v1/instant-requests", instantRequestRoutes);
 app.use("/api/v1/dashboard", dashboardRoutes);
 app.use("/api/v1/pricing", pricingRoutes);
 
@@ -78,6 +83,52 @@ app.get("/api/v1/health", async (_req, res) => {
       error: error.message || String(error),
     });
   }
+});
+
+// Liveness Probe — process is up, no dependency checks
+app.get("/api/v1/live", (_req, res) => {
+  res.status(200).json({
+    success: true,
+    status: "ALIVE",
+  });
+});
+
+// Readiness Probe — dependencies must be reachable before traffic is routed
+app.get("/api/v1/ready", async (_req, res) => {
+  const checks: Record<string, "CONNECTED" | "DOWN"> = {
+    database: "DOWN",
+    redis: "DOWN",
+    rabbitmq: "DOWN",
+  };
+
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    checks.database = "CONNECTED";
+  } catch {
+    // left as DOWN
+  }
+
+  try {
+    await redis.ping();
+    checks.redis = "CONNECTED";
+  } catch {
+    // left as DOWN
+  }
+
+  try {
+    rabbitMQ.getChannel();
+    checks.rabbitmq = "CONNECTED";
+  } catch {
+    // left as DOWN
+  }
+
+  const isReady = Object.values(checks).every((status) => status === "CONNECTED");
+
+  res.status(isReady ? 200 : 503).json({
+    success: isReady,
+    status: isReady ? "READY" : "NOT_READY",
+    ...checks,
+  });
 });
 
 // Dynamic Dependency Injection Endpoint Mounts
@@ -119,6 +170,10 @@ app.use("/api/v1/notifications", (req, res, next) => {
 
 app.use("/api/v1/bookings", (req, res, next) => {
   (global as any).deps.bookingRouter(req, res, next);
+});
+
+app.use("/api/v1/instant-requests", (req, res, next) => {
+  (global as any).deps.instantRequestRouter(req, res, next);
 });
 
 // Fallback handlers

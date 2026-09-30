@@ -21,7 +21,11 @@ export class PaymentController extends BaseController {
     if (!signature) {
       throw new BusinessException('MISSING_SIGNATURE', 'Missing Razorpay signature header');
     }
-    await this.paymentService.handleWebhook(req.body, signature);
+    const rawBody: Buffer | undefined = (req as any).rawBody;
+    if (!rawBody) {
+      throw new BusinessException('MISSING_RAW_BODY', 'Raw request body unavailable for signature verification');
+    }
+    await this.paymentService.handleWebhook(rawBody.toString('utf8'), req.body, signature);
     this.ok(res, { received: true }, 'Webhook processed successfully');
   };
 }

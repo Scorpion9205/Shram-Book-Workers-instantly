@@ -21,6 +21,7 @@ import React from 'react';
 import { renderEmail } from '../../../shared/email/utils/render-email.js';
 import OtpEmail from '../../../shared/email/templates/OtpEmail.js';
 import type { SignupInput } from '../validations/auth.validation.js';
+import { env } from '../../../config/env.js';
 
 export class AuthService implements IAuthService {
   constructor(
@@ -77,9 +78,16 @@ export class AuthService implements IAuthService {
       });
     }
 
-    // Cache the full signup payload under the phone number
+    // Cache the full signup payload under BOTH identifiers — verifyOTP() may be called
+    // with either the phone or the email identifier depending on which OTP the user
+    // completes, and previously only the phone key was populated, so verifying via the
+    // email OTP silently missed the cache (wrong role defaulted, phone left blank).
     await this.cache.set(`signup:data:${data.phone}`, data, 600); // 10m TTL
     await this.cache.set(`signup:role:${data.phone}`, data.role, 600); // 10m TTL
+    if (data.email) {
+      await this.cache.set(`signup:data:${data.email}`, data, 600); // 10m TTL
+      await this.cache.set(`signup:role:${data.email}`, data.role, 600); // 10m TTL
+    }
 
     let smsSuccess = false;
     let emailSuccess = false;
@@ -298,7 +306,7 @@ export class AuthService implements IAuthService {
   async refreshToken(token: string): Promise<{ accessToken: string }> {
     let payload: any;
     try {
-      payload = jwt.verify(token, process.env.JWT_REFRESH_SECRET || 'fallback-refresh-secret');
+      payload = jwt.verify(token, env.JWT_REFRESH_SECRET, { algorithms: ['HS256'] });
     } catch {
       throw new AuthenticationException('Invalid refresh token', 'TOKEN_INVALID');
     }

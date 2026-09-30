@@ -1,17 +1,28 @@
-import prisma from "../../../shared/config/prisma.js";
-import { RedisService } from "../../../shared/services/redis/redis.service.js";
 import { getIO } from "../../../socket/socket.js";
+import type { ICacheService } from "../../../core/interfaces/ICacheService.js";
+import type { IInstantRequestRepository } from "../interfaces/IInstantRequestRepository.js";
+import type { IInstantMatchingService } from "../interfaces/IInstantMatchingService.js";
+import { Logger } from "../../../core/logger/Logger.js";
 
-export class InstantMatchingService {
-  static async startMatching(requestId: string) {
+// NOTE: this is a straight lift-and-shift of the previous static implementation into an
+// OOP+DI class — the radius tiers being hardcoded (not read from PlatformSetting), the
+// unconditional 15s wait per stage, and the force-EXPIRED fallback all reproduce the
+// PRE-EXISTING behavior on purpose. Those are tracked as a separate, deliberate follow-up
+// fix (RADIUS-01) so this refactor stays a pure behavior-preserving change.
+export class InstantMatchingService implements IInstantMatchingService {
+  private readonly logger = new Logger('InstantMatchingService');
+
+  constructor(
+    private readonly requestRepo: IInstantRequestRepository,
+    private readonly cache: ICacheService,
+  ) {}
+
+  async startMatching(requestId: string): Promise<void> {
     const stages = [2, 5, 15, 30];
     const notifiedWorkerIds = new Set<string>();
 
     for (const radius of stages) {
-      const request = await prisma.instantRequest.findUnique({
-        where: { id: requestId },
-        include: { skill: true, items: true, provider: true }
-      });
+      const request = await this.requestRepo.findRequestWithItemsAndProvider(requestId);
 
       if (!request || request.status === "FILLED" || request.status === "CANCELLED" || request.status === "EXPIRED") {
         break;
@@ -20,28 +31,17 @@ export class InstantMatchingService {
       const skillId = request.skillId;
       if (!skillId) break;
 
-      const workerIds = await RedisService.geoSearch(
+      const workerIds = await this.cache.geoSearch(
         `geo:instant-workers:${skillId}`,
-        request.longitude,
         request.latitude,
-        radius
+        request.longitude,
+        radius,
+        'km',
       );
 
-      const eligibleWorkers = await prisma.workerProfile.findMany({
-        where: {
-          id: { in: workerIds },
-          isAvailable: true,
-          user: { role: "WORKER" },
-          skills: {
-            some: {
-              skillId: skillId
-            }
-          }
-        },
-        include: { user: true }
-      });
+      const eligibleWorkers = await this.requestRepo.findEligibleWorkersForMatching(workerIds, skillId);
 
-      const newWorkers = eligibleWorkers.filter(w => !notifiedWorkerIds.has(w.id));
+      const newWorkers = eligibleWorkers.filter((w) => !notifiedWorkerIds.has(w.id));
 
       for (const worker of newWorkers) {
         notifiedWorkerIds.add(worker.id);
@@ -49,7 +49,7 @@ export class InstantMatchingService {
         const io = getIO();
         if (request.bookingMode === "DIRECT") {
           const itemId = request.items[0]?.id || "";
-          
+
           io.to(`user:${worker.userId}`).emit("newInstantRequest", {
             itemId,
             request: {
@@ -65,7 +65,7 @@ export class InstantMatchingService {
               status: request.status,
               distanceKm: 0.1,
               estimatedMinutes: 5,
-            }
+            },
           });
         } else {
           io.to(`user:${worker.userId}`).emit("instant-bidding:new", {
@@ -77,17 +77,12 @@ export class InstantMatchingService {
         }
       }
 
-      await new Promise(resolve => setTimeout(resolve, 15000));
+      await new Promise((resolve) => setTimeout(resolve, 15000));
     }
 
-    const finalRequest = await prisma.instantRequest.findUnique({
-      where: { id: requestId }
-    });
+    const finalRequest = await this.requestRepo.findRequestById(requestId);
     if (finalRequest && finalRequest.status === "OPEN") {
-      await prisma.instantRequest.update({
-        where: { id: requestId },
-        data: { status: "EXPIRED" }
-      });
+      await this.requestRepo.markExpired([requestId]);
 
       const io = getIO();
       if (finalRequest.bookingMode === "DIRECT") {

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const createWorkerProfileSchema = z.object({
-  bio: z.string().optional(),
+  bio: z.string().max(1000, "Bio must be at most 1000 characters").optional(),
 
   experience: z
     .number()

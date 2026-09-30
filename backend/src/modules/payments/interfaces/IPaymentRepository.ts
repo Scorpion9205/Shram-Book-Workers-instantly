@@ -11,4 +11,14 @@ export interface IPaymentRepository {
     razorpaySignature?: string | null,
     tx?: Prisma.TransactionClient,
   ): Promise<Payment>;
+  /**
+   * Atomically marks a payment COMPLETED only if it is still PENDING.
+   * Returns the number of rows affected (0 = already processed by a concurrent call).
+   */
+  markCompletedIfPending(
+    id: string,
+    razorpayPaymentId: string,
+    razorpaySignature: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<number>;
 }

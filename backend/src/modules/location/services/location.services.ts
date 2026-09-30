@@ -10,7 +10,7 @@ export class LocationService {
   ) {
     const worker = await prisma.workerProfile.findUnique({
       where: { userId },
-      include: { skills: true }
+      include: { skills: true, user: { select: { isActive: true } } }
     });
 
     if (!worker) {
@@ -25,8 +25,11 @@ export class LocationService {
       },
     });
 
-    // Sync to Redis GEO if user is an online active worker
-    if (worker.isAvailable) {
+    // Sync to Redis GEO only if the worker is both available AND not suspended/deactivated —
+    // previously only `isAvailable` was checked, so a suspended-but-still-"available" worker
+    // could get re-added to the geo index (and keep receiving instant-request broadcasts)
+    // just by pinging this endpoint after an admin suspension.
+    if (worker.isAvailable && worker.user.isActive) {
       for (const skill of worker.skills) {
         await RedisService.geoAdd(`geo:instant-workers:${skill.skillId}`, data.longitude, data.latitude, worker.id);
       }

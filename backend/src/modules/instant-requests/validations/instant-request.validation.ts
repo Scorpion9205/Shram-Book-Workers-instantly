@@ -11,9 +11,9 @@ export const createInstantRequestSchema = z.object({
     .max(500, "Description cannot exceed 500 characters")
     .optional(),
 
-  latitude: z.number(),
+  latitude: z.number().min(-90, "Invalid latitude").max(90, "Invalid latitude"),
 
-  longitude: z.number(),
+  longitude: z.number().min(-180, "Invalid longitude").max(180, "Invalid longitude"),
 
   address: z.string().optional(),
 

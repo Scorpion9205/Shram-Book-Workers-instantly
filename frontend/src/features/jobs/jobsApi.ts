@@ -163,13 +163,21 @@ export const jobsApi = apiSlice.injectEndpoints({
       },
       providesTags: ["JobApplications"],
     }),
-    acceptApplication: builder.mutation<any, { applicationId: string; paymentMode: "ONLINE" | "OFFLINE" }>({
+    acceptApplication: builder.mutation<any, { applicationId: string; paymentMode: "ONLINE" | "OFFLINE"; jobId?: string }>({
       query: ({ applicationId, paymentMode }) => ({
         url: `/jobs/applications/${applicationId}/accept`,
         method: "PATCH",
         body: { paymentMode },
       }),
-      invalidatesTags: ["JobApplications", "MyJobs", "Booking", "DashboardProvider"],
+      invalidatesTags: (result, error, { jobId }) => [
+        "JobApplications",
+        "MyJobs",
+        "Booking",
+        "DashboardProvider",
+        // getJobById caches under a specific { type: "Job", id: jobId } tag — without this,
+        // the job detail page (status badge, applicant count) stays stale until a manual reload.
+        ...(jobId ? [{ type: "Job" as const, id: jobId }] : []),
+      ],
     }),
     getMyApplications: builder.query<JobApplication[], void>({
       query: () => "/jobs/my-applications",

@@ -40,7 +40,7 @@ export class TokenService implements ITokenService {
 
   verifyAccessToken(token: string): ITokenPayload {
     try {
-      return jwt.verify(token, env.JWT_ACCESS_SECRET) as ITokenPayload;
+      return jwt.verify(token, env.JWT_ACCESS_SECRET, { algorithms: ['HS256'] }) as ITokenPayload;
     } catch (e: any) {
       if (e.name === 'TokenExpiredError') {
         throw new AuthenticationException('Access token expired', 'TOKEN_EXPIRED');

@@ -5,7 +5,12 @@ import type{ AuthRequest } from "./auth.middleware.js";
 export const rateLimiter = (
   prefix: string,
   maxRequests: number,
-  windowSeconds: number
+  windowSeconds: number,
+  // Previously every route failed OPEN (allowed the request through) on any Redis error,
+  // silently disabling rate limiting during a Redis blip. That's an acceptable default for
+  // low-stakes routes, but auth-sensitive routes (login, OTP) should fail CLOSED instead —
+  // pass true explicitly for those.
+  failClosed: boolean = false
 ) => {
 
   return async (
@@ -99,6 +104,13 @@ export const rateLimiter = (
         "Rate Limiter Error:",
         error
       );
+
+      if (failClosed) {
+        return res.status(503).json({
+          success: false,
+          message: "Service temporarily unavailable. Please try again shortly.",
+        });
+      }
 
       next();
 

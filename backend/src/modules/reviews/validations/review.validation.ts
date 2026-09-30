@@ -9,6 +9,7 @@ export const createReviewSchema =
 
     comment: z
       .string()
+      .max(1000, "Comment must be at most 1000 characters")
       .optional(),
   });
 

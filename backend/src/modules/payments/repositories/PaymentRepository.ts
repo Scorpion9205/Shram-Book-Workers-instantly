@@ -1,3 +1,4 @@
+import { PaymentStatus as PaymentStatusEnum } from '@prisma/client';
 import type { Payment, Prisma, PaymentStatus } from '@prisma/client';
 import { BaseRepository } from '../../../core/base/BaseRepository.js';
 import type { IPaymentRepository } from '../interfaces/IPaymentRepository.js';
@@ -43,5 +44,23 @@ export class PaymentRepository extends BaseRepository<Payment> implements IPayme
         ...(razorpaySignature !== undefined && { razorpaySignature }),
       },
     });
+  }
+
+  async markCompletedIfPending(
+    id: string,
+    razorpayPaymentId: string,
+    razorpaySignature: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<number> {
+    const client = tx || this.prisma.client;
+    const result = await client.payment.updateMany({
+      where: { id, status: PaymentStatusEnum.PENDING },
+      data: {
+        status: PaymentStatusEnum.COMPLETED,
+        razorpayPaymentId,
+        razorpaySignature,
+      },
+    });
+    return result.count;
   }
 }

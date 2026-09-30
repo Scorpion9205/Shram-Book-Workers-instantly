@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchingNearbyAnimation } from "@/components/loaders/SearchingNearbyAnimation";
 import { instantHireSchema, type InstantHireFormValues } from "@/lib/utils/job-validation";
-import { useCreateInstantRequestMutation, useCalculateFareMutation } from "@/features/instantRequests/instantRequestApi";
+import { useCreateInstantRequestMutation, useCalculateFareMutation, useSelectBidMutation } from "@/features/instantRequests/instantRequestApi";
 import { useGetSkillsQuery } from "@/features/skills/skillsApi";
 import { useSocket } from "@/providers/SocketProvider";
 import { AddressSearch } from "@/components/ui/AddressSearch";
@@ -53,6 +53,7 @@ export default function InstantHirePage() {
 
   const [createInstantRequest] = useCreateInstantRequestMutation();
   const [calculateFare] = useCalculateFareMutation();
+  const [selectBid] = useSelectBidMutation();
   const { data: skills = [] } = useGetSkillsQuery();
   const { socket } = useSocket();
 
@@ -96,40 +97,41 @@ export default function InstantHirePage() {
   useEffect(() => {
     if (!socket || !requestId) return;
 
+    // Named handlers so cleanup can remove exactly these listeners via `.off(event, handler)`.
+    // A bare `socket.off(event)` (no handler arg) removes ALL listeners for that event on the
+    // shared socket instance — including SocketProvider's app-wide global "bookingUpdated"
+    // listener used for toasts/redirects elsewhere in the app.
+    const onBookingUpdated = (data: { id: string; status: string }) => {
+      if (data.status === "accepted") {
+        toast.success("Worker accepted! Redirecting to booking...");
+        router.push(`/provider/booking/${data.id}`);
+      }
+    };
+    const onNoWorker = () => setStep("no-worker");
+    const onBidSubmitted = (bid: BidInfo) => {
+      setBids((prev) => {
+        const filtered = prev.filter((b) => b.bidId !== bid.bidId);
+        return [...filtered, bid];
+      });
+    };
+    const onBiddingClosed = () => setStep("sent");
+    const onNoBids = () => setStep("no-bids");
+
     if (bookingMode === "DIRECT") {
-      socket.on("bookingUpdated", (data: { id: string; status: string }) => {
-        if (data.status === "accepted") {
-          toast.success("Worker accepted! Redirecting to booking...");
-          router.push(`/provider/booking/${data.id}`);
-        }
-      });
-
-      socket.on("instant-request:no-worker", () => {
-        setStep("no-worker");
-      });
+      socket.on("bookingUpdated", onBookingUpdated);
+      socket.on("instant-request:no-worker", onNoWorker);
     } else {
-      socket.on("instant-bidding:bid-submitted", (bid: BidInfo) => {
-        setBids((prev) => {
-          const filtered = prev.filter((b) => b.bidId !== bid.bidId);
-          return [...filtered, bid];
-        });
-      });
-
-      socket.on("instant-bidding:closed", () => {
-        setStep("sent");
-      });
-
-      socket.on("instant-bidding:no-bids", () => {
-        setStep("no-bids");
-      });
+      socket.on("instant-bidding:bid-submitted", onBidSubmitted);
+      socket.on("instant-bidding:closed", onBiddingClosed);
+      socket.on("instant-bidding:no-bids", onNoBids);
     }
 
     return () => {
-      socket.off("bookingUpdated");
-      socket.off("instant-request:no-worker");
-      socket.off("instant-bidding:bid-submitted");
-      socket.off("instant-bidding:closed");
-      socket.off("instant-bidding:no-bids");
+      socket.off("bookingUpdated", onBookingUpdated);
+      socket.off("instant-request:no-worker", onNoWorker);
+      socket.off("instant-bidding:bid-submitted", onBidSubmitted);
+      socket.off("instant-bidding:closed", onBiddingClosed);
+      socket.off("instant-bidding:no-bids", onNoBids);
     };
   }, [socket, requestId, bookingMode, router]);
 
@@ -181,23 +183,13 @@ export default function InstantHirePage() {
 
   async function handleSelectBid(bidId: string) {
     try {
-      const token = localStorage.getItem("token") || "";
-      const res = await fetch(`/api/v1/instant-requests/${requestId}/bids/${bidId}/select`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const data = await res.json();
-      if (data.success) {
-        toast.success("Worker bid selected successfully!");
-        setStep("sent");
-      } else {
-        toast.error(data.message || "Failed to select bid.");
-      }
-    } catch (err) {
-      toast.error("Network error selecting bid.");
+      await selectBid({ requestId, bidId }).unwrap();
+      toast.success("Worker bid selected successfully!");
+      setStep("sent");
+    } catch (err: unknown) {
+      const message =
+        (err as { data?: { message?: string } })?.data?.message || "Failed to select bid.";
+      toast.error(message);
     }
   }
 

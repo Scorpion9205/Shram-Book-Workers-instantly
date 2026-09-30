@@ -2,6 +2,7 @@ export const QueueNames = {
   NOTIFICATION: 'notification.queue',
   ANALYTICS: 'analytics.queue',
   CLEANUP: 'cleanup.queue',
+  DEAD_LETTER: 'shram.dead-letter.queue',
 } as const;
 
 export const ExchangeNames = {

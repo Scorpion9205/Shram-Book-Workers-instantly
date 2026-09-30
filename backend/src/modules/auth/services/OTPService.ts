@@ -11,8 +11,11 @@ import { BusinessException, TooManyRequestsException } from '../../../core/excep
 import React from 'react';
 import { renderEmail } from '../../../shared/email/utils/render-email.js';
 import OtpEmail from '../../../shared/email/templates/OtpEmail.js';
+import { Logger } from '../../../core/logger/Logger.js';
 
 export class OTPService implements IOTPService {
+  private readonly logger = new Logger('OTPService');
+
   constructor(
     private readonly otpRepo: IOTPRepository,
     private readonly cache: ICacheService,
@@ -85,13 +88,13 @@ export class OTPService implements IOTPService {
 
   private async enforceRateLimit(identifier: string): Promise<void> {
     const key = CacheKeys.otpAttempts(identifier);
-    const count = await this.cache.get<number>(key) ?? 0;
+    // Atomic INCR-then-compare (not GET-then-INCR): concurrent requests can no longer all
+    // read the same pre-increment count and all pass the check before any of them increments.
+    const count = await this.cache.incr(key, 3600); // 1 hour TTL
 
-    if (count >= OTP_CONSTANTS.MAX_PER_HOUR) {
+    if (count > OTP_CONSTANTS.MAX_PER_HOUR) {
       throw new TooManyRequestsException('OTP request limit reached for this hour. Please try again later.');
     }
-
-    await this.cache.incr(key, 3600); // 1 hour TTL
   }
 
   private async dispatch(channel: OTPChannel, identifier: string, code: string): Promise<void> {
@@ -105,7 +108,9 @@ export class OTPService implements IOTPService {
         }));
         await this.emailProvider.send(identifier, 'Your SHRAM Verification Code', body);
       } catch (error) {
-        // Fall back to plain text email if React Email compilation fails
+        // Fall back to plain text email if React Email compilation fails — logged so a
+        // template regression doesn't go unnoticed just because the fallback succeeded.
+        this.logger.error('OTP email template render failed, falling back to plain text', error);
         await this.emailProvider.send(identifier, 'Your SHRAM Verification Code', message);
       }
     } else {

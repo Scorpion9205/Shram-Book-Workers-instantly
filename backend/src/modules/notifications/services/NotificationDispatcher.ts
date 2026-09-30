@@ -6,6 +6,7 @@ import type { IUserRepository } from '../../users/interfaces/IUserRepository.js'
 import type { IEmailProvider, ISmsProvider, IPushProvider } from '../../../core/interfaces/IProviders.js';
 import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import { NotificationType, NotificationChannel } from '../enums/NotificationType.js';
+import { BusinessException } from '../../../core/exceptions/index.js';
 import React from 'react';
 import { renderEmail } from '../../../shared/email/utils/render-email.js';
 import {
@@ -42,9 +43,29 @@ export class NotificationDispatcher extends BaseService implements INotification
     const channels = ctx.channels ?? this.getDefaultChannels(ctx.type);
     const locale = ctx.locale ?? 'en';
 
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       channels.map(channel => this.dispatchToChannel(ctx, user, channel, locale))
     );
+
+    const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    if (failures.length > 0) {
+      this.log('One or more notification channels failed', {
+        type: ctx.type,
+        userId: ctx.userId,
+        failedChannels: failures.length,
+        totalChannels: channels.length,
+      });
+    }
+
+    // If every channel failed, the user received nothing at all — surface this as a real
+    // failure so the RabbitMQ consumer nacks (and, with a DLX bound, can retry/investigate)
+    // instead of acking a message that silently delivered nothing.
+    if (failures.length === channels.length && channels.length > 0) {
+      throw new BusinessException(
+        'NOTIFICATION_DELIVERY_FAILED',
+        `All ${channels.length} channel(s) failed for notification type ${ctx.type}`,
+      );
+    }
   }
 
   private async dispatchToChannel(
@@ -168,6 +189,7 @@ export class NotificationDispatcher extends BaseService implements INotification
       await this.notificationRepo.create(user.id, subject || ctx.type, body);
     } catch (error) {
       this.log('Notification dispatch failed', { type: ctx.type, channel, userId: user.id, error });
+      throw error;
     }
   }
 

@@ -12,7 +12,9 @@ import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import type { IAdminRepository } from '../interfaces/IAdminRepository.js';
 import { CacheKeys } from '../../../infrastructure/cache/cacheKeys.js';
 import type { PaginatedResult } from '../../../core/base/BaseRepository.js';
-import { NotFoundException } from '../../../core/exceptions/index.js';
+import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
+import { VALID_TRANSITIONS } from '../../bookings/constants/booking-transitions.constants.js';
+import { UserRole } from '../../../core/enums/Role.js';
 
 export class AdminService extends BaseService implements IAdminService {
   constructor(
@@ -51,6 +53,18 @@ export class AdminService extends BaseService implements IAdminService {
     const cacheKey = CacheKeys.refreshToken(id);
     await this.cache.del(cacheKey);
 
+    // Suspending a worker must also pull them out of the Redis geo-index — otherwise they
+    // stay eligible for (and can keep accepting) instant-request/bidding broadcasts after
+    // suspension, since the matching query alone doesn't check user.isActive.
+    if (!isActive && user.role === UserRole.WORKER) {
+      const workerWithSkills = await this.workerRepo.getProfileWithSkillsAndUser(id);
+      if (workerWithSkills) {
+        for (const item of workerWithSkills.skills) {
+          await this.cache.geoRemove(`geo:instant-workers:${item.skillId}`, workerWithSkills.id);
+        }
+      }
+    }
+
     return updated;
   }
 
@@ -69,6 +83,17 @@ export class AdminService extends BaseService implements IAdminService {
     const worker = await this.workerRepo.findById(workerId);
     if (!worker) {
       throw new NotFoundException('WorkerProfile', workerId);
+    }
+
+    // Validate the transition is legal BEFORE writing workerId — otherwise a booking that
+    // can't legally reach WORKER_ASSIGNED (e.g. already WORK_STARTED/CLOSED/CANCELLED) gets
+    // its workerId overwritten and left corrupted even though this call ultimately fails.
+    const allowedFromCurrent = VALID_TRANSITIONS[booking.status] ?? [];
+    if (!allowedFromCurrent.includes(BookingStatus.WORKER_ASSIGNED)) {
+      throw new BusinessException(
+        'INVALID_BOOKING_TRANSITION',
+        `Cannot assign a worker to booking ${bookingId} while it is ${booking.status}. Allowed transitions: [${allowedFromCurrent.join(', ')}]`,
+      );
     }
 
     // Step 1: Update the booking workerId

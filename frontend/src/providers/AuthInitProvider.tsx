@@ -26,7 +26,13 @@ export function AuthInitProvider({ children }: { children: React.ReactNode }) {
       }
       try {
         const user = await getMe().unwrap();
-        dispatch(setCredentials({ user, accessToken: token }));
+        // Re-read the token AFTER getMe() resolves, not the value captured before the call.
+        // If getMe() hit a 401 internally, baseQueryWithReauth silently refreshes and stores
+        // the new token before retrying — using the stale pre-refresh `token` here would
+        // overwrite that freshly-rotated token with the expired one, in both Redux and
+        // localStorage, causing every subsequent request to 401 again.
+        const currentToken = tokenStorage.getAccessToken() ?? token;
+        dispatch(setCredentials({ user, accessToken: currentToken }));
       } catch {
         dispatch(clearAuth());
       }

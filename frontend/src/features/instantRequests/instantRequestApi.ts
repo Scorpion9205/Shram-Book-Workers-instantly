@@ -72,28 +72,33 @@ export const instantRequestApi = apiSlice.injectEndpoints({
   overrideExisting: true,
   endpoints: (builder) => ({
     createInstantRequest: builder.mutation<InstantRequest, CreateInstantRequestPayload>({
-      query: (body) => ({
-        url: "/instant-requests",
-        method: "POST",
-        body: {
-          title: body.title ?? "Instant hire request",
-          description:
-            body.notes ??
-            `Offered amount: ${body.amount}`,
-          latitude: body.lat ?? 28.6139,
-          longitude: body.lng ?? 77.209,
-          address: body.address,
-          amount: body.amount,
-          bookingMode: body.bookingMode,
-          quoteId: body.quoteId,
-          items: [
-            {
-              skillId: body.workerType,
-              requiredWorkers: body.workersNeeded,
-            },
-          ],
-        },
-      }),
+      query: (body) => {
+        if (body.lat === undefined || body.lng === undefined) {
+          throw new Error("A valid location (latitude/longitude) is required to create an instant request.");
+        }
+        return {
+          url: "/instant-requests",
+          method: "POST",
+          body: {
+            title: body.title ?? "Instant hire request",
+            description:
+              body.notes ??
+              `Offered amount: ${body.amount}`,
+            latitude: body.lat,
+            longitude: body.lng,
+            address: body.address,
+            amount: body.amount,
+            bookingMode: body.bookingMode,
+            quoteId: body.quoteId,
+            items: [
+              {
+                skillId: body.workerType,
+                requiredWorkers: body.workersNeeded,
+              },
+            ],
+          },
+        };
+      },
       transformResponse: (response: any) => {
         const data = response.data || response;
         return data.request || data;
@@ -113,6 +118,8 @@ export const instantRequestApi = apiSlice.injectEndpoints({
         url: "/instant-requests/calculate-fare",
         method: "POST",
         body: {
+          latitude: body.lat,
+          longitude: body.lng,
           items: [
             {
               skillId: body.workerType,
@@ -149,6 +156,17 @@ export const instantRequestApi = apiSlice.injectEndpoints({
       },
       providesTags: ["InstantRequest"],
     }),
+    selectBid: builder.mutation<{ bookingId?: string }, { requestId: string; bidId: string }>({
+      query: ({ requestId, bidId }) => ({
+        url: `/instant-requests/${requestId}/bids/${bidId}/select`,
+        method: "POST",
+      }),
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return { bookingId: data.bookingId };
+      },
+      invalidatesTags: ["InstantRequest", "Booking", "DashboardProvider"],
+    }),
   }),
 });
 
@@ -158,4 +176,5 @@ export const {
   useCalculateFareMutation,
   useAcceptInstantRequestItemMutation,
   useGetMyInstantRequestsQuery,
+  useSelectBidMutation,
 } = instantRequestApi;

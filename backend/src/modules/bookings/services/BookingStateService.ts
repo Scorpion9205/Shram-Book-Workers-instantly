@@ -40,8 +40,18 @@ export class BookingStateService implements IBookingStateService {
     });
 
     const updated = await this.prisma.transaction(async (tx) => {
-      // 1. Update Booking Status
-      const updatedBooking = await this.bookingRepo.updateStatus(bookingId, toStatus, tx);
+      // 1. Update Booking Status — conditional on the status we just validated against, so a
+      // concurrent transition (read at the same time, also validated, also about to write)
+      // can't silently overwrite this one. Only one concurrent caller wins; the other gets
+      // null back and must reject rather than corrupt the audit trail with a stale fromStatus.
+      const updatedBooking = await this.bookingRepo.updateStatusIfCurrent(bookingId, booking.status, toStatus, tx);
+
+      if (!updatedBooking) {
+        throw new BusinessException(
+          'BOOKING_STATE_CONFLICT',
+          `Booking ${bookingId} status changed concurrently; expected ${booking.status} but it no longer matches. Retry the operation.`,
+        );
+      }
 
       // 2. Log History Audit Trail
       await this.historyRepo.append({

@@ -15,6 +15,7 @@ describe("BookingStateService", () => {
     bookingRepoMock = {
       findById: vi.fn(),
       updateStatus: vi.fn(),
+      updateStatusIfCurrent: vi.fn(),
     };
     historyRepoMock = {
       append: vi.fn(),
@@ -39,7 +40,7 @@ describe("BookingStateService", () => {
     bookingRepoMock.findById.mockResolvedValue(booking);
     
     const updatedBooking = { ...booking, status: BookingStatus.PAYMENT_PENDING };
-    bookingRepoMock.updateStatus.mockResolvedValue(updatedBooking);
+    bookingRepoMock.updateStatusIfCurrent.mockResolvedValue(updatedBooking);
 
     const result = await service.transition(booking.id, BookingStatus.PAYMENT_PENDING, {
       changedBy: "provider_1",
@@ -71,5 +72,21 @@ describe("BookingStateService", () => {
         changedBy: "provider_1",
       })
     ).rejects.toThrow(BusinessException);
+  });
+
+  it("should throw BusinessException on a concurrent status conflict instead of overwriting", async () => {
+    const booking = BookingFactory.create({ status: BookingStatus.CREATED });
+    bookingRepoMock.findById.mockResolvedValue(booking);
+    // Simulates a concurrent transition winning the race: our conditional update matches 0 rows.
+    bookingRepoMock.updateStatusIfCurrent.mockResolvedValue(null);
+
+    await expect(
+      service.transition(booking.id, BookingStatus.PAYMENT_PENDING, {
+        changedBy: "provider_1",
+        reason: "Initiate payment",
+      })
+    ).rejects.toThrow(BusinessException);
+
+    expect(historyRepoMock.append).not.toHaveBeenCalled();
   });
 });

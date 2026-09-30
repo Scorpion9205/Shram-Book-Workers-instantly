@@ -8,9 +8,8 @@ export const createJobSchema = z.object({
 
   description: z
     .string()
+    .max(3000, "Description must be at most 3000 characters")
     .optional(),
-
-  
 
   skillId: z.uuid(),
 
@@ -30,18 +29,22 @@ export const createJobSchema = z.object({
 
   address: z
     .string()
+    .max(300, "Address must be at most 300 characters")
     .optional(),
 
   city: z
     .string()
+    .max(100, "City must be at most 100 characters")
     .optional(),
 
   state: z
     .string()
+    .max(100, "State must be at most 100 characters")
     .optional(),
 
   pincode: z
     .string()
+    .max(20, "Pincode must be at most 20 characters")
     .optional(),
 });
 

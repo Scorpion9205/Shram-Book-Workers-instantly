@@ -6,9 +6,9 @@ export const createProviderProfileSchema = z.object({
     "COMPANY",
   ]),
 
-  companyName: z.string().optional(),
+  companyName: z.string().max(200, "Company name must be at most 200 characters").optional(),
 
-  description: z.string().optional(),
+  description: z.string().max(2000, "Description must be at most 2000 characters").optional(),
 });
 
 export type CreateProviderProfileInput =

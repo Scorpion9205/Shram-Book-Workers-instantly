@@ -21,6 +21,11 @@ export interface ICacheService {
   /** Atomic set-if-not-exists. Returns true if lock was acquired. */
   setNX(key: string, value: string, ttlSeconds: number): Promise<boolean>;
 
+  /** Acquires a distributed lock, returning a unique release token, or null if already held. */
+  acquireLock(key: string, ttlSeconds?: number): Promise<string | null>;
+  /** Releases a lock only if `token` still matches the current holder (safe against expiry races). */
+  releaseLock(key: string, token: string): Promise<void>;
+
   /** Geo operations */
   geoAdd(key: string, ...members: GeoMember[]): Promise<void>;
   geoSearch(key: string, lat: number, lng: number, radius: number, unit: 'km' | 'm' | 'mi' | 'ft'): Promise<string[]>;

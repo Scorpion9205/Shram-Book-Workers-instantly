@@ -75,10 +75,9 @@ export class PaymentService extends BaseService implements IPaymentService {
     };
   }
 
-  async handleWebhook(payload: any, signature: string): Promise<void> {
+  async handleWebhook(rawBody: string, payload: any, signature: string): Promise<void> {
     this.log('Handling Razorpay webhook callback', { event: payload.event });
 
-    const rawBody = JSON.stringify(payload);
     const isValid = this.paymentProvider.verifyWebhookSignature(rawBody, signature, env.RAZORPAY_WEBHOOK_SECRET!);
 
     if (!isValid) {
@@ -101,15 +100,21 @@ export class PaymentService extends BaseService implements IPaymentService {
         return;
       }
 
-      if (payment.status !== PaymentStatus.PENDING) {
-        this.log('Payment already processed', { paymentId: payment.id, status: payment.status });
-        return;
-      }
-
       const paymentId = entity.id;
       const paySignature = signature;
 
-      await this.paymentRepo.updateStatus(payment.id, PaymentStatus.COMPLETED, paymentId, paySignature);
+      // Atomic conditional update: only the delivery that actually flips PENDING -> COMPLETED
+      // proceeds to confirm the booking. Any concurrent/retried webhook delivery for the same
+      // payment sees affectedCount === 0 and is treated as a no-op duplicate.
+      const affectedCount = await this.paymentRepo.markCompletedIfPending(payment.id, paymentId, paySignature);
+
+      if (affectedCount === 0) {
+        this.log('Payment already processed (duplicate/retried webhook delivery)', {
+          paymentId: payment.id,
+          status: payment.status,
+        });
+        return;
+      }
 
       await this.bookingStateService.transition(payment.bookingId, BookingStatus.PAYMENT_CONFIRMED, {
         changedBy: 'RAZORPAY_WEBHOOK',

@@ -110,6 +110,29 @@ export class ApplicationService extends BaseService implements IApplicationServi
         throw new BusinessException('JOB_CLOSED', 'Job is closed');
       }
 
+      const decrementAmount =
+        application.applicantType === 'AGENT' ? application.workerCount ?? 1 : 1;
+
+      // Atomic, conditional decrement: only succeeds if the job is still OPEN and has enough
+      // slots left as of THIS statement's execution (not our earlier read). Postgres serializes
+      // concurrent UPDATEs on the same row, so a second concurrent acceptApplication() call for
+      // the same job will see the post-decrement value and correctly fail here instead of both
+      // calls creating a booking and driving requiredWorkers negative.
+      const decrementResult = await tx.job.updateMany({
+        where: {
+          id: application.jobId,
+          status: 'OPEN',
+          requiredWorkers: { gte: decrementAmount },
+        },
+        data: {
+          requiredWorkers: { decrement: decrementAmount },
+        },
+      });
+
+      if (decrementResult.count === 0) {
+        throw new BusinessException('JOB_FULL', 'Not enough worker slots remaining on this job');
+      }
+
       await this.applicationRepo.update(applicationId, { status: 'ACCEPTED' }, tx);
 
       // Generate cryptographically secure 6-digit start OTP
@@ -128,17 +151,7 @@ export class ApplicationService extends BaseService implements IApplicationServi
         },
       });
 
-      const decrementAmount =
-        application.applicantType === 'AGENT' ? application.workerCount ?? 1 : 1;
-
-      const updatedJob = await tx.job.update({
-        where: { id: application.jobId },
-        data: {
-          requiredWorkers: {
-            decrement: decrementAmount,
-          },
-        },
-      });
+      const updatedJob = await tx.job.findUniqueOrThrow({ where: { id: application.jobId } });
 
       if (updatedJob.requiredWorkers <= 0) {
         await tx.job.update({

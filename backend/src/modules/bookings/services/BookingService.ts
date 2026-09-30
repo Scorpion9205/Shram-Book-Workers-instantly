@@ -132,10 +132,14 @@ export class BookingService extends BaseService implements IBookingService {
       throw new BusinessException('UNAUTHORIZED_PROVIDER', 'You are not the provider of this booking');
     }
 
-    return await this.stateService.transition(id, BookingStatus.PAYMENT_SETTLED, {
+    await this.stateService.transition(id, BookingStatus.PAYMENT_SETTLED, {
       changedBy: userId,
       reason: 'Provider confirmed and settled payment',
     });
+
+    // Persist the final settled amount — previously left null forever, breaking any
+    // invoice/payout-reconciliation consumer that reads finalFare.
+    return await this.bookingRepo.update(id, { finalFare: booking.amount });
   }
 
   async settleOfflinePayment(id: string, userId: string): Promise<Booking> {
@@ -151,9 +155,13 @@ export class BookingService extends BaseService implements IBookingService {
       throw new BusinessException('INVALID_PAYMENT_MODE', 'This booking does not support offline payment');
     }
 
-    return await this.stateService.transition(id, BookingStatus.PAYMENT_SETTLED, {
+    await this.stateService.transition(id, BookingStatus.PAYMENT_SETTLED, {
       changedBy: userId,
       reason: 'Worker confirmed offline payment receipt',
     });
+
+    // Persist the final settled amount — previously left null forever, breaking any
+    // invoice/payout-reconciliation consumer that reads finalFare.
+    return await this.bookingRepo.update(id, { finalFare: booking.amount });
   }
 }
