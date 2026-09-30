@@ -28,5 +28,7 @@ export function createInstantRequestRouter(controller: InstantRequestController)
 
   router.post("/:id/bids/:bidId/select", authenticate, authorize(UserRole.PROVIDER), controller.selectBid);
 
+  router.post("/:id/cancel", authenticate, authorize(UserRole.PROVIDER), controller.cancelRequest);
+
   return router;
 }

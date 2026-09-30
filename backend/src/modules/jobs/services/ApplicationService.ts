@@ -1,5 +1,4 @@
 import type { Application } from '@prisma/client';
-import { randomInt } from 'crypto';
 import { BaseService } from '../../../core/base/BaseService.js';
 import type { IApplicationService } from '../interfaces/IApplicationService.js';
 import type { IApplicationRepository } from '../interfaces/IApplicationRepository.js';
@@ -14,6 +13,12 @@ import { RoutingKeys } from '../../../infrastructure/queue/queue.constants.js';
 import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
 import { getIO } from '../../../socket/socket.js';
 import { BookingMapper } from '../../bookings/mappers/Booking.mapper.js';
+import type { IBookingHistoryRepository } from '../../bookings/interfaces/IBookingHistoryRepository.js';
+import {
+  generateHashedStartOtp,
+  bookingStartOtpCacheKey,
+  BOOKING_START_OTP_CACHE_TTL_SECONDS,
+} from '../../../shared/utils/booking-otp.util.js';
 
 export class ApplicationService extends BaseService implements IApplicationService {
   constructor(
@@ -23,6 +28,7 @@ export class ApplicationService extends BaseService implements IApplicationServi
     private readonly cache: ICacheService,
     private readonly prisma: PrismaService,
     private readonly eventPublisher: IEventPublisher,
+    private readonly historyRepo: IBookingHistoryRepository,
   ) {
     super('ApplicationService');
   }
@@ -135,8 +141,9 @@ export class ApplicationService extends BaseService implements IApplicationServi
 
       await this.applicationRepo.update(applicationId, { status: 'ACCEPTED' }, tx);
 
-      // Generate cryptographically secure 6-digit start OTP
-      const startOtp = randomInt(100000, 1000000).toString();
+      // Generate a cryptographically secure 6-digit start OTP — only the Argon2id hash is
+      // persisted; the plaintext is cached separately (short TTL) for the Provider to view.
+      const { code: startOtpPlain, hash: startOtp } = await generateHashedStartOtp();
 
       const booking = await tx.booking.create({
         data: {
@@ -150,6 +157,25 @@ export class ApplicationService extends BaseService implements IApplicationServi
           startOtp,
         },
       });
+
+      await this.cache.set(bookingStartOtpCacheKey(booking.id), startOtpPlain, BOOKING_START_OTP_CACHE_TTL_SECONDS);
+
+      // Offline-payment bookings are created directly at WORKER_ASSIGNED, bypassing
+      // BookingStateService — without this they'd have zero audit history until (if ever)
+      // their next transition. Online bookings start at CREATED, which needs no genesis
+      // entry since that's already the FSM's natural starting point.
+      if (booking.status === BookingStatus.WORKER_ASSIGNED) {
+        await this.historyRepo.append(
+          {
+            bookingId: booking.id,
+            fromStatus: BookingStatus.CREATED,
+            toStatus: BookingStatus.WORKER_ASSIGNED,
+            changedBy: userId,
+            reason: 'Job application accepted with offline payment',
+          },
+          tx,
+        );
+      }
 
       const updatedJob = await tx.job.findUniqueOrThrow({ where: { id: application.jobId } });
 

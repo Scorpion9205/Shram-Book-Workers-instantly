@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { BaseController } from '../../../core/base/BaseController.js';
 import type { IBookingService } from '../interfaces/IBookingService.js';
 import type { IReviewService } from '../../reviews/interfaces/IReviewService.js';
+import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import { BookingPolicy } from '../policies/BookingPolicy.js';
 import { BookingMapper } from '../mappers/Booking.mapper.js';
 import { CreateBookingSchema } from '../dto/CreateBooking.dto.js';
@@ -9,11 +10,13 @@ import { CancelBookingSchema } from '../dto/CancelBooking.dto.js';
 import { FilterBookingsSchema } from '../dto/FilterBookings.dto.js';
 import { AuthorizationException, BusinessException } from '../../../core/exceptions/index.js';
 import { Prisma } from '@prisma/client';
+import { bookingStartOtpCacheKey } from '../../../shared/utils/booking-otp.util.js';
 
 export class BookingController extends BaseController {
   constructor(
     private readonly bookingService: IBookingService,
     private readonly reviewService: IReviewService,
+    private readonly cache: ICacheService,
   ) {
     super();
   }
@@ -29,7 +32,19 @@ export class BookingController extends BaseController {
       throw new AuthorizationException('You are not authorized to view this booking');
     }
 
-    this.ok(res, BookingMapper.toResponse(booking, user), 'Booking details retrieved successfully');
+    const response = BookingMapper.toResponse(booking, user);
+
+    // The Provider (only) may see the work-start OTP plaintext, read from the short-lived
+    // cache entry written at booking creation — never from the DB, which only holds the hash.
+    const isProvider = user && (user.id === booking.providerId || user.userId === booking.providerId);
+    if (isProvider) {
+      const plainOtp = await this.cache.get<string>(bookingStartOtpCacheKey(bookingId));
+      if (plainOtp) {
+        (response as any).startOtp = plainOtp;
+      }
+    }
+
+    this.ok(res, response, 'Booking details retrieved successfully');
   };
 
   getBookings = async (req: Request, res: Response): Promise<void> => {

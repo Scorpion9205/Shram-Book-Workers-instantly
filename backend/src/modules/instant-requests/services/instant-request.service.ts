@@ -1,13 +1,17 @@
-import { randomInt } from "crypto";
 import { BookingStatus } from "@prisma/client";
 import type { CreateInstantRequestInput } from "../validations/instant-request.validation.js";
 import { FareService } from "../../../shared/services/pricing/fare.service.js";
 import { getIO } from "../../../socket/socket.js";
 import { calculateDistance } from "../../../shared/utils/distance.js";
 import { CacheInvalidationService } from "../../../shared/services/cache/cache-invalidation.service.js";
+import {
+  generateHashedStartOtp,
+  bookingStartOtpCacheKey,
+  BOOKING_START_OTP_CACHE_TTL_SECONDS,
+} from "../../../shared/utils/booking-otp.util.js";
 import { PrismaService } from "../../../database/prisma/PrismaService.js";
 import type { ICacheService } from "../../../core/interfaces/ICacheService.js";
-import type { IWorkerRepository } from "../../workers/interfaces/IWorkerRepository.js";
+import type { IBookingHistoryRepository } from "../../bookings/interfaces/IBookingHistoryRepository.js";
 import type { IInstantRequestRepository } from "../interfaces/IInstantRequestRepository.js";
 import type { IInstantMatchingService } from "../interfaces/IInstantMatchingService.js";
 import type { IInstantRequestService } from "../interfaces/IInstantRequestService.js";
@@ -31,10 +35,10 @@ export class InstantRequestService implements IInstantRequestService {
 
   constructor(
     private readonly requestRepo: IInstantRequestRepository,
-    private readonly workerRepo: IWorkerRepository,
     private readonly cache: ICacheService,
     private readonly prisma: PrismaService,
     private readonly matchingService: IInstantMatchingService,
+    private readonly historyRepo: IBookingHistoryRepository,
   ) {}
 
   async createInstantRequest(userId: string, data: CreateInstantRequestInput) {
@@ -186,7 +190,7 @@ export class InstantRequestService implements IInstantRequestService {
 
         const response = await this.requestRepo.createResponse(itemId, worker.id, tx);
 
-        const startOtp = randomInt(100000, 1000000).toString();
+        const { code: startOtpPlain, hash: startOtp } = await generateHashedStartOtp();
 
         const booking = await this.requestRepo.createBooking(
           {
@@ -201,8 +205,33 @@ export class InstantRequestService implements IInstantRequestService {
           tx,
         );
 
-        // Mark worker as unavailable
-        await this.workerRepo.updateAvailability(userId, false, tx);
+        await this.cache.set(bookingStartOtpCacheKey(booking.id), startOtpPlain, BOOKING_START_OTP_CACHE_TTL_SECONDS);
+
+        // Booking creation above writes the row directly, bypassing BookingStateService — so
+        // without this, the booking would have zero audit history until (if ever) its next
+        // transition. BookingStateService.transition() itself can't be used here: it requires
+        // an existing booking to read a current status from, and CREATED -> WORKER_ASSIGNED
+        // isn't even a valid edge in VALID_TRANSITIONS (only PAYMENT_CONFIRMED -> WORKER_ASSIGNED
+        // is) — instant-request bookings skip the payment leg entirely. CREATED is recorded as
+        // the conventional "genesis" fromStatus, matching the schema's own default status.
+        await this.historyRepo.append(
+          {
+            bookingId: booking.id,
+            fromStatus: BookingStatus.CREATED,
+            toStatus: BookingStatus.WORKER_ASSIGNED,
+            changedBy: userId,
+            reason: 'Instant request accepted directly by worker',
+          },
+          tx,
+        );
+
+        // Atomically mark the worker unavailable — only if they're still available. This is
+        // what actually prevents the same worker from being double-booked by two concurrent
+        // accepts on different items/requests; the Redis lock above only guards this one item.
+        const workerClaimed = await this.requestRepo.markWorkerUnavailableIfAvailable(worker.id, tx);
+        if (workerClaimed === 0) {
+          throw new BusinessException("WORKER_UNAVAILABLE", "You have just been booked on another job");
+        }
 
         // Remove from Redis GEO list
         for (const s of worker.skills) {
@@ -366,7 +395,7 @@ export class InstantRequestService implements IInstantRequestService {
           throw new BusinessException("WORKER_UNAVAILABLE", "This worker is no longer available");
         }
 
-        const startOtp = randomInt(100000, 1000000).toString();
+        const { code: startOtpPlain, hash: startOtp } = await generateHashedStartOtp();
 
         // Create booking with selected bid amount
         const booking = await this.requestRepo.createBooking(
@@ -381,13 +410,34 @@ export class InstantRequestService implements IInstantRequestService {
           tx,
         );
 
+        await this.cache.set(bookingStartOtpCacheKey(booking.id), startOtpPlain, BOOKING_START_OTP_CACHE_TTL_SECONDS);
+
+        // See the identical comment in acceptRequest() — booking creation bypasses
+        // BookingStateService, so this writes the missing genesis audit-history row directly.
+        await this.historyRepo.append(
+          {
+            bookingId: booking.id,
+            fromStatus: BookingStatus.CREATED,
+            toStatus: BookingStatus.WORKER_ASSIGNED,
+            changedBy: userId,
+            reason: 'Provider selected worker bid',
+          },
+          tx,
+        );
+
         // Set statuses
         await this.requestRepo.markBidSelected(bidId, tx);
         await this.requestRepo.rejectOtherBids(requestId, bidId, tx);
         await this.requestRepo.markRequestFilled(requestId, tx);
 
-        // Mark worker unavailable
-        await this.requestRepo.markWorkerUnavailable(bid.workerId, tx);
+        // Atomically mark the worker unavailable — only if still available. If a concurrent
+        // acceptRequest()/selectBid() already claimed this worker first, this rolls back the
+        // whole transaction (including the booking just created above) instead of silently
+        // double-booking them.
+        const workerClaimed = await this.requestRepo.markWorkerUnavailableIfAvailable(bid.workerId, tx);
+        if (workerClaimed === 0) {
+          throw new BusinessException("WORKER_UNAVAILABLE", "This worker has just been booked on another job");
+        }
 
         // Sync Redis availability removal
         const skillIds = await this.requestRepo.findWorkerSkillIds(bid.workerId, tx);
@@ -411,5 +461,26 @@ export class InstantRequestService implements IInstantRequestService {
     } finally {
       await this.cache.releaseLock(lockKey, lockToken);
     }
+  }
+
+  async cancelRequest(userId: string, requestId: string): Promise<void> {
+    const request = await this.requestRepo.findRequestById(requestId);
+
+    if (!request) {
+      throw new NotFoundException("InstantRequest", requestId);
+    }
+    if (request.providerId !== userId) {
+      throw new ForbiddenException("You are not authorized to cancel this request");
+    }
+
+    // Conditional on still being OPEN — if a worker accepted in the same instant the
+    // Provider clicked Cancel, this is a no-op rather than clobbering a just-created booking.
+    const cancelled = await this.requestRepo.updateStatusIfOpen(requestId, "CANCELLED");
+    if (cancelled === 0) {
+      throw new BusinessException("REQUEST_ALREADY_RESOLVED", "This request has already been accepted or is no longer open");
+    }
+
+    // The running InstantMatchingService.startMatching() loop for this request will notice
+    // the status change on its next poll and notify already-broadcast workers itself.
   }
 }

@@ -33,3 +33,19 @@ export interface IStorageProvider {
   getSignedUrl(key: string, expirySeconds?: number): Promise<string>;
   delete(key: string): Promise<void>;
 }
+
+export interface GoogleTokenPayload {
+  email: string;
+  sub: string;
+  name?: string | undefined;
+  emailVerified: boolean;
+}
+
+/**
+ * Google OAuth ID token verification contract.
+ * Implementation: GoogleOAuthProvider (verifies the token's signature against Google's
+ * public keys via google-auth-library — never trust a raw jwt.decode() of this token).
+ */
+export interface IGoogleOAuthProvider {
+  verifyIdToken(idToken: string): Promise<GoogleTokenPayload>;
+}

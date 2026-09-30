@@ -178,6 +178,7 @@ export async function wireModules(
     cacheService,
     prismaService,
     eventPublisher,
+    bookingHistoryRepo,
   );
   const reviewService = new ReviewService(
     reviewRepo,
@@ -225,17 +226,19 @@ export async function wireModules(
     bookingRepo,
     bookingStateService,
     eventPublisher,
+    cacheService,
   );
   const instantMatchingService = new InstantMatchingService(
     instantRequestRepo,
     cacheService,
+    platformSettingRepo,
   );
   const instantRequestService = new InstantRequestService(
     instantRequestRepo,
-    workerRepo,
     cacheService,
     prismaService,
     instantMatchingService,
+    bookingHistoryRepo,
   );
   const tokenService = new TokenService(cacheService);
   const otpService = new OTPService(otpRepo, cacheService, emailProvider, smsProvider);
@@ -270,7 +273,7 @@ export async function wireModules(
   const walletController = new WalletController(walletService);
   const adminController = new AdminController(adminService);
   const notificationController = new NotificationController(notificationRepo);
-  const bookingController = new BookingController(bookingService, reviewService);
+  const bookingController = new BookingController(bookingService, reviewService, cacheService);
   const instantRequestController = new InstantRequestController(instantRequestService, cacheService);
   const authController = new AuthController(authService, cacheService);
   const locationController = new LocationController(locationService);

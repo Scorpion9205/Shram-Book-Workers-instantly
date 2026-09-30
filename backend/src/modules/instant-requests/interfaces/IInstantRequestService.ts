@@ -7,4 +7,5 @@ export interface IInstantRequestService {
   getMyRequests(userId: string): Promise<any[]>;
   submitBid(userId: string, requestId: string, bidAmount: number): Promise<any>;
   selectBid(userId: string, requestId: string, bidId: string): Promise<any>;
+  cancelRequest(userId: string, requestId: string): Promise<void>;
 }

@@ -13,34 +13,6 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
     super();
   }
 
-  async findExpiredOpenRequests(): Promise<{ id: string }[]> {
-    return this.prisma.client.instantRequest.findMany({
-      where: {
-        status: 'OPEN',
-        expiresAt: {
-          lt: new Date(),
-        },
-      },
-      select: {
-        id: true,
-      },
-    });
-  }
-
-  async markExpired(ids: string[]): Promise<void> {
-    if (ids.length === 0) return;
-    await this.prisma.client.instantRequest.updateMany({
-      where: {
-        id: {
-          in: ids,
-        },
-      },
-      data: {
-        status: 'EXPIRED',
-      },
-    });
-  }
-
   async upsertProviderProfile(userId: string, tx?: Prisma.TransactionClient): Promise<void> {
     const client = tx ?? this.prisma.client;
     await client.providerProfile.upsert({
@@ -176,7 +148,11 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
       where: {
         id: { in: workerIds },
         isAvailable: true,
-        user: { role: 'WORKER' },
+        // Defense-in-depth: a suspended worker (user.isActive: false) should never be
+        // re-added to the geo index (AdminService.suspendUser already removes them), but
+        // checking it again here means a bug or race anywhere else can't put a suspended
+        // worker back in front of Providers.
+        user: { role: 'WORKER', isActive: true },
         skills: {
           some: { skillId },
         },
@@ -253,6 +229,15 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
     });
   }
 
+  async updateStatusIfOpen(requestId: string, toStatus: string, tx?: Prisma.TransactionClient): Promise<number> {
+    const client = tx ?? this.prisma.client;
+    const result = await client.instantRequest.updateMany({
+      where: { id: requestId, status: 'OPEN' },
+      data: { status: toStatus as any },
+    });
+    return result.count;
+  }
+
   async createBooking(data: CreateInstantBookingData, tx?: Prisma.TransactionClient): Promise<Booking> {
     const client = tx ?? this.prisma.client;
     return client.booking.create({
@@ -274,6 +259,15 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
       where: { id: workerId },
       data: { isAvailable: false },
     });
+  }
+
+  async markWorkerUnavailableIfAvailable(workerId: string, tx?: Prisma.TransactionClient): Promise<number> {
+    const client = tx ?? this.prisma.client;
+    const result = await client.workerProfile.updateMany({
+      where: { id: workerId, isAvailable: true },
+      data: { isAvailable: false },
+    });
+    return result.count;
   }
 
   async findWorkerSkillIds(workerId: string, tx?: Prisma.TransactionClient): Promise<string[]> {

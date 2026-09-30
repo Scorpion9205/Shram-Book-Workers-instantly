@@ -113,4 +113,14 @@ export class InstantRequestController extends BaseController {
     const result = await this.instantRequestService.selectBid(user.userId, id, bidId);
     this.ok(res, result, "Bid selected successfully");
   };
+
+  cancelRequest = async (req: Request, res: Response): Promise<void> => {
+    const user = (req as any).user;
+    const { id } = req.params;
+    if (!id || typeof id !== "string") {
+      throw new BadRequestException("Invalid request parameter");
+    }
+    await this.instantRequestService.cancelRequest(user.userId, id);
+    this.ok(res, null, "Instant request cancelled successfully");
+  };
 }

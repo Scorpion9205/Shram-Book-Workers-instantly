@@ -29,8 +29,13 @@ export interface BookingResponseDto {
 }
 
 export class BookingMapper {
+  // NOTE: `booking.startOtp` is intentionally NEVER included here — since it now stores an
+  // Argon2id hash (not plaintext), returning it here would leak the hash for no benefit and
+  // formerly leaked the plaintext to every socket listener in a booking's rooms (both
+  // Provider AND Worker), defeating the OTP's purpose. The one legitimate place the Provider
+  // needs to see the plaintext code is BookingController.getBookingById, which overlays it
+  // explicitly from the short-lived cache entry written at booking-creation time.
   static toResponse(booking: any, currentUser?: any): BookingResponseDto {
-    const isProvider = currentUser && (currentUser.id === booking.providerId || currentUser.userId === booking.providerId);
     return {
       id: booking.id,
       jobId: booking.jobId,
@@ -55,7 +60,6 @@ export class BookingMapper {
       ...(booking.worker && { worker: booking.worker }),
       ...(booking.job && { job: booking.job }),
       ...(booking.instantRequest && { instantRequest: booking.instantRequest }),
-      ...(isProvider && { startOtp: booking.startOtp }),
       ...(booking.statusHistory && {
         statusHistory: booking.statusHistory.map((h: any) => ({
           id: h.id,

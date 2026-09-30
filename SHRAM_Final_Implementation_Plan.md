@@ -10,11 +10,13 @@
 3. **Part C — Phase-Wise Execution Plan**: the actual sequencing — which bugs are safe to fix today vs. which must wait for an architecture refactor to land first, so we don't fix code that's about to be rewritten.
 4. **Part D — What I need from you**: API keys / access required for specific verification steps, called out at the point they're needed.
 
-## Progress — Phase 0 and Phase 1 are DONE (30 Sep 2026)
+## Progress — Phase 0, Phase 1, Phase 2 (R1a/R1b/R1c), and Phase 3 are ALL DONE (30 Sep 2026)
 
-All of Phase 0 and all of Phase 1 (every bug marked ✅ below — 24 of 30) have been fixed, typechecked clean on both `backend` and `frontend`, and the backend test suite passes (5/5, including a new test added for the booking-transition race-condition fix). **5 bugs remain deliberately deferred** — `BOOK-02`, `BOOK-04`, `BOOK-05`, `RADIUS-01`, and half of `DATA-02` — because they live in `instant-request.service.ts`/`instant-matching.service.ts`, which Phase R1 (architecture debt) is about to rewrite from static methods to OOP+DI; fixing them now would mean fixing bugs in code that's about to be torn out. They'll be fixed as follow-up PRs immediately after R1 lands (see Part C, Phase 3).
+Every bug in the registry is now fixed (30/30) except the small, unrelated `OtpEmail` import-path mismatch (R1.6) and the intentionally-out-of-scope items in Part B (missing modules/features). All of Phase R1 (architecture debt) landed: `instant-request.service.ts`/`instant-matching.service.ts` and all 6 remaining legacy modules converted to OOP+DI, `(global as any).deps` removed entirely. Then Phase 3 closed out the 5 bugs deliberately deferred until R1 landed — `BOOK-02`, `BOOK-04`, `BOOK-05`, `RADIUS-01`, and the remaining half of `DATA-02` — each with new unit tests.
 
-**What's next:** Phase R1 (architecture debt — converting `instant-request.service.ts` off static methods/raw Prisma, migrating legacy routes onto the DI stack, removing `(global as any).deps`), then the 5 deferred bugs above, then the remaining phases (missing modules, hardening).
+Verified throughout: `tsc --noEmit` clean on `backend` and `frontend` after every change; backend test suite now at 25/25 (started this session at 4/4).
+
+**What's next:** Part B's missing-modules/features work (Chat, Category, Support, Analytics, Files, CI/CD, Swagger, `PricingRule` schema normalization) and the hardening phase — see Phase 4/5 below.
 
 ---
 
@@ -32,20 +34,17 @@ All of Phase 0 and all of Phase 1 (every bug marked ✅ below — 24 of 30) have
 
 Severity counts: **9 Critical · 10 High · 9 Medium · 2 Low**
 
-## Status at a glance (30 Sep 2026)
-
-✅ = fixed and verified (typecheck + test suite green) · ⏳ = deferred until after the R1 architecture refactor lands (see Part C)
+## Status at a glance (30 Sep 2026) — ALL 30 bugs fixed
 
 | Group | Status |
 |---|---|
 | `AUTH-01` `AUTH-02` `AUTH-03` `AUTH-04` `AUTH-05` `AUTH-06` `AUTH-07` `AUTH-08` | ✅ all fixed |
 | `IDEM-01` (from Part B, fixed alongside `AUTH-06`) | ✅ fixed |
-| `BOOK-01` `BOOK-03` `BOOK-06` `BOOK-07` | ✅ fixed |
-| `BOOK-02` `BOOK-04` `BOOK-05` | ⏳ deferred — same file as R1's OOP conversion target |
+| `BOOK-01` `BOOK-02` `BOOK-03` `BOOK-04` `BOOK-05` `BOOK-06` `BOOK-07` | ✅ all fixed |
 | `PAY-01` `PAY-02` `PAY-03` `PAY-04` `PAY-05` | ✅ all fixed |
 | `FE-01` `FE-02` `FE-03` `FE-04` `FE-05` `FE-06` | ✅ all fixed |
-| `DATA-01` `DATA-03` `DATA-04` `DATA-05` `DATA-06` | ✅ fixed |
-| `DATA-02` | 🟡 half-fixed — the `AdminService` side (removes a suspended worker from the geo index) is done; the `instant-matching.service.ts` defense-in-depth check is deferred with `BOOK-02/04/05` |
+| `DATA-01` `DATA-02` `DATA-03` `DATA-04` `DATA-05` `DATA-06` | ✅ all fixed |
+| `RADIUS-01` (Part B) | ✅ fixed — see Phase 3 below for what this actually required |
 | `RADIUS-01` (Part B) | ⏳ deferred — same file as above |
 
 ## A1. Auth & Security
@@ -180,9 +179,18 @@ Verification: `tsc --noEmit` clean on both `backend` and `frontend`; backend tes
 - Verified: `tsc --noEmit` clean on `backend` and `frontend`; backend test suite 11/11 passing; zero remaining references to `(global as any).deps` anywhere in the codebase.
 - **Not done, out of scope for this pass**: `OtpEmail` template import-path mismatch (R1.6) — separate, small, unrelated fix, still pending. The two-`AuthService`-variants item (R1.5) was already confirmed a non-issue earlier this session.
 
-## Phase 3 — Bugs unblocked by Phase 2
-Now that `instant-request.service.ts`/`instant-matching.service.ts` are OOP and mockable, fix (each as its own PR with a new unit test):
-`BOOK-02, BOOK-04, BOOK-05, RADIUS-01`, and the `instant-matching.service.ts` half of `DATA-02`.
+## Phase 3 — ✅ DONE (30 Sep 2026): bugs unblocked by Phase 2
+
+- **`BOOK-02`** (worker double-booking) — added `markWorkerUnavailableIfAvailable(workerId)`, an atomic conditional `updateMany` on `WorkerProfile.isAvailable true→false`. This is the real fix, not an extra Redis lock: it closes the race regardless of whether the two conflicting calls are both `acceptRequest`, both `selectBid`, or one of each (the existing item/request-scoped Redis locks only ever guarded same-code-path races). Applied at both call sites; the whole transaction rolls back (including the just-created booking) if the worker was claimed a moment earlier.
+- **`BOOK-04`** (missing genesis audit history) — `BookingStateService.transition()` can't be reused here (it requires an existing booking, and `CREATED → WORKER_ASSIGNED` isn't even a valid edge in `VALID_TRANSITIONS`, since instant-request bookings skip the payment leg entirely). Instead, both `InstantRequestService` (acceptRequest + selectBid) and — since it had the identical gap — `ApplicationService.acceptApplication`'s offline-payment path now write the missing `BookingStatusHistory` row directly at creation time.
+- **`BOOK-05`** (plaintext work-start OTP) — turned out to be more than "just hash it": the frontend booking-detail page displays the OTP by re-fetching the booking repeatedly while waiting for the worker, reading it straight from the DB column. Final design: Argon2id hash persisted in `Booking.startOtp` (verified via `argon2.verify`, new `shared/utils/booking-otp.util.ts`); the plaintext is cached separately in Redis (`booking:startotp:{id}`, 24h TTL) and overlaid onto the response only in `BookingController.getBookingById`, only for the Provider. **Found and fixed a second, more serious bug in the process**: `Booking.mapper.ts` was auto-including `startOtp` for `isProvider` on every mapped response — including the `bookingUpdated` socket event that `ApplicationService`/`BookingStateService` broadcast to **both** the Provider's and the Worker's socket rooms using the same mapped object. The Worker was therefore already receiving the plaintext work-start OTP via socket before ever arriving, defeating the entire point of the verification. Fixed by removing `startOtp` from the mapper's default output entirely.
+- **`RADIUS-01`** (radius escalation contradicted the "no timeout" design) — `InstantMatchingService.startMatching()` rewritten: tiers now read from `PlatformSetting.instantRequestRadiusTiers` (Redis-cached 60s, default `[2, 5, 10]` matching the spec, replacing the hardcoded `[2, 5, 15, 30]`); escalates to the next tier **immediately** on an empty result, no wait; runs as an **indefinite poll loop** (10s re-check cadence) that only stops when the request's status leaves `OPEN` via some other path — it never force-sets `EXPIRED` itself. This surfaced two things that had to be fixed in the same pass for the change to be safe, not just correct in isolation:
+  - No cancel path existed. Removing the auto-expiry without one would have left Providers with zero way to stop a search. Added `POST /instant-requests/:id/cancel` (service + controller + route), plus a **Cancel Request** button in the frontend's searching/bidding screens (previously had none at all) — this was the actual, functioning "persistent Cancel button" the architecture doc has called for since before this refactor.
+  - `shared/jobs/expire-instant-requests.job.ts`, a separate cron sweeping ALL open requests (any booking mode) into `EXPIRED` after 30 minutes, directly contradicted the same "no timeout" rule and would have silently undone this fix an hour after every deploy. Deleted, along with its now-fully-unused repository methods (`findExpiredOpenRequests`/`markExpired`).
+  - **Found and fixed during implementation**: the original code only notified other waiting workers that a request had closed when it was *cancelled* — not when a *different worker accepted it* (`FILLED`), so their clients would keep showing a stale, already-taken request. Fixed to notify on both terminal outcomes.
+  - **Found and fixed during implementation (via a stricter test, not by inspection)**: the "closed" notification was emitted to a `worker:${workerId}` room using the WorkerProfile id, while every other notification in this service correctly uses `user:${userId}`. That room had no one in it — the notification was silently going nowhere. The first version of the test I wrote didn't catch this because it mocked `socket.to()` to ignore its argument; tightened the test to assert on the actual room name, which is what caught it.
+- **`DATA-02` (remaining half)** — `findEligibleWorkersForMatching` now also filters `user.isActive: true`, so a suspended worker can never surface in matching results even if some other code path's geo-index removal were ever missed.
+- 7 new unit tests added (`InstantMatchingService.test.ts`, plus 3 more in `InstantRequestService.test.ts`) — total backend suite now 25/25.
 
 ## Phase 4 — Remaining Round-2 correctness items
 `NOTIF-01` (make Admin email templates actually take effect), Google OAuth real implementation, Socket.IO namespacing.

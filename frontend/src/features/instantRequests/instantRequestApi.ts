@@ -167,6 +167,13 @@ export const instantRequestApi = apiSlice.injectEndpoints({
       },
       invalidatesTags: ["InstantRequest", "Booking", "DashboardProvider"],
     }),
+    cancelInstantRequest: builder.mutation<void, string>({
+      query: (requestId) => ({
+        url: `/instant-requests/${requestId}/cancel`,
+        method: "POST",
+      }),
+      invalidatesTags: ["InstantRequest", "DashboardProvider"],
+    }),
   }),
 });
 
@@ -177,4 +184,5 @@ export const {
   useAcceptInstantRequestItemMutation,
   useGetMyInstantRequestsQuery,
   useSelectBidMutation,
+  useCancelInstantRequestMutation,
 } = instantRequestApi;

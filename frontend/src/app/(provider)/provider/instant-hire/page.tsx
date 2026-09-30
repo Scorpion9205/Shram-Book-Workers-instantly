@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchingNearbyAnimation } from "@/components/loaders/SearchingNearbyAnimation";
 import { instantHireSchema, type InstantHireFormValues } from "@/lib/utils/job-validation";
-import { useCreateInstantRequestMutation, useCalculateFareMutation, useSelectBidMutation } from "@/features/instantRequests/instantRequestApi";
+import { useCreateInstantRequestMutation, useCalculateFareMutation, useSelectBidMutation, useCancelInstantRequestMutation } from "@/features/instantRequests/instantRequestApi";
 import { useGetSkillsQuery } from "@/features/skills/skillsApi";
 import { useSocket } from "@/providers/SocketProvider";
 import { AddressSearch } from "@/components/ui/AddressSearch";
@@ -54,6 +54,7 @@ export default function InstantHirePage() {
   const [createInstantRequest] = useCreateInstantRequestMutation();
   const [calculateFare] = useCalculateFareMutation();
   const [selectBid] = useSelectBidMutation();
+  const [cancelInstantRequest, { isLoading: isCancelling }] = useCancelInstantRequestMutation();
   const { data: skills = [] } = useGetSkillsQuery();
   const { socket } = useSocket();
 
@@ -189,6 +190,22 @@ export default function InstantHirePage() {
     } catch (err: unknown) {
       const message =
         (err as { data?: { message?: string } })?.data?.message || "Failed to select bid.";
+      toast.error(message);
+    }
+  }
+
+  async function handleCancelSearch() {
+    if (!requestId) {
+      setStep("form");
+      return;
+    }
+    try {
+      await cancelInstantRequest(requestId).unwrap();
+      toast.success("Request cancelled.");
+      setStep("form");
+    } catch (err: unknown) {
+      const message =
+        (err as { data?: { message?: string } })?.data?.message || "Failed to cancel request.";
       toast.error(message);
     }
   }
@@ -344,8 +361,14 @@ export default function InstantHirePage() {
                 <CardTitle>Finding workers near you...</CardTitle>
                 <CardDescription>Broadcasting request to nearby available workers.</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
                 <SearchingNearbyAnimation />
+                <p className="text-xs text-muted-foreground">
+                  We'll keep searching a wider area until a worker accepts — there's no automatic timeout.
+                </p>
+                <Button variant="outline" className="w-full" onClick={handleCancelSearch} loading={isCancelling}>
+                  Cancel Request
+                </Button>
               </CardContent>
             </Card>
           </motion.div>
@@ -433,6 +456,9 @@ export default function InstantHirePage() {
                   <span className="text-muted-foreground">Maximum Discount:</span>
                   <span className="font-semibold text-success">20% Off</span>
                 </div>
+                <Button variant="outline" className="w-full" onClick={handleCancelSearch} loading={isCancelling}>
+                  Cancel Request
+                </Button>
               </CardContent>
             </Card>
           </motion.div>

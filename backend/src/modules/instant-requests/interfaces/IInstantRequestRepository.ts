@@ -30,10 +30,6 @@ export interface CreateInstantBookingData {
 }
 
 export interface IInstantRequestRepository {
-  // Legacy — used by the expired-request cleanup cron job.
-  findExpiredOpenRequests(): Promise<{ id: string }[]>;
-  markExpired(ids: string[]): Promise<void>;
-
   upsertProviderProfile(userId: string, tx?: Prisma.TransactionClient): Promise<void>;
   createRequest(data: CreateInstantRequestData, tx?: Prisma.TransactionClient): Promise<InstantRequest>;
   createRequestItems(items: CreateInstantRequestItemData[], tx?: Prisma.TransactionClient): Promise<void>;
@@ -59,9 +55,23 @@ export interface IInstantRequestRepository {
   markItemFilled(itemId: string, tx?: Prisma.TransactionClient): Promise<void>;
   countOpenItemsForRequest(requestId: string, tx?: Prisma.TransactionClient): Promise<number>;
   markRequestFilled(requestId: string, tx?: Prisma.TransactionClient): Promise<void>;
+  /**
+   * Atomically moves an InstantRequest to `toStatus` only if it is still OPEN. Returns the
+   * affected row count (0 = it was already FILLED/CANCELLED by something else — e.g. a
+   * worker accepted in the same instant the Provider clicked Cancel).
+   */
+  updateStatusIfOpen(requestId: string, toStatus: string, tx?: Prisma.TransactionClient): Promise<number>;
 
   createBooking(data: CreateInstantBookingData, tx?: Prisma.TransactionClient): Promise<Booking>;
   markWorkerUnavailable(workerId: string, tx?: Prisma.TransactionClient): Promise<void>;
+  /**
+   * Atomically flips isAvailable true -> false only if it is still true. Returns the number
+   * of rows affected (0 = another concurrent accept/selectBid already claimed this worker).
+   * This is what actually prevents one worker from being booked onto two jobs at once —
+   * the Redis lock alone only prevents two callers from racing on the SAME item/request,
+   * not a single worker being claimed by two DIFFERENT items/requests concurrently.
+   */
+  markWorkerUnavailableIfAvailable(workerId: string, tx?: Prisma.TransactionClient): Promise<number>;
   findWorkerSkillIds(workerId: string, tx?: Prisma.TransactionClient): Promise<string[]>;
 
   upsertBid(

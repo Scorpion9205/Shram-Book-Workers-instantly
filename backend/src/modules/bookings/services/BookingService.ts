@@ -5,15 +5,18 @@ import type { IBookingService } from '../interfaces/IBookingService.js';
 import type { IBookingRepository, BookingFilter, CreateBookingInput } from '../interfaces/IBookingRepository.js';
 import type { IBookingStateService } from '../interfaces/IBookingStateService.js';
 import type { IEventPublisher } from '../../../core/interfaces/IEventPublisher.js';
+import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import type { PaginatedResult } from '../../../core/base/BaseRepository.js';
 import { RoutingKeys } from '../../../infrastructure/queue/queue.constants.js';
 import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
+import { verifyStartOtpHash, bookingStartOtpCacheKey } from '../../../shared/utils/booking-otp.util.js';
 
 export class BookingService extends BaseService implements IBookingService {
   constructor(
     private readonly bookingRepo: IBookingRepository,
     private readonly stateService: IBookingStateService,
     private readonly eventPublisher: IEventPublisher,
+    private readonly cache: ICacheService,
   ) {
     super('BookingService');
   }
@@ -87,7 +90,8 @@ export class BookingService extends BaseService implements IBookingService {
       throw new BusinessException('OTP_INVALID', 'No active start OTP found for this booking');
     }
 
-    if (booking.startOtp !== code) {
+    const isValid = await verifyStartOtpHash(booking.startOtp, code);
+    if (!isValid) {
       throw new BusinessException('OTP_INVALID', 'Invalid work-start OTP code');
     }
 
@@ -102,8 +106,9 @@ export class BookingService extends BaseService implements IBookingService {
       reason: 'Work started',
     });
 
-    // Clear start OTP to prevent replay
+    // Clear start OTP (hash + cached plaintext) to prevent replay
     await this.bookingRepo.update(id, { startOtp: null });
+    await this.cache.del(bookingStartOtpCacheKey(id));
 
     return updated;
   }

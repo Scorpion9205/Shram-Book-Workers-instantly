@@ -5,7 +5,6 @@ import "./shared/config/redis.js" // Keep legacy redis config active
 
 import app from "./app.js";
 import { env } from "./config/env.js";
-import { startExpireInstantRequestsJob } from "./shared/jobs/expire-instant-requests.job.js";
 import { rabbitMQ } from "./shared/queue/connection/rabbitmq.connection.js";
 import { startEmailConsumer } from "./shared/email/consumers/email.consumer.js";
 import {
@@ -57,7 +56,6 @@ server.listen(PORT, () => {
   console.log(
     `Server running on port ${PORT}`
   );
-  startExpireInstantRequestsJob();
 
 });
 
