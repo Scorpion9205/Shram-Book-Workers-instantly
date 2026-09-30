@@ -1,24 +1,14 @@
 import { Router } from "express";
+import type { DashboardController } from "../controllers/dashboard.controller.js";
+import { authenticate } from "../../auth/middleware/authenticate.middleware.js";
+import { authorize } from "../../auth/middleware/role.middleware.js";
+import { UserRole } from "../../../core/enums/Role.js";
 
-import { DashboardController } from "../controllers/dashboard.controller.js";
+export function createDashboardRouter(controller: DashboardController): Router {
+  const router = Router();
 
-import { authMiddleware } from "../../../shared/middleware/auth.middleware.js";
-import { roleMiddleware } from "../../../shared/middleware/role.middleware.js";
+  router.get("/worker", authenticate, authorize(UserRole.WORKER), controller.getWorkerDashboard);
+  router.get("/provider", authenticate, authorize(UserRole.PROVIDER), controller.getProviderDashboard);
 
-const router = Router();
-
-router.get(
-  "/worker",
-  authMiddleware,
-  roleMiddleware("WORKER"),
-  DashboardController.getWorkerDashboard
-);
-
-router.get(
-  "/provider",
-  authMiddleware,
-  roleMiddleware("PROVIDER"),
-  DashboardController.getProviderDashboard
-);
-
-export default router;
+  return router;
+}

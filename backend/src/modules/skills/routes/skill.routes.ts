@@ -1,27 +1,15 @@
 import { Router } from "express";
-import { SkillController } from "../controllers/skill.controller.js";
-import { authMiddleware } from "../../../shared/middleware/auth.middleware.js";
-import { roleMiddleware } from "../../../shared/middleware/role.middleware.js";
+import type { SkillController } from "../controllers/skill.controller.js";
+import { authenticate } from "../../auth/middleware/authenticate.middleware.js";
+import { authorize } from "../../auth/middleware/role.middleware.js";
+import { UserRole } from "../../../core/enums/Role.js";
 
-const router = Router();
+export function createSkillRouter(controller: SkillController): Router {
+  const router = Router();
 
-router.get(
-  "/",
-  SkillController.getSkills
-);
+  router.get("/", controller.getSkills);
+  router.post("/worker", authenticate, authorize(UserRole.WORKER), controller.assignSkills);
+  router.get("/worker", authenticate, authorize(UserRole.WORKER), controller.getMySkills);
 
-router.post(
-  "/worker",
-  authMiddleware,
-  roleMiddleware("WORKER"),
-  SkillController.assignSkills
-);
-
-router.get(
-  "/worker",
-  authMiddleware,
-  roleMiddleware("WORKER"),
-  SkillController.getMySkills
-);
-
-export default router;
+  return router;
+}

@@ -11,4 +11,4 @@ export { OTPPurpose, OTPChannel, TokenType } from './enums/index.js';
 export { OTP_CONSTANTS } from './constants/otp.constants.js';
 export { authenticate } from './middleware/authenticate.middleware.js';
 export { authorize } from './middleware/role.middleware.js';
-export { default as authRouter } from './routes/auth.routes.js';
+export { createAuthRouter } from './routes/auth.routes.js';

@@ -1,73 +1,37 @@
-import type{ Response } from "express";
+import type { Request, Response } from "express";
+import { BaseController } from "../../../core/base/BaseController.js";
+import type { IDashboardService } from "../interfaces/IDashboardService.js";
 
-import type{ AuthRequest } from "../../../shared/middleware/auth.middleware.js";
-
-import { DashboardService } from "../services/dashboard.service.js";
-
-export class DashboardController {
-
-  static async getWorkerDashboard(
-    req: AuthRequest,
-    res: Response
-  ) {
-
-    try {
-      const { range, startDate, endDate } = req.query;
-
-      const dashboard =
-        await DashboardService.getWorkerDashboard(
-          req.user!.userId,
-          range as string,
-          startDate as string,
-          endDate as string
-        );
-
-      return res.status(200).json({
-        success: true,
-        dashboard,
-      });
-
-    } catch (error: any) {
-
-      return res.status(400).json({
-        success: false,
-        message: error.message,
-      });
-
-    }
-
+export class DashboardController extends BaseController {
+  constructor(private readonly dashboardService: IDashboardService) {
+    super();
   }
 
-  static async getProviderDashboard(
-  req: AuthRequest,
-  res: Response
-) {
-
-  try {
+  getWorkerDashboard = async (req: Request, res: Response): Promise<void> => {
+    const user = (req as any).user;
     const { range, startDate, endDate } = req.query;
 
-    const dashboard =
-      await DashboardService.getProviderDashboard(
-        req.user!.userId,
-        range as string,
-        startDate as string,
-        endDate as string
-      );
+    const dashboard = await this.dashboardService.getWorkerDashboard(
+      user.userId,
+      range as string,
+      startDate as string,
+      endDate as string,
+    );
 
-    return res.status(200).json({
-      success: true,
-      dashboard,
-    });
+    this.ok(res, { dashboard }, "Worker dashboard retrieved successfully");
+  };
 
-  } catch (error: any) {
+  getProviderDashboard = async (req: Request, res: Response): Promise<void> => {
+    const user = (req as any).user;
+    const { range, startDate, endDate } = req.query;
 
-    return res.status(400).json({
-      success: false,
-      message: error.message,
-    });
+    const dashboard = await this.dashboardService.getProviderDashboard(
+      user.userId,
+      range as string,
+      startDate as string,
+      endDate as string,
+    );
 
-  }
-
-}
-
+    this.ok(res, { dashboard }, "Provider dashboard retrieved successfully");
+  };
 }

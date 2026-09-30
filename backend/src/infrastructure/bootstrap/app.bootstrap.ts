@@ -26,6 +26,31 @@ import {
   InstantRequestController,
   createInstantRequestRouter,
 } from '../../modules/instant-requests/index.js';
+import {
+  AuthRepository,
+  OTPRepository,
+  AuthService,
+  OTPService,
+  TokenService,
+  AuthController,
+  createAuthRouter,
+} from '../../modules/auth/index.js';
+import { LocationRepository, LocationService, LocationController, createLocationRouter } from '../../modules/location/index.js';
+import { SkillRepository, SkillService, SkillController, createSkillRouter } from '../../modules/skills/index.js';
+import { ProviderRepository, ProviderService, ProviderController, createProviderRouter } from '../../modules/providers/index.js';
+import { DashboardRepository, DashboardService, DashboardController, createDashboardRouter } from '../../modules/dashboard/index.js';
+import {
+  PricingController,
+  FareCalculator,
+  BaseRateStrategy,
+  DistanceStrategy,
+  DemandStrategy,
+  WeatherStrategy,
+  DurationStrategy,
+  SkillRepository as PricingSkillRepository,
+  MapsProvider,
+  createPricingRouter,
+} from '../../modules/pricing/index.js';
 
 // Notifications Module Imports
 import {
@@ -67,6 +92,12 @@ export interface AppDependencies {
   notificationRouter: Router;
   bookingRouter: Router;
   instantRequestRouter: Router;
+  authRouter: Router;
+  locationRouter: Router;
+  skillRouter: Router;
+  providerRouter: Router;
+  dashboardRouter: Router;
+  pricingRouter: Router;
 }
 
 /**
@@ -105,6 +136,13 @@ export async function wireModules(
   const platformSettingRepo = new PlatformSettingRepository(prismaService);
   const adminRepo = new AdminRepository(prismaService);
   const instantRequestRepo = new InstantRequestRepository(prismaService);
+  const authRepo = new AuthRepository(prismaService);
+  const otpRepo = new OTPRepository(prismaService);
+  const locationRepo = new LocationRepository(prismaService);
+  const skillRepo = new SkillRepository(prismaService);
+  const providerRepo = new ProviderRepository(prismaService);
+  const dashboardRepo = new DashboardRepository(prismaService);
+  const pricingSkillRepo = new PricingSkillRepository(prismaService);
 
   // 3. Providers
   const razorpayProvider = new RazorpayProvider(env.RAZORPAY_KEY_ID!, env.RAZORPAY_KEY_SECRET!);
@@ -113,6 +151,7 @@ export async function wireModules(
   const pushProvider = new FirebaseProvider(env.FIREBASE_SERVICE_ACCOUNT);
   const s3Provider = new S3Provider(env.AWS_S3_BUCKET, env.AWS_REGION, env.AWS_ACCESS_KEY_ID, env.AWS_SECRET_ACCESS_KEY);
   S3Provider.setInstance(s3Provider);
+  const mapsProvider = new MapsProvider();
 
   // 4. Services
   const bookingStateService = new BookingStateService(
@@ -198,6 +237,28 @@ export async function wireModules(
     prismaService,
     instantMatchingService,
   );
+  const tokenService = new TokenService(cacheService);
+  const otpService = new OTPService(otpRepo, cacheService, emailProvider, smsProvider);
+  const authService = new AuthService(authRepo, otpService, tokenService, cacheService, prismaService, emailProvider, smsProvider);
+  const locationService = new LocationService(locationRepo, cacheService);
+  const skillService = new SkillService(skillRepo);
+  const providerService = new ProviderService(providerRepo);
+  const dashboardService = new DashboardService(dashboardRepo, cacheService);
+
+  const baseRateStrategy = new BaseRateStrategy(pricingSkillRepo);
+  const distanceStrategy = new DistanceStrategy(mapsProvider, cacheService, platformSettingRepo);
+  const demandStrategy = new DemandStrategy(cacheService, platformSettingRepo);
+  const weatherStrategy = new WeatherStrategy(cacheService, platformSettingRepo);
+  const durationStrategy = new DurationStrategy();
+  const fareCalculator = new FareCalculator(
+    baseRateStrategy,
+    distanceStrategy,
+    demandStrategy,
+    weatherStrategy,
+    durationStrategy,
+    platformSettingRepo,
+    cacheService,
+  );
 
   // 5. Controllers
   const userController = new UserController(userService);
@@ -211,6 +272,12 @@ export async function wireModules(
   const notificationController = new NotificationController(notificationRepo);
   const bookingController = new BookingController(bookingService, reviewService);
   const instantRequestController = new InstantRequestController(instantRequestService, cacheService);
+  const authController = new AuthController(authService, cacheService);
+  const locationController = new LocationController(locationService);
+  const skillController = new SkillController(skillService);
+  const providerController = new ProviderController(providerService);
+  const dashboardController = new DashboardController(dashboardService);
+  const pricingController = new PricingController(fareCalculator);
 
   // 6. Routers
   const userRouter = createUserRouter(userController);
@@ -224,6 +291,12 @@ export async function wireModules(
   const notificationRouter = createNotificationRouter(notificationController);
   const bookingRouter = createBookingRouter(bookingController);
   const instantRequestRouter = createInstantRequestRouter(instantRequestController);
+  const authRouter = createAuthRouter(authController);
+  const locationRouter = createLocationRouter(locationController);
+  const skillRouter = createSkillRouter(skillController);
+  const providerRouter = createProviderRouter(providerController);
+  const dashboardRouter = createDashboardRouter(dashboardController);
+  const pricingRouter = createPricingRouter(pricingController);
 
   // 7. Start Queue Consumers
   try {
@@ -262,5 +335,11 @@ export async function wireModules(
     notificationRouter,
     bookingRouter,
     instantRequestRouter,
+    authRouter,
+    locationRouter,
+    skillRouter,
+    providerRouter,
+    dashboardRouter,
+    pricingRouter,
   };
 }

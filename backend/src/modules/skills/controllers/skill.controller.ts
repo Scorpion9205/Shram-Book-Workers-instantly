@@ -1,102 +1,28 @@
-import type { Response } from "express";
-import type{ AuthRequest } from "../../../shared/middleware/auth.middleware.js";
-import { SkillService } from "../services/skill.service.js";
-
+import type { Request, Response } from "express";
+import { BaseController } from "../../../core/base/BaseController.js";
+import type { ISkillService } from "../interfaces/ISkillService.js";
 import { assignSkillsSchema } from "../validations/skill.validation.js";
 
-
-
-
-export class SkillController {
-
-  static async getSkills(
-    req: AuthRequest,
-    res: Response
-  ) {
-    try {
-
-      const skills =
-        await SkillService.getSkills();
-
-      return res.status(200).json({
-        success: true,
-        skills
-      });
-
-    } catch (error: any) {
-
-      return res.status(500).json({
-        success: false,
-        message: error.message
-      });
-
-    }
+export class SkillController extends BaseController {
+  constructor(private readonly skillService: ISkillService) {
+    super();
   }
 
-  static async assignSkills(
-    req: AuthRequest,
-    res: Response
-  ) {
-    try {
+  getSkills = async (_req: Request, res: Response): Promise<void> => {
+    const skills = await this.skillService.getSkills();
+    this.ok(res, { skills }, "Skills retrieved successfully");
+  };
 
-      const validationResult =
-        assignSkillsSchema.safeParse(
-          req.body
-        );
+  assignSkills = async (req: Request, res: Response): Promise<void> => {
+    const user = (req as any).user;
+    const data = this.validate(assignSkillsSchema, req.body);
+    const skills = await this.skillService.assignSkills(user.userId, data.skillIds);
+    this.ok(res, { skills }, "Skills assigned successfully");
+  };
 
-      if (!validationResult.success) {
-        return res.status(400).json({
-          success: false,
-          errors:
-            validationResult.error.flatten()
-              .fieldErrors
-        });
-      }
-
-      const skills =
-        await SkillService.assignSkills(
-          req.user!.userId,
-          validationResult.data.skillIds
-        );
-
-      return res.status(200).json({
-        success: true,
-        skills
-      });
-
-    } catch (error: any) {
-
-      return res.status(400).json({
-        success: false,
-        message: error.message
-      });
-
-    }
-  }
-
-  static async getMySkills(
-    req: AuthRequest,
-    res: Response
-  ) {
-    try {
-
-      const skills =
-        await SkillService.getMySkills(
-          req.user!.userId
-        );
-
-      return res.status(200).json({
-        success: true,
-        skills
-      });
-
-    } catch (error: any) {
-
-      return res.status(400).json({
-        success: false,
-        message: error.message
-      });
-
-    }
-  }
+  getMySkills = async (req: Request, res: Response): Promise<void> => {
+    const user = (req as any).user;
+    const skills = await this.skillService.getMySkills(user.userId);
+    this.ok(res, { skills }, "My skills retrieved successfully");
+  };
 }

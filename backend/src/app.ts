@@ -1,15 +1,8 @@
 import express from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import cors from "cors";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
-
-// Static Legacy Routes
-import authRoutes from "./modules/auth/routes/auth.routes.js";
-import locationRoutes from "./modules/location/routes/location.routes.js";
-import providerRoutes from "./modules/providers/routes/provider.routes.js";
-import skillRoutes from "./modules/skills/routes/skill.routes.js";
-import dashboardRoutes from "./modules/dashboard/routes/dashboard.routes.js";
-import pricingRoutes from "./modules/pricing/routes/pricing.routes.js";
 
 // Middlewares
 import { notFoundHandler } from "./middleware/notFound.middleware.js";
@@ -22,6 +15,14 @@ import { idempotencyMiddleware } from "./shared/middleware/idempotency.middlewar
 import prisma from "./shared/config/prisma.js";
 import { redis } from "./shared/config/redis.js";
 import { rabbitMQ } from "./shared/queue/connection/rabbitmq.connection.js";
+
+import type { AppDependencies } from "./infrastructure/bootstrap/app.bootstrap.js";
+
+declare module "express-serve-static-core" {
+  interface Locals {
+    deps?: AppDependencies;
+  }
+}
 
 const app = express();
 
@@ -52,14 +53,6 @@ app.use(cookieParser());
 
 // Idempotent client requests caching
 app.use(idempotencyMiddleware());
-
-// Static Legacy Endpoint Mounts
-app.use("/api/v1/auth", authRoutes);
-app.use("/api/v1/location", locationRoutes);
-app.use("/api/v1/providers", providerRoutes);
-app.use("/api/v1/skills", skillRoutes);
-app.use("/api/v1/dashboard", dashboardRoutes);
-app.use("/api/v1/pricing", pricingRoutes);
 
 // Health Check with Database and Redis Ping
 app.get("/api/v1/health", async (_req, res) => {
@@ -131,50 +124,45 @@ app.get("/api/v1/ready", async (_req, res) => {
   });
 });
 
-// Dynamic Dependency Injection Endpoint Mounts
-app.use("/api/v1/users", (req, res, next) => {
-  (global as any).deps.userRouter(req, res, next);
-});
+/**
+ * Mounts a DI-wired router that only becomes available once `wireModules()` resolves
+ * in server.ts (app.locals.deps is set there, after the app is already listening).
+ * Looks up the router lazily on each request — via `app.locals`, not a global — and
+ * responds with a clean 503 instead of crashing if a request somehow arrives before
+ * bootstrap finished, rather than throwing "Cannot read properties of undefined".
+ */
+function mountDI(app: Express, basePath: string, getRouter: (deps: AppDependencies) => express.Router): void {
+  app.use(basePath, (req: Request, res: Response, next: NextFunction) => {
+    const deps = req.app.locals.deps;
+    if (!deps) {
+      res.status(503).json({
+        success: false,
+        message: "Service is still starting up. Please retry shortly.",
+      });
+      return;
+    }
+    getRouter(deps)(req, res, next);
+  });
+}
 
-app.use("/api/v1/workers", (req, res, next) => {
-  (global as any).deps.workerRouter(req, res, next);
-});
-
-app.use("/api/v1/agents", (req, res, next) => {
-  (global as any).deps.agentRouter(req, res, next);
-});
-
-app.use("/api/v1/reviews", (req, res, next) => {
-  (global as any).deps.reviewRouter(req, res, next);
-});
-
-app.use("/api/v1/jobs", (req, res, next) => {
-  (global as any).deps.jobRouter(req, res, next);
-});
-
-app.use("/api/v1/payments", (req, res, next) => {
-  (global as any).deps.paymentRouter(req, res, next);
-});
-
-app.use("/api/v1/wallet", (req, res, next) => {
-  (global as any).deps.walletRouter(req, res, next);
-});
-
-app.use("/api/v1/admin", (req, res, next) => {
-  (global as any).deps.adminRouter(req, res, next);
-});
-
-app.use("/api/v1/notifications", (req, res, next) => {
-  (global as any).deps.notificationRouter(req, res, next);
-});
-
-app.use("/api/v1/bookings", (req, res, next) => {
-  (global as any).deps.bookingRouter(req, res, next);
-});
-
-app.use("/api/v1/instant-requests", (req, res, next) => {
-  (global as any).deps.instantRequestRouter(req, res, next);
-});
+// Dependency Injection Endpoint Mounts
+mountDI(app, "/api/v1/auth", (deps) => deps.authRouter);
+mountDI(app, "/api/v1/location", (deps) => deps.locationRouter);
+mountDI(app, "/api/v1/providers", (deps) => deps.providerRouter);
+mountDI(app, "/api/v1/skills", (deps) => deps.skillRouter);
+mountDI(app, "/api/v1/dashboard", (deps) => deps.dashboardRouter);
+mountDI(app, "/api/v1/pricing", (deps) => deps.pricingRouter);
+mountDI(app, "/api/v1/users", (deps) => deps.userRouter);
+mountDI(app, "/api/v1/workers", (deps) => deps.workerRouter);
+mountDI(app, "/api/v1/agents", (deps) => deps.agentRouter);
+mountDI(app, "/api/v1/reviews", (deps) => deps.reviewRouter);
+mountDI(app, "/api/v1/jobs", (deps) => deps.jobRouter);
+mountDI(app, "/api/v1/payments", (deps) => deps.paymentRouter);
+mountDI(app, "/api/v1/wallet", (deps) => deps.walletRouter);
+mountDI(app, "/api/v1/admin", (deps) => deps.adminRouter);
+mountDI(app, "/api/v1/notifications", (deps) => deps.notificationRouter);
+mountDI(app, "/api/v1/bookings", (deps) => deps.bookingRouter);
+mountDI(app, "/api/v1/instant-requests", (deps) => deps.instantRequestRouter);
 
 // Fallback handlers
 app.use(notFoundHandler);

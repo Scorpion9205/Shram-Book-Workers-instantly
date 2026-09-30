@@ -42,9 +42,10 @@ try {
 
   // Wire DI container
   const dependencies = await wireModules(prismaService, newRedisClient, newRabbitConn);
-  
-  // Expose dependencies globally or pass to request context if needed in later phases
-  (global as any).deps = dependencies;
+
+  // Expose dependencies via app.locals (Express's own per-app storage) instead of a
+  // global — request handlers look this up per-request via `req.app.locals.deps`.
+  app.locals.deps = dependencies;
   logger.info('New infrastructure initialized successfully');
 } catch (err) {
   logger.error('Failed to initialize new infrastructure', err);

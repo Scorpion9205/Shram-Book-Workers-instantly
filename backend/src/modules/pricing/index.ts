@@ -7,5 +7,5 @@ export { WeatherStrategy } from './strategies/WeatherStrategy.js';
 export { DurationStrategy } from './strategies/DurationStrategy.js';
 export { SkillRepository } from './repositories/SkillRepository.js';
 export { MapsProvider } from './providers/MapsProvider.js';
-export { default as pricingRouter } from './routes/pricing.routes.js';
+export { createPricingRouter } from './routes/pricing.routes.js';
 export type { IPricingStrategy, PricingContext, IFareCalculator, ISkillRepository, IMapsProvider } from './interfaces/IPricingStrategy.js';

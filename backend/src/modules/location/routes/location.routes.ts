@@ -1,19 +1,12 @@
 import { Router } from "express";
-import { authMiddleware } from "../../../shared/middleware/auth.middleware.js";
-import { LocationController } from "../controllers/location.controller.js";
-const router = Router();
+import type { LocationController } from "../controllers/location.controller.js";
+import { authenticate } from "../../auth/middleware/authenticate.middleware.js";
 
+export function createLocationRouter(controller: LocationController): Router {
+  const router = Router();
 
-router.post(
-  "/update",
-  authMiddleware,
-  LocationController.updateLocation
-);
+  router.post("/update", authenticate, controller.updateLocation);
+  router.get("/me", authenticate, controller.getMyLocation);
 
-router.get(
-  "/me",
-  authMiddleware,
-  LocationController.getMyLocation
-);
-
-export default router;
+  return router;
+}
