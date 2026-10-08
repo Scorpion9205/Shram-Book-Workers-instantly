@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useState, useEffect } from "react";
-import { ArrowLeft, Phone, MapPin } from "lucide-react";
+import { ArrowLeft, Phone, MapPin, MessageCircle } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 
@@ -160,13 +160,20 @@ export default function WorkerBookingDetailPage({ params }: { params: Promise<{ 
             <p className="font-semibold">
               {booking.provider?.name}
             </p>
-            {booking.provider?.phone && (
-              <Button asChild variant="outline" size="sm" className="mt-2">
-                <a href={`tel:${booking.provider.phone}`}>
-                  <Phone className="size-4 mr-2" /> Call Provider
-                </a>
+            <div className="mt-2 flex gap-2">
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/worker/chat/${bookingId}`}>
+                  <MessageCircle className="size-4 mr-2" /> Message
+                </Link>
               </Button>
-            )}
+              {booking.provider?.phone && (
+                <Button asChild variant="outline" size="sm">
+                  <a href={`tel:${booking.provider.phone}`}>
+                    <Phone className="size-4 mr-2" /> Call Provider
+                  </a>
+                </Button>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>

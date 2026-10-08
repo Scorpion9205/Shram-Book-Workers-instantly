@@ -202,7 +202,17 @@ Verification: `tsc --noEmit` clean on both `backend` and `frontend`; backend tes
 Verified: `tsc --noEmit` clean; backend test suite 33/33 (was 25/25 at the end of Phase 3).
 
 ## Phase 5 — Missing modules & DevOps completeness
-Chat module (backend + Socket.IO + frontend), Category model, Support module, Analytics/Reports, dedicated Files module, Platform Settings routes, Agent module internals, CI/CD pipeline, Swagger/OpenAPI, `PricingRule` schema normalization, frontend `(public)` legal pages, `useAuth`/`usePermission` hooks.
+
+### Phase 5a — ✅ DONE (8 Oct 2026): Chat module (backend + `/chat` namespace + frontend)
+- **Platform Settings — turned out to be a non-issue.** Checked before starting: `/admin/settings` (GET) and `/admin/settings/:key` (PUT) are already fully wired through the Admin module (`AdminController`/`AdminService`/`admin.routes.ts`), and the frontend admin settings page already calls them. The Round 1 finding "no routes/controller" was stale — already fixed at some point before this session. Nothing to do here.
+- **Backend**: new `modules/chat/` — `ChatRepository` (find/create thread by bookingId, paginated message history, create message), `ChatService` (authorizes the caller is the booking's Provider or assigned Worker before any read/write, auto-creates the thread on first message, enriches messages with sender name/photo), `ChatController` extending `BaseController`, routes `GET /chat/:bookingId/messages` and `POST /chat/:bookingId/send` (rate-limited). No Prisma migration needed — `ChatThread`/`ChatMessage` models already existed in the schema, unused until now.
+- **Socket.IO `/chat` namespace** — the first of the four spec'd namespaces actually built (per the Phase 4 decision to defer namespacing until Chat gave it a real purpose). Rooms keyed by `bookingId` (`booking:${id}`), JWT handshake auth shared with the default namespace via an extracted `authenticateSocket()` function instead of duplicating the check. `ChatService.sendMessage` emits `chat:message` to the room after persisting.
+- **Frontend**: `features/chat/chatApi.ts` (RTK Query), `hooks/useChatSocket.ts` (dedicated `/chat` namespace connection scoped to whichever booking's thread is open — not part of the global `SocketProvider`, since it's only needed while a chat is actually open; pushes incoming messages directly into the RTK Query cache via `updateQueryData` instead of invalidate+refetch), a shared `components/chat/ChatThread.tsx` used by both `/provider/chat/[bookingId]` and `/worker/chat/[bookingId]` pages. Added a **Message** button to both existing booking-detail pages — without this the whole feature would be unreachable from the UI.
+- 7 new backend unit tests (`ChatService.test.ts`) covering authorization (Provider/Worker allowed, third party rejected, missing booking), thread reuse vs. creation, and the socket broadcast. Backend suite now 40/40.
+- Verified: `tsc --noEmit` clean on both `backend` and `frontend`.
+
+### Phase 5b onward — pending
+Category model, Support module, Analytics/Reports, dedicated Files module, Agent module internals, CI/CD pipeline, Swagger/OpenAPI, `PricingRule` schema normalization, frontend `(public)` legal pages, `useAuth`/`usePermission` hooks.
 
 ## Phase 6 — Hardening
 Full rate-limit audit, load testing (instant-request broadcast + accept race conditions specifically), monitoring/observability, final security review pass.

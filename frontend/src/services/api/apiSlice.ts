@@ -25,6 +25,7 @@ export const apiSlice = createApi({
     "Review",
     "Location",
     "Notification",
+    "Chat",
   ],
   endpoints: () => ({}),
 });

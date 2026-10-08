@@ -163,6 +163,7 @@ mountDI(app, "/api/v1/admin", (deps) => deps.adminRouter);
 mountDI(app, "/api/v1/notifications", (deps) => deps.notificationRouter);
 mountDI(app, "/api/v1/bookings", (deps) => deps.bookingRouter);
 mountDI(app, "/api/v1/instant-requests", (deps) => deps.instantRequestRouter);
+mountDI(app, "/api/v1/chat", (deps) => deps.chatRouter);
 
 // Fallback handlers
 app.use(notFoundHandler);

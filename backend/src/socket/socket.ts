@@ -1,9 +1,10 @@
-import { Server, type Socket } from "socket.io";
+import { Server, type Socket, type Namespace } from "socket.io";
 import type { Server as HttpServer } from "http";
 import jwt from "jsonwebtoken";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { redis } from "../shared/config/redis.js";
 import { Logger } from "../core/logger/Logger.js";
+import { env } from "../config/env.js";
 
 const logger = new Logger("Socket");
 
@@ -12,6 +13,33 @@ let io: Server;
 interface AuthedSocket extends Socket {
   userId?: string;
   role?: string;
+}
+
+/**
+ * Verifies the same access token the REST API uses, on any namespace. Shared so every
+ * namespace (default, /chat, and any added later) gates connections identically instead of
+ * each reimplementing its own JWT check.
+ */
+function authenticateSocket(socket: AuthedSocket, next: (err?: Error) => void): void {
+  try {
+    const token = socket.handshake.auth?.token as string | undefined;
+
+    if (!token) {
+      return next(new Error("Authentication token required"));
+    }
+
+    const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as {
+      userId: string;
+      role: string;
+    };
+
+    socket.userId = decoded.userId;
+    socket.role = decoded.role;
+
+    next();
+  } catch {
+    next(new Error("Invalid or expired token"));
+  }
 }
 
 export const initializeSocket = (
@@ -38,33 +66,7 @@ export const initializeSocket = (
 
   // Authenticate every socket connection using the same access token
   // the REST API uses, so we know which user each socket belongs to.
-  io.use((socket: AuthedSocket, next) => {
-    try {
-      const token = socket.handshake.auth?.token as string | undefined;
-
-      if (!token) {
-        return next(new Error("Authentication token required"));
-      }
-
-      const secret = process.env.JWT_ACCESS_SECRET;
-
-      if (!secret) {
-        return next(new Error("Server configuration error"));
-      }
-
-      const decoded = jwt.verify(token, secret) as {
-        userId: string;
-        role: string;
-      };
-
-      socket.userId = decoded.userId;
-      socket.role = decoded.role;
-
-      next();
-    } catch {
-      next(new Error("Invalid or expired token"));
-    }
-  });
+  io.use(authenticateSocket);
 
   io.on("connection", (socket: AuthedSocket) => {
 
@@ -123,6 +125,20 @@ export const initializeSocket = (
 
   });
 
+  // /chat namespace — rooms keyed by bookingId. A client joins/leaves the room for whichever
+  // booking's chat thread it currently has open; ChatService emits new messages to that room.
+  const chatNamespace = io.of("/chat");
+  chatNamespace.use(authenticateSocket);
+  chatNamespace.on("connection", (socket: AuthedSocket) => {
+    socket.on("join_chat", (bookingId: string) => {
+      socket.join(`booking:${bookingId}`);
+    });
+
+    socket.on("leave_chat", (bookingId: string) => {
+      socket.leave(`booking:${bookingId}`);
+    });
+  });
+
 };
 
 export const getIO = () => {
@@ -135,4 +151,11 @@ export const getIO = () => {
 
   return io;
 
+};
+
+export const getChatNamespace = (): Namespace => {
+  if (!io) {
+    throw new Error("Socket not initialized");
+  }
+  return io.of("/chat");
 };
