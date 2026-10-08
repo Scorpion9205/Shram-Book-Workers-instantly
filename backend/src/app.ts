@@ -17,6 +17,7 @@ import { redis } from "./shared/config/redis.js";
 import { rabbitMQ } from "./shared/queue/connection/rabbitmq.connection.js";
 
 import type { AppDependencies } from "./infrastructure/bootstrap/app.bootstrap.js";
+import { mountSwagger } from "./infrastructure/bootstrap/swagger.bootstrap.js";
 
 declare module "express-serve-static-core" {
   interface Locals {
@@ -25,6 +26,8 @@ declare module "express-serve-static-core" {
 }
 
 const app = express();
+
+mountSwagger(app);
 
 // Traceable unique request identifier
 app.use(requestIdMiddleware);

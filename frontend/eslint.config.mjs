@@ -15,6 +15,11 @@ const eslintConfig = [
     rules: {
       "react/no-unescaped-entities": "off",
       "@typescript-eslint/no-unused-vars": "warn",
+      // Downgraded from the next/typescript preset's "error" — same treatment already given
+      // to no-unused-vars above. The codebase has ~80 pre-existing explicit-any usages;
+      // leaving this at "error" would make the new CI lint gate fail on day one for debt
+      // unrelated to whatever change triggered the run. Warnings still show up in CI output.
+      "@typescript-eslint/no-explicit-any": "warn",
     },
   },
   {

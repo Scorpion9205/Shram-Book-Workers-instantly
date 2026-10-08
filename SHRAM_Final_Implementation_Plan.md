@@ -212,7 +212,13 @@ Verified: `tsc --noEmit` clean; backend test suite 33/33 (was 25/25 at the end o
 - Verified: `tsc --noEmit` clean on both `backend` and `frontend`.
 
 ### Phase 5b onward — pending
-Category model, Support module, Analytics/Reports, dedicated Files module, Agent module internals, CI/CD pipeline, Swagger/OpenAPI, `PricingRule` schema normalization, frontend `(public)` legal pages, `useAuth`/`usePermission` hooks.
+Category model, Support module, Analytics/Reports, dedicated Files module, Agent module internals, `PricingRule` schema normalization, `useAuth`/`usePermission` hooks.
+
+### Phase 5b — ✅ DONE (8 Oct 2026): CI/CD, Swagger/OpenAPI, legal pages
+- **CI/CD** — `.github/workflows/ci.yml`: backend job (`prisma generate` → `tsc --noEmit` → `vitest run` → `tsc` build) and frontend job (`eslint` → `tsc --noEmit` → `next build`), both on push/PR to `main`. Backend's job injects placeholder-but-valid-shaped env vars so the Zod-validated `config/env.ts` doesn't fail fast in CI — the test suite mocks Prisma/Redis directly, so no real database is needed. **Known gap, not fixed here**: the frontend has zero test infrastructure (no Vitest/Jest/RTL installed at all) — CI runs lint+typecheck+build for it, not tests, because there are none to run.
+- **Swagger/OpenAPI** — installed `swagger-jsdoc`/`swagger-ui-express`, new `infrastructure/bootstrap/swagger.bootstrap.ts` mounted at `/api-docs` (dev/staging only — gated off in production pending an auth-the-docs-route decision). **Coverage is intentionally partial, not claimed complete**: annotated `auth` (9 endpoints), `payments` (2), and `chat` (2) as the demonstrated pattern — `bookings`, `instant-requests`, and the other ~15 modules are not yet annotated. Verified the spec actually parses the JSDoc correctly (13 paths discovered) rather than just assuming the glob patterns were right.
+- **Legal pages** — `/privacy` and `/terms`, written as reasonable draft policies for an OTP-auth, Razorpay-payments, worker-marketplace platform. **These are AI-drafted placeholders, not legal advice — have an actual lawyer review them before relying on them in production**, especially the payment/commission and liability sections. Fixed two dead `href="#"` links in `LandingFooter.tsx` that were supposed to point here.
+- Verified: `tsc --noEmit` clean on `backend` and `frontend`; backend test suite still 40/40 (no backend logic changed, only additive docs infra).
 
 ## Phase 6 — Hardening
 Full rate-limit audit, load testing (instant-request broadcast + accept race conditions specifically), monitoring/observability, final security review pass.
