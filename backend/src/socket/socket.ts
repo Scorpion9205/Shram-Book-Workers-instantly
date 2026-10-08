@@ -1,6 +1,11 @@
 import { Server, type Socket } from "socket.io";
 import type { Server as HttpServer } from "http";
 import jwt from "jsonwebtoken";
+import { createAdapter } from "@socket.io/redis-adapter";
+import { redis } from "../shared/config/redis.js";
+import { Logger } from "../core/logger/Logger.js";
+
+const logger = new Logger("Socket");
 
 let io: Server;
 
@@ -19,6 +24,17 @@ export const initializeSocket = (
       methods: ["GET", "POST"],
     },
   });
+
+  // Redis adapter: without this, Socket.IO can only deliver events to clients connected to
+  // THIS process — running more than one API instance behind a load balancer means a user
+  // connected to instance A would never receive an event emitted from instance B (e.g. a
+  // worker's accept processed on a different instance than the provider's open socket).
+  // Two separate connections are required: one dedicated to publishing, one to subscribing.
+  const pubClient = redis.duplicate();
+  const subClient = redis.duplicate();
+  io.adapter(createAdapter(pubClient, subClient));
+  pubClient.on("error", (err) => logger.error("Redis adapter pub client error", err));
+  subClient.on("error", (err) => logger.error("Redis adapter sub client error", err));
 
   // Authenticate every socket connection using the same access token
   // the REST API uses, so we know which user each socket belongs to.

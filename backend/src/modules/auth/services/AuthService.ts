@@ -16,7 +16,7 @@ import {
   NotFoundException,
 } from '../../../core/exceptions/index.js';
 import type { User } from '@prisma/client';
-import type { IEmailProvider, ISmsProvider } from '../../../core/interfaces/IProviders.js';
+import type { IEmailProvider, ISmsProvider, IGoogleOAuthProvider } from '../../../core/interfaces/IProviders.js';
 import React from 'react';
 import { renderEmail } from '../../../shared/email/utils/render-email.js';
 import OtpEmail from '../../../shared/email/templates/OtpEmail.js';
@@ -32,6 +32,7 @@ export class AuthService implements IAuthService {
     private readonly prisma: PrismaService,
     private readonly emailProvider: IEmailProvider,
     private readonly smsProvider: ISmsProvider,
+    private readonly googleOAuthProvider: IGoogleOAuthProvider,
   ) {}
 
   async signup(data: SignupInput): Promise<void> {
@@ -244,21 +245,14 @@ export class AuthService implements IAuthService {
   }
 
   async googleAuth(idToken: string, role: UserRole): Promise<AuthResponse> {
-    // Stub verification of Google Token for Phase 3
-    // In production, use OAuth2Client from google-auth-library
-    let payload: any;
-    try {
-      payload = jwt.decode(idToken);
-      if (!payload || !payload.email) {
-        throw new AuthenticationException('Invalid Google ID token structure');
-      }
-    } catch {
-      throw new AuthenticationException('Invalid Google ID token');
-    }
+    // Verifies the token's signature against Google's public keys (audience-checked against
+    // our own GOOGLE_CLIENT_ID) — never trust a raw jwt.decode() of this token, which reads
+    // the claims without checking they were ever actually signed by Google.
+    const payload = await this.googleOAuthProvider.verifyIdToken(idToken);
 
     const email = payload.email.toLowerCase();
     const googleId = payload.sub;
-    const name = payload.name || email.split('@')[0];
+    const name = payload.name || email.split('@')[0] || 'User';
 
     const existing = await this.userRepo.findByGoogleId(googleId) || await this.userRepo.findByEmail(email);
 

@@ -74,79 +74,42 @@ export class NotificationDispatcher extends BaseService implements INotification
     channel: NotificationChannel,
     locale: string,
   ): Promise<void> {
-    if (channel === NotificationChannel.EMAIL) {
-      if (user.email) {
-        try {
-          let component: React.ReactElement | null = null;
-          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    // Admin-edited DB template is checked FIRST for every channel, including Email — this is
+    // the actual fix (NOTIF-01): previously the hardcoded React components below always won
+    // for Email, so Admin's template editor had zero effect on what actually got sent for any
+    // type with a React component. DB templates now govern Email too; the React components
+    // are a fallback ONLY for types that don't have a DB template configured yet.
+    const template = await this.resolveTemplate(ctx.type, channel, locale);
 
-          switch (ctx.type) {
-            case NotificationType.OTP_LOGIN:
-              component = React.createElement(OtpEmail, {
-                name: (ctx.data.name as string) || user.name || 'User',
-                otp: (ctx.data.otp as string) || '',
-              });
-              break;
-            case NotificationType.WELCOME:
-              component = React.createElement(WelcomeEmail, {
-                name: (ctx.data.name as string) || user.name || 'User',
-              });
-              break;
-            case NotificationType.BOOKING_CREATED:
-              component = React.createElement(BookingCreated, {
-                name: (ctx.data.name as string) || user.name || 'User',
-                bookingId: (ctx.data.bookingId as string) || '',
-                frontendUrl,
-              });
-              break;
-            case NotificationType.BOOKING_CONFIRMED:
-              component = React.createElement(BookingConfirmed, {
-                providerName: (ctx.data.providerName as string) || user.name || 'User',
-                bookingShortId: (ctx.data.bookingShortId as string) || (ctx.data.bookingId as string) || '',
-                workerName: (ctx.data.workerName as string) || '',
-                frontendUrl,
-              });
-              break;
-            case NotificationType.WORK_COMPLETED:
-              component = React.createElement(WorkCompleted, {
-                providerName: (ctx.data.providerName as string) || user.name || 'User',
-                workerName: (ctx.data.workerName as string) || '',
-                bookingShortId: (ctx.data.bookingShortId as string) || (ctx.data.bookingId as string) || '',
-                frontendUrl,
-              });
-              break;
-            case NotificationType.PAYMENT_RECEIPT:
-              component = React.createElement(PaymentReceipt, {
-                providerName: (ctx.data.providerName as string) || user.name || 'User',
-                bookingShortId: (ctx.data.bookingShortId as string) || (ctx.data.bookingId as string) || '',
-                workerName: (ctx.data.workerName as string) || '',
-                amount: String(ctx.data.amount || ''),
-                frontendUrl,
-              });
-              break;
-            case NotificationType.BOOKING_CANCELLED:
-              component = React.createElement(BookingCancelled, {
-                bookingShortId: (ctx.data.bookingShortId as string) || (ctx.data.bookingId as string) || '',
-                reason: (ctx.data.reason as string) || 'No reason provided',
-                frontendUrl,
-              });
-              break;
-          }
-
-          if (component) {
-            const body = await renderEmail(component);
-            const subject = this.getEmailSubject(ctx.type, ctx.data);
-            await this.emailProvider.send(user.email, subject, body);
-            await this.notificationRepo.create(user.id, subject, body);
-            return;
-          }
-        } catch (error) {
-          this.log('Dynamic email template compilation failed, falling back to DB templates', { type: ctx.type, userId: user.id, error });
-        }
+    if (channel === NotificationChannel.EMAIL && user.email) {
+      if (template) {
+        const body = this.interpolate(template.body, ctx.data);
+        const subject = template.subject
+          ? this.interpolate(template.subject, ctx.data)
+          : this.getEmailSubject(ctx.type, ctx.data);
+        await this.emailProvider.send(user.email, subject, body);
+        await this.notificationRepo.create(user.id, subject, body);
+        return;
       }
+
+      try {
+        const component = this.buildEmailComponent(ctx, user);
+        if (component) {
+          const body = await renderEmail(component);
+          const subject = this.getEmailSubject(ctx.type, ctx.data);
+          await this.emailProvider.send(user.email, subject, body);
+          await this.notificationRepo.create(user.id, subject, body);
+          return;
+        }
+      } catch (error) {
+        this.log('Built-in email template compilation failed', { type: ctx.type, userId: user.id, error });
+        throw error;
+      }
+
+      this.log('No template found (DB or built-in)', { type: ctx.type, channel, locale });
+      return;
     }
 
-    const template = await this.resolveTemplate(ctx.type, channel, locale);
     if (!template) {
       this.log('No template found', { type: ctx.type, channel, locale });
       return;
@@ -157,11 +120,6 @@ export class NotificationDispatcher extends BaseService implements INotification
 
     try {
       switch (channel) {
-        case NotificationChannel.EMAIL:
-          if (user.email) {
-            await this.emailProvider.send(user.email, subject || 'SHRAM Alert', body);
-          }
-          break;
         case NotificationChannel.SMS:
           if (user.phone) {
             await this.smsProvider.send(user.phone, body);
@@ -190,6 +148,59 @@ export class NotificationDispatcher extends BaseService implements INotification
     } catch (error) {
       this.log('Notification dispatch failed', { type: ctx.type, channel, userId: user.id, error });
       throw error;
+    }
+  }
+
+  /** Built-in React-rendered email templates — used only when Admin hasn't configured a DB template for this (type, channel, locale). */
+  private buildEmailComponent(ctx: DispatchContext, user: any): React.ReactElement | null {
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+    switch (ctx.type) {
+      case NotificationType.OTP_LOGIN:
+        return React.createElement(OtpEmail, {
+          name: (ctx.data.name as string) || user.name || 'User',
+          otp: (ctx.data.otp as string) || '',
+        });
+      case NotificationType.WELCOME:
+        return React.createElement(WelcomeEmail, {
+          name: (ctx.data.name as string) || user.name || 'User',
+        });
+      case NotificationType.BOOKING_CREATED:
+        return React.createElement(BookingCreated, {
+          name: (ctx.data.name as string) || user.name || 'User',
+          bookingId: (ctx.data.bookingId as string) || '',
+          frontendUrl,
+        });
+      case NotificationType.BOOKING_CONFIRMED:
+        return React.createElement(BookingConfirmed, {
+          providerName: (ctx.data.providerName as string) || user.name || 'User',
+          bookingShortId: (ctx.data.bookingShortId as string) || (ctx.data.bookingId as string) || '',
+          workerName: (ctx.data.workerName as string) || '',
+          frontendUrl,
+        });
+      case NotificationType.WORK_COMPLETED:
+        return React.createElement(WorkCompleted, {
+          providerName: (ctx.data.providerName as string) || user.name || 'User',
+          workerName: (ctx.data.workerName as string) || '',
+          bookingShortId: (ctx.data.bookingShortId as string) || (ctx.data.bookingId as string) || '',
+          frontendUrl,
+        });
+      case NotificationType.PAYMENT_RECEIPT:
+        return React.createElement(PaymentReceipt, {
+          providerName: (ctx.data.providerName as string) || user.name || 'User',
+          bookingShortId: (ctx.data.bookingShortId as string) || (ctx.data.bookingId as string) || '',
+          workerName: (ctx.data.workerName as string) || '',
+          amount: String(ctx.data.amount || ''),
+          frontendUrl,
+        });
+      case NotificationType.BOOKING_CANCELLED:
+        return React.createElement(BookingCancelled, {
+          bookingShortId: (ctx.data.bookingShortId as string) || (ctx.data.bookingId as string) || '',
+          reason: (ctx.data.reason as string) || 'No reason provided',
+          frontendUrl,
+        });
+      default:
+        return null;
     }
   }
 

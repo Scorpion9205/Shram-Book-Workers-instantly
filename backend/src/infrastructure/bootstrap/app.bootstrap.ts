@@ -66,6 +66,7 @@ import { ResendProvider } from '../providers/email/ResendProvider.js';
 import { ExotelProvider } from '../providers/sms/ExotelProvider.js';
 import { FirebaseProvider } from '../providers/push/FirebaseProvider.js';
 import { S3Provider } from '../providers/storage/S3Provider.js';
+import { GoogleOAuthProvider } from '../providers/oauth/GoogleOAuthProvider.js';
 
 // Queue Consumers
 import { NotificationConsumer } from '../queue/consumers/NotificationConsumer.js';
@@ -152,6 +153,7 @@ export async function wireModules(
   const s3Provider = new S3Provider(env.AWS_S3_BUCKET, env.AWS_REGION, env.AWS_ACCESS_KEY_ID, env.AWS_SECRET_ACCESS_KEY);
   S3Provider.setInstance(s3Provider);
   const mapsProvider = new MapsProvider();
+  const googleOAuthProvider = new GoogleOAuthProvider(env.GOOGLE_CLIENT_ID);
 
   // 4. Services
   const bookingStateService = new BookingStateService(
@@ -242,7 +244,7 @@ export async function wireModules(
   );
   const tokenService = new TokenService(cacheService);
   const otpService = new OTPService(otpRepo, cacheService, emailProvider, smsProvider);
-  const authService = new AuthService(authRepo, otpService, tokenService, cacheService, prismaService, emailProvider, smsProvider);
+  const authService = new AuthService(authRepo, otpService, tokenService, cacheService, prismaService, emailProvider, smsProvider, googleOAuthProvider);
   const locationService = new LocationService(locationRepo, cacheService);
   const skillService = new SkillService(skillRepo);
   const providerService = new ProviderService(providerRepo);

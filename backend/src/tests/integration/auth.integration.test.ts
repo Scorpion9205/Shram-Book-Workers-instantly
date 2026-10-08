@@ -14,6 +14,7 @@ import {
 } from "../../modules/auth/index.js";
 import { ResendProvider } from "../../infrastructure/providers/email/ResendProvider.js";
 import { ExotelProvider } from "../../infrastructure/providers/sms/ExotelProvider.js";
+import { GoogleOAuthProvider } from "../../infrastructure/providers/oauth/GoogleOAuthProvider.js";
 
 // Mock prisma database and redis
 vi.mock("../../shared/config/prisma.js", () => {
@@ -59,7 +60,8 @@ beforeAll(async () => {
   const smsProvider = new ExotelProvider(undefined, undefined, undefined, undefined);
   const otpService = new OTPService(otpRepo, cache, emailProvider, smsProvider);
   const tokenService = new TokenService(cache);
-  const authService = new AuthService(authRepo, otpService, tokenService, cache, prismaService, emailProvider, smsProvider);
+  const googleOAuthProvider = new GoogleOAuthProvider(undefined);
+  const authService = new AuthService(authRepo, otpService, tokenService, cache, prismaService, emailProvider, smsProvider, googleOAuthProvider);
   const authController = new AuthController(authService, cache);
   const authRouter = createAuthRouter(authController);
 
