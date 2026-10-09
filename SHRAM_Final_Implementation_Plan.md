@@ -279,7 +279,17 @@ Full backend security surface scan (CORS, helmet, JWT/secret handling, route aut
 
 8 new backend unit tests already covered the commission/analytics logic touched earlier in this phase; no new tests were added specifically for this security pass since the changes are either pure data-shape stripping (verified via `tsc` + the existing 72-test suite still passing) or middleware-level (rate limiter, CORS, file filter) that the project doesn't have an existing pattern for unit-testing in isolation. Verified: `tsc --noEmit` clean, full 72/72 suite still passing.
 
-### Phase 6b onward — pending
+### Phase 6b — ✅ DONE (9 Oct 2026): Live worker-location tracking (user-requested, outside the original plan)
+- **Gap found while explaining the architecture to the user**: the Provider booking-detail page already had a literal placeholder card — "Live map tracking will appear here once the worker is on the way" — but nothing behind it. The Worker's device already pushed its location to the backend every 10s (for instant-request proximity matching via a Redis geo-index), and even had a dead `socket.emit("worker:location_update", ...)` call with zero backend listener. Address autocomplete + "use my current location" were already fully working (Google Places Autocomplete + reverse geocoding) — only the Uber-style "watch the worker move on a map in real time" piece was missing.
+- **Backend** (`socket/socket.ts`): added `track:join`/`track:leave` (room `booking:{id}` on the default namespace — distinct from `/chat`'s same-named room on its own namespace, no collision) gated by the same participant check `/chat` uses, plus a new `worker:location_update` handler gated by a stricter `isAssignedWorker()` check (only the booking's actual assigned Worker may broadcast for it) that re-emits as `worker:location` to the room.
+- **Frontend**: split location concerns cleanly —
+  - `useLiveLocation` (existing, global, runs whenever a Worker is "available") simplified back to HTTP-only; its dead socket emit is gone.
+  - `useBookingLocationBroadcast` (new) — Worker side, active only while a specific booking is `WORKER_EN_ROUTE`, emits position every 5s for that booking.
+  - `useBookingLocationTracking` (new) — Provider side, joins/leaves the booking's room and returns the Worker's latest broadcast position (re-joins correctly across reconnects, mirroring `useChatSocket`'s `connect`-event pattern rather than a fire-and-forget emit).
+  - `LiveTrackingMap` (new component) — a real Google Map (markers only move, never recreated, so the Provider's zoom/pan isn't reset on every update) showing the Worker's live position and the job's destination, replacing the old placeholder card on the Provider's booking page. Wired into both booking-detail pages, gated on `status === "WORKER_EN_ROUTE"`.
+- Verified: `tsc --noEmit` clean on both, `eslint` shows zero new warnings (same pre-existing `any`/img-element warnings as before), `next build` succeeds (41/41 routes), backend 72/72 tests still pass.
+
+### Phase 6c onward — pending
 Load testing (instant-request broadcast + accept race conditions specifically), monitoring/observability.
 
 ---

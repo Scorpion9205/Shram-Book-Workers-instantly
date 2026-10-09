@@ -22,6 +22,7 @@ import {
   useSettleOfflineBookingMutation,
 } from "@/features/booking/bookingApi";
 import { useSocket } from "@/providers/SocketProvider";
+import { useBookingLocationBroadcast } from "@/hooks/useBookingLocationBroadcast";
 
 export default function WorkerBookingDetailPage({ params }: { params: Promise<{ bookingId: string }> }) {
   const { bookingId } = use(params);
@@ -32,6 +33,7 @@ export default function WorkerBookingDetailPage({ params }: { params: Promise<{ 
   const [settleOfflineBooking, { isLoading: isSettlingOffline }] = useSettleOfflineBookingMutation();
   const [otp, setOtp] = useState("");
   const { socket } = useSocket();
+  useBookingLocationBroadcast(bookingId, booking?.status === "WORKER_EN_ROUTE");
 
   async function handleSettleOffline() {
     try {

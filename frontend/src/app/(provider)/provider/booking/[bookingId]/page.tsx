@@ -13,6 +13,8 @@ import { ReviewDialog } from "@/components/dialogs/ReviewDialog";
 import { EmptyState } from "@/components/cards/EmptyState";
 import { useGetBookingByIdQuery, useSettleBookingMutation, useCreatePaymentOrderMutation } from "@/features/booking/bookingApi";
 import { useSocket } from "@/providers/SocketProvider";
+import { useBookingLocationTracking } from "@/hooks/useBookingLocationTracking";
+import { LiveTrackingMap } from "@/components/maps/LiveTrackingMap";
 import { toast } from "sonner";
 
 export default function ProviderBookingDetailPage({ params }: { params: Promise<{ bookingId: string }> }) {
@@ -22,6 +24,8 @@ export default function ProviderBookingDetailPage({ params }: { params: Promise<
   const [createPaymentOrder, { isLoading: isPaying }] = useCreatePaymentOrderMutation();
   const [reviewOpen, setReviewOpen] = useState(false);
   const { socket } = useSocket();
+  const isWorkerEnRoute = booking?.status === "WORKER_EN_ROUTE";
+  const workerPosition = useBookingLocationTracking(bookingId, isWorkerEnRoute);
 
   async function handleSettle() {
     try {
@@ -200,10 +204,28 @@ export default function ProviderBookingDetailPage({ params }: { params: Promise<
         </CardContent>
       </Card>
 
-      <Card className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
-        <MapPin className="size-4 shrink-0" />
-        Live map tracking will appear here once the worker is on the way.
-      </Card>
+      {isWorkerEnRoute ? (
+        <Card className="overflow-hidden">
+          <CardHeader>
+            <CardTitle className="text-base">Worker is on the way</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <LiveTrackingMap
+              workerPosition={workerPosition}
+              destination={
+                booking.job?.latitude != null && booking.job?.longitude != null
+                  ? { lat: booking.job.latitude, lng: booking.job.longitude }
+                  : undefined
+              }
+            />
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+          <MapPin className="size-4 shrink-0" />
+          Live map tracking will appear here once the worker is on the way.
+        </Card>
+      )}
       <div className="border-t pt-4 space-y-2">
 
         <h3 className="font-semibold">

@@ -60,6 +60,18 @@ async function isBookingParticipant(userId: string | undefined, bookingId: strin
   return booking.providerId === userId || booking.worker?.userId === userId;
 }
 
+/** Only the Worker actually assigned to this booking may broadcast a location update for it. */
+async function isAssignedWorker(userId: string | undefined, bookingId: string): Promise<boolean> {
+  if (!userId) return false;
+
+  const booking = await PrismaService.getInstance().client.booking.findUnique({
+    where: { id: bookingId },
+    select: { worker: { select: { userId: true } } },
+  });
+
+  return booking?.worker?.userId === userId;
+}
+
 export const initializeSocket = (
   server: HttpServer
 ) => {
@@ -130,6 +142,45 @@ export const initializeSocket = (
           `${socket.id} left skill:${skillId}`
         );
 
+      }
+    );
+
+    // Live worker-location tracking for a specific booking (Provider watching their
+    // assigned Worker travel to the job). Rooms keyed by bookingId, same as /chat, but on
+    // the default namespace since it's unrelated to chat messaging.
+    socket.on("track:join", async (bookingId: string) => {
+      const allowed = await isBookingParticipant(socket.userId, bookingId);
+      if (!allowed) {
+        logger.warn(`Socket ${socket.id} (user ${socket.userId}) denied track:join for booking ${bookingId}`);
+        return;
+      }
+      socket.join(`booking:${bookingId}`);
+    });
+
+    socket.on("track:leave", (bookingId: string) => {
+      socket.leave(`booking:${bookingId}`);
+    });
+
+    socket.on(
+      "worker:location_update",
+      async (payload: { bookingId: string; latitude: number; longitude: number }) => {
+        const { bookingId, latitude, longitude } = payload || {};
+        if (!bookingId || typeof latitude !== "number" || typeof longitude !== "number") {
+          return;
+        }
+
+        const allowed = await isAssignedWorker(socket.userId, bookingId);
+        if (!allowed) {
+          logger.warn(`Socket ${socket.id} (user ${socket.userId}) denied worker:location_update for booking ${bookingId}`);
+          return;
+        }
+
+        socket.to(`booking:${bookingId}`).emit("worker:location", {
+          bookingId,
+          latitude,
+          longitude,
+          updatedAt: new Date().toISOString(),
+        });
       }
     );
 
