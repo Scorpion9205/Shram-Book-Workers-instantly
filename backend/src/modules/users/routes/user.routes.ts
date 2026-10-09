@@ -2,11 +2,21 @@ import { Router } from 'express';
 import multer from 'multer';
 import type { UserController } from '../controllers/UserController.js';
 import { authenticate } from '../../auth/middleware/authenticate.middleware.js';
+import { BadRequestException } from '../../../core/exceptions/index.js';
+
+const ALLOWED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+  fileFilter: (_req, file, cb) => {
+    if (!ALLOWED_IMAGE_MIME_TYPES.has(file.mimetype)) {
+      cb(new BadRequestException('Only JPEG, PNG, or WEBP images are allowed'));
+      return;
+    }
+    cb(null, true);
   },
 });
 

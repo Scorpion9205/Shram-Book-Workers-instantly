@@ -10,6 +10,7 @@ import { globalErrorHandler } from "./middleware/error.middleware.js";
 import { requestIdMiddleware } from "./shared/middleware/requestId.middleware.js";
 import { helmetMiddleware } from "./shared/middleware/helmet.middleware.js";
 import { idempotencyMiddleware } from "./shared/middleware/idempotency.middleware.js";
+import { env } from "./config/env.js";
 
 // Databases configuration
 import prisma from "./shared/config/prisma.js";
@@ -38,7 +39,7 @@ app.use(helmetMiddleware);
 // CORS cross origin restrictor
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL ?? "http://localhost:3000",
+    origin: env.FRONTEND_URL,
     credentials: true,
   })
 );

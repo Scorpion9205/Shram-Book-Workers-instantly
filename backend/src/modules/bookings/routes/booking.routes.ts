@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { BookingController } from '../controllers/BookingController.js';
 import { authenticate } from '../../auth/middleware/authenticate.middleware.js';
+import { rateLimiter } from '../../../shared/middleware/rateLimiter.middleware.js';
 
 export function createBookingRouter(controller: BookingController): Router {
   const router = Router();
@@ -12,7 +13,7 @@ export function createBookingRouter(controller: BookingController): Router {
   router.get('/worker', controller.getBookings);
   router.get('/', controller.getBookings);
   router.get('/:id', controller.getBookingById);
-  router.post('/', controller.createBooking);
+  router.post('/', rateLimiter('booking:create', 20, 10 * 60), controller.createBooking);
   router.patch('/:id/cancel', controller.cancelBooking);
   
   // Work-start & Completion flows

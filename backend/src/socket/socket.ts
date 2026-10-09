@@ -5,6 +5,7 @@ import { createAdapter } from "@socket.io/redis-adapter";
 import { redis } from "../shared/config/redis.js";
 import { Logger } from "../core/logger/Logger.js";
 import { env } from "../config/env.js";
+import { PrismaService } from "../database/prisma/PrismaService.js";
 
 const logger = new Logger("Socket");
 
@@ -42,14 +43,32 @@ function authenticateSocket(socket: AuthedSocket, next: (err?: Error) => void): 
   }
 }
 
+/**
+ * Mirrors ChatService's own REST-side ownership check — a socket may only join a booking's
+ * chat room if it belongs to that booking's Provider or assigned Worker, otherwise any
+ * authenticated socket could eavesdrop on any booking's chat just by guessing its id.
+ */
+async function isBookingParticipant(userId: string | undefined, bookingId: string): Promise<boolean> {
+  if (!userId) return false;
+
+  const booking = await PrismaService.getInstance().client.booking.findUnique({
+    where: { id: bookingId },
+    select: { providerId: true, worker: { select: { userId: true } } },
+  });
+
+  if (!booking) return false;
+  return booking.providerId === userId || booking.worker?.userId === userId;
+}
+
 export const initializeSocket = (
   server: HttpServer
 ) => {
 
   io = new Server(server, {
     cors: {
-      origin: "*",
+      origin: env.FRONTEND_URL,
       methods: ["GET", "POST"],
+      credentials: true,
     },
   });
 
@@ -130,7 +149,12 @@ export const initializeSocket = (
   const chatNamespace = io.of("/chat");
   chatNamespace.use(authenticateSocket);
   chatNamespace.on("connection", (socket: AuthedSocket) => {
-    socket.on("join_chat", (bookingId: string) => {
+    socket.on("join_chat", async (bookingId: string) => {
+      const allowed = await isBookingParticipant(socket.userId, bookingId);
+      if (!allowed) {
+        logger.warn(`Socket ${socket.id} (user ${socket.userId}) denied join_chat for booking ${bookingId}`);
+        return;
+      }
       socket.join(`booking:${bookingId}`);
     });
 

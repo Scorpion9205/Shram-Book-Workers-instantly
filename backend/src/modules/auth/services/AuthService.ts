@@ -215,7 +215,8 @@ export class AuthService implements IAuthService {
     const refreshToken = this.tokenService.generateRefreshToken(user.id);
     await this.tokenService.storeRefreshToken(user.id, refreshToken);
 
-    return { user, accessToken, refreshToken };
+    const { passwordHash, ...safeUser } = user;
+    return { user: safeUser, accessToken, refreshToken };
   }
 
   async adminLogin(email: string, password: string): Promise<AuthResponse> {
@@ -241,7 +242,8 @@ export class AuthService implements IAuthService {
     const refreshToken = this.tokenService.generateRefreshToken(user.id);
     await this.tokenService.storeRefreshToken(user.id, refreshToken);
 
-    return { user, accessToken, refreshToken };
+    const { passwordHash, ...safeUser } = user;
+    return { user: safeUser, accessToken, refreshToken };
   }
 
   async googleAuth(idToken: string, role: UserRole): Promise<AuthResponse> {
@@ -294,7 +296,8 @@ export class AuthService implements IAuthService {
     const refreshToken = this.tokenService.generateRefreshToken(user.id);
     await this.tokenService.storeRefreshToken(user.id, refreshToken);
 
-    return { user, accessToken, refreshToken };
+    const { passwordHash, ...safeUser } = user;
+    return { user: safeUser, accessToken, refreshToken };
   }
 
   async refreshToken(token: string): Promise<{ accessToken: string }> {

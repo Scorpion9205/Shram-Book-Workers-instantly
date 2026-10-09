@@ -4,7 +4,7 @@ import { OTPChannel } from '../enums/index.js';
 import type { SignupInput } from '../validations/auth.validation.js';
 
 export interface AuthResponse {
-  user: User;
+  user: Omit<User, 'passwordHash'>;
   accessToken: string;
   refreshToken: string;
 }

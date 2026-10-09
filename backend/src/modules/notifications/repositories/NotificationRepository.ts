@@ -26,7 +26,12 @@ export class NotificationRepository extends BaseRepository<Notification> impleme
     });
   }
 
-  async markAsRead(id: string): Promise<Notification> {
+  async markAsRead(id: string, userId: string): Promise<Notification | null> {
+    const notification = await this.prisma.client.notification.findFirst({ where: { id, userId } });
+    if (!notification) {
+      return null;
+    }
+
     return this.prisma.client.notification.update({
       where: { id },
       data: { isRead: true },

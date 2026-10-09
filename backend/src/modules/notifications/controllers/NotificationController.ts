@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import { BaseController } from '../../../core/base/BaseController.js';
 import type { INotificationRepository } from '../interfaces/INotificationRepository.js';
-import { BusinessException } from '../../../core/exceptions/index.js';
+import { BusinessException, NotFoundException } from '../../../core/exceptions/index.js';
 
 export class NotificationController extends BaseController {
   constructor(private readonly notificationRepo: INotificationRepository) {
@@ -15,11 +15,15 @@ export class NotificationController extends BaseController {
   };
 
   markAsRead = async (req: Request, res: Response): Promise<void> => {
+    const user = (req as any).user;
     const notificationId = req.params.notificationId as string;
     if (!notificationId) {
       throw new BusinessException('INVALID_NOTIFICATION_ID', 'Invalid notification id');
     }
-    const notification = await this.notificationRepo.markAsRead(notificationId);
+    const notification = await this.notificationRepo.markAsRead(notificationId, user.userId);
+    if (!notification) {
+      throw new NotFoundException('Notification', notificationId);
+    }
     this.ok(res, notification, 'Notification marked as read successfully.');
   };
 }

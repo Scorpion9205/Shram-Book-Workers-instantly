@@ -33,7 +33,7 @@ export function createAuthRouter(controller: AuthController): Router {
    *       400: { description: Validation failed, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
    */
   // OTP Authentication (Provider/Worker)
-  router.post('/signup', controller.signup);
+  router.post('/signup', rateLimiter('auth:signup', 5, 10 * 60), controller.signup);
 
   /**
    * @openapi
@@ -62,7 +62,7 @@ export function createAuthRouter(controller: AuthController): Router {
    *       200: { description: Authenticated, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
    *       400: { description: Invalid/expired OTP, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
    */
-  router.post('/login', requireIdempotencyKey(), controller.verifyOTP);
+  router.post('/login', rateLimiter('auth:login', 10, 15 * 60), requireIdempotencyKey(), controller.verifyOTP);
 
   /**
    * @openapi
@@ -85,7 +85,7 @@ export function createAuthRouter(controller: AuthController): Router {
    *     responses:
    *       200: { description: OTP dispatched, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
    */
-  router.post('/send-otp', controller.requestOTP);
+  router.post('/send-otp', rateLimiter('auth:send-otp', 5, 15 * 60), controller.requestOTP);
 
   /**
    * @openapi
@@ -113,7 +113,7 @@ export function createAuthRouter(controller: AuthController): Router {
    *     responses:
    *       200: { description: Authenticated, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
    */
-  router.post('/verify-otp', requireIdempotencyKey(), controller.verifyOTP);
+  router.post('/verify-otp', rateLimiter('auth:verify-otp', 10, 15 * 60), requireIdempotencyKey(), controller.verifyOTP);
 
   /**
    * @openapi
@@ -137,7 +137,7 @@ export function createAuthRouter(controller: AuthController): Router {
    *       401: { description: Invalid Google ID token, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
    */
   // Google OAuth
-  router.post('/google', controller.googleAuth);
+  router.post('/google', rateLimiter('auth:google', 20, 15 * 60), controller.googleAuth);
 
   /**
    * @openapi

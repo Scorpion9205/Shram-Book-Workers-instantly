@@ -252,7 +252,35 @@ Verified: `tsc --noEmit` clean; backend test suite 33/33 (was 25/25 at the end o
 - 8 new backend unit tests (`AdminService.getPlatformAnalytics` ×2 + pricing-rule delegation ×2, `AgentService.getCommissionSummary` ×4). Backend suite now 72/72. Verified: `tsc --noEmit` and `next build` both clean on backend and frontend.
 
 ## Phase 6 — Hardening
-Full rate-limit audit, load testing (instant-request broadcast + accept race conditions specifically), monitoring/observability, final security review pass.
+
+### Phase 6a — ✅ DONE (9 Oct 2026): Security review pass + rate-limit audit
+Full backend security surface scan (CORS, helmet, JWT/secret handling, route auth coverage, IDOR/ownership checks, rate limiting, sensitive data exposure, raw-SQL/Prisma injection, webhook signature verification, file upload validation). Fixed every concrete issue found; nothing left half-done.
+
+**Fixed:**
+- **`passwordHash` leaked in API responses** — `AuthService.verifyOTP`/`adminLogin`/`googleAuth` returned the raw Prisma `User` row (argon2 hash included) in the JSON body. Stripped at all 3 return sites (`AuthService.ts`) and tightened `AuthResponse.user` to `Omit<User, 'passwordHash'>` in `IAuthService.ts` so it can't regress silently.
+- **Notification IDOR** — `PATCH /notifications/:id/read` took only the notification id, no owner check, so any authenticated user could flip any other user's `isRead` flag by guessing an id. `NotificationRepository.markAsRead` now requires `(id, userId)` and only updates a match; controller 404s otherwise.
+- **Socket.IO chat-room eavesdropping** — the `/chat` namespace's `join_chat` handler let any authenticated socket join `booking:{id}` for *any* bookingId with zero ownership check, even though the equivalent REST endpoints (`GET/POST /chat/:bookingId/...`) were already correctly gated. Added an `isBookingParticipant()` check (mirrors `ChatService`'s own provider/worker check) before the socket is allowed to join.
+- **Stack trace returned to the client** — `UserController.uploadProfileImage` had its own catch block that put `err.stack` straight in the HTTP response. Removed it; it now relies on the global error handler like every other controller (which never leaks stack traces).
+- **File upload hardening** — `multer` had a 5MB size cap but no mimetype filter, and the S3 key's extension was derived from the client-supplied filename (`filename.split('.').pop()`), which — for a dot-less filename — would inject the *entire* attacker-controlled string as the "extension" straight into the S3 key. Added a JPEG/PNG/WEBP `fileFilter` whitelist, and the S3 key extension is now derived from the (now-whitelisted) MIME type instead of the filename.
+- **Socket.IO CORS wildcard** — the Socket.IO server had `origin: "*"` independently of, and inconsistent with, Express's own single-origin CORS config. Now also pinned to `env.FRONTEND_URL`.
+- **CORS reading raw `process.env` instead of the validated config** — `app.ts` read `process.env.FRONTEND_URL` directly, bypassing the Zod-validated, defaulted `env.FRONTEND_URL` the rest of the codebase uses. Switched to `env.FRONTEND_URL`.
+- **Rate-limit gaps on public/high-risk endpoints** — `/auth/signup`, `/auth/login`, `/auth/send-otp`, `/auth/verify-otp`, `/auth/google`, and `POST /bookings` had no route-level `rateLimiter`, only `/auth/admin/login` did. All five now have one (OTP-send and OTP-verify also still have their own independent per-purpose caps inside `OTPService` — this adds a second, outer layer, not a replacement).
+- **Dead code with plaintext OTP logging** — `src/shared/verification/*` (a whole parallel, unused OTP/verification module that `console.log`'d OTP codes, identifiers, and names in plaintext) and `src/shared/utils/jwt.ts` (an unused duplicate JWT signer reading raw `process.env`). Confirmed zero importers anywhere in the codebase before deleting — not live code, but a landmine for whoever might wire it up later, and a bad look in any future audit.
+
+**Checked and confirmed fine (no action needed):**
+- Zero raw SQL anywhere (`$queryRaw`/`$executeRaw` only appear as parameterless `SELECT 1` health checks — grepped and verified, not assumed).
+- Razorpay webhook handler verifies the HMAC signature *before* trusting the payload, and fails closed on an invalid/missing signature.
+- Every sensitive route (bookings, payments, wallet, admin, chat, support, profile) already had `authenticate`; the only unauthenticated endpoints are the pre-login auth flows and the (signature-gated) payment webhook — both by design.
+- Ownership checks already existed for bookings, payments, reviews, support tickets, chat (REST side), and job applications.
+
+**Flagged but intentionally not changed** (would be a bigger behavioral decision, not a drop-in fix):
+- `RAZORPAY_KEY_ID`/`KEY_SECRET`/`WEBHOOK_SECRET` are `.optional()` in `config/env.ts` but consumed with a non-null `!` assertion in `app.bootstrap.ts`/`PaymentService.ts` — if genuinely unset, this fails at the point of use with a confusing error instead of failing fast at boot with a clear one. Didn't tighten this myself since making them required would break any local/CI setup currently running without Razorpay configured.
+- `express.json()` uses the body-parser default 100kb size limit (never explicitly set either way) — reasonable as-is, just noting it was checked.
+
+8 new backend unit tests already covered the commission/analytics logic touched earlier in this phase; no new tests were added specifically for this security pass since the changes are either pure data-shape stripping (verified via `tsc` + the existing 72-test suite still passing) or middleware-level (rate limiter, CORS, file filter) that the project doesn't have an existing pattern for unit-testing in isolation. Verified: `tsc --noEmit` clean, full 72/72 suite still passing.
+
+### Phase 6b onward — pending
+Load testing (instant-request broadcast + accept race conditions specifically), monitoring/observability.
 
 ---
 

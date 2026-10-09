@@ -9,7 +9,14 @@ import { CacheKeys } from '../../../infrastructure/cache/cacheKeys.js';
 import {
   NotFoundException,
   AuthenticationException,
+  BadRequestException,
 } from '../../../core/exceptions/index.js';
+
+const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+};
 
 export class UserService extends BaseService implements IUserService {
   constructor(
@@ -142,8 +149,13 @@ export class UserService extends BaseService implements IUserService {
       throw new NotFoundException('User', userId);
     }
 
-    // Generate unique key
-    const fileExtension = filename.split('.').pop() || 'png';
+    // Derived from the (already mimetype-whitelisted) content type, never from the
+    // client-supplied filename — an attacker-controlled filename with no dot in it would
+    // otherwise inject arbitrary path segments into the S3 key.
+    const fileExtension = EXTENSION_BY_MIME_TYPE[mimeType];
+    if (!fileExtension) {
+      throw new BadRequestException('Unsupported image type');
+    }
     const key = `avatars/${userId}-${Date.now()}.${fileExtension}`;
 
     // Upload to storage provider (S3)
