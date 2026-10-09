@@ -15,6 +15,26 @@ export interface NotificationTemplate {
   body: string;
 }
 
+export interface TrendPoint {
+  label: string;
+  value: number;
+}
+
+export interface PlatformAnalytics {
+  totalUsers: number;
+  totalWorkers: number;
+  totalProviders: number;
+  totalAgents: number;
+  totalBookings: number;
+  totalJobs: number;
+  activeWorkers: number;
+  activeProviders: number;
+  totalRevenue: number;
+  signupTrend: TrendPoint[];
+  bookingTrend: TrendPoint[];
+  revenueTrend: TrendPoint[];
+}
+
 export const adminApi = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
     getUsers: builder.query<{ success: boolean; data: User[]; meta: any }, { page: number; limit: number; search?: string; role?: string }>({
@@ -71,6 +91,19 @@ export const adminApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["Settings" as any],
     }),
+    getPlatformAnalytics: builder.query<
+      { success: boolean; data: PlatformAnalytics },
+      { range?: string; startDate?: string; endDate?: string } | void
+    >({
+      query: (params) => {
+        const queryParams = new URLSearchParams();
+        if (params?.range) queryParams.append("range", params.range);
+        if (params?.startDate) queryParams.append("startDate", params.startDate);
+        if (params?.endDate) queryParams.append("endDate", params.endDate);
+        const queryString = queryParams.toString();
+        return { url: `/admin/analytics/dashboard${queryString ? `?${queryString}` : ""}` };
+      },
+    }),
     getTemplates: builder.query<{ success: boolean; data: NotificationTemplate[] }, void>({
       query: () => ({ url: "/admin/notification-templates" }),
       providesTags: ["Templates" as any],
@@ -94,6 +127,7 @@ export const {
   useAssignWorkerMutation,
   useGetSettingsQuery,
   useUpdateSettingMutation,
+  useGetPlatformAnalyticsQuery,
   useGetTemplatesQuery,
   useUpdateTemplateMutation,
 } = adminApi;

@@ -1,6 +1,7 @@
+import { PaymentStatus } from '@prisma/client';
 import type { AgentProfile } from '@prisma/client';
 import { BaseRepository } from '../../../core/base/BaseRepository.js';
-import type { IAgentRepository } from '../interfaces/IAgentRepository.js';
+import type { IAgentRepository, CommissionableBooking } from '../interfaces/IAgentRepository.js';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 
 export class AgentRepository extends BaseRepository<AgentProfile> implements IAgentRepository {
@@ -63,5 +64,20 @@ export class AgentRepository extends BaseRepository<AgentProfile> implements IAg
         },
       },
     }) as any;
+  }
+
+  async findCommissionableBookings(agentId: string): Promise<CommissionableBooking[]> {
+    const bookings = await this.prisma.client.booking.findMany({
+      where: { agentId, payment: { status: PaymentStatus.COMPLETED } },
+      select: { id: true, amount: true, finalFare: true, completedAt: true },
+      orderBy: { completedAt: 'desc' },
+    });
+
+    return bookings.map((b) => ({
+      id: b.id,
+      amount: Number(b.amount),
+      finalFare: b.finalFare !== null ? Number(b.finalFare) : null,
+      completedAt: b.completedAt,
+    }));
   }
 }

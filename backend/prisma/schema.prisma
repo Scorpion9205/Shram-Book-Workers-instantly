@@ -112,6 +112,19 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum SupportTicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
 model User {
   id                 String           @id @default(uuid())
   name               String
@@ -138,6 +151,7 @@ model User {
   providerProfile    ProviderProfile?
   providerReviews    Review[]         @relation("ProviderReviews")
   workerProfile      WorkerProfile?
+  supportTickets     SupportTicket[]
 }
 
 model WorkerProfile {
@@ -213,6 +227,7 @@ model Skill {
   instantRequestItems InstantRequestItem[]
   jobs                Job[]
   workers             WorkerSkill[]
+  pricingRule         PricingRule?
 
   @@index([categoryId])
 }
@@ -511,6 +526,32 @@ model ChatMessage {
   createdAt DateTime   @default(now())
 }
 
+model SupportTicket {
+  id        String                 @id @default(uuid())
+  userId    String
+  user      User                   @relation(fields: [userId], references: [id])
+  subject   String
+  status    SupportTicketStatus    @default(OPEN)
+  priority  SupportTicketPriority  @default(MEDIUM)
+  messages  SupportMessage[]
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+model SupportMessage {
+  id        String        @id @default(uuid())
+  ticketId  String
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  senderId  String
+  content   String
+  createdAt DateTime      @default(now())
+
+  @@index([ticketId])
+}
+
 model Payment {
   id                String        @id @default(uuid())
   bookingId         String        @unique
@@ -542,4 +583,17 @@ model Transaction {
   type      String   // CREDIT or DEBIT
   reference String
   createdAt DateTime @default(now())
+}
+
+// Admin-managed min/max fare caps per Skill. Normalized out of the generic
+// PlatformSetting JSON-blob key ("pricing:rule:{skillId}") it used to live under —
+// that key had no writer anywhere in the app, so this is a clean cutover, not a migration.
+model PricingRule {
+  id        String   @id @default(uuid())
+  skillId   String   @unique
+  skill     Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  minFare   Decimal?
+  maxFare   Decimal?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

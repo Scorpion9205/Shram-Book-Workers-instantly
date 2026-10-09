@@ -1,10 +1,11 @@
 import { BookingStatus } from '@prisma/client';
-import type { User, Booking, PlatformSetting, NotificationTemplate } from '@prisma/client';
+import type { User, Booking, PlatformSetting, NotificationTemplate, PricingRule } from '@prisma/client';
 import { BaseService } from '../../../core/base/BaseService.js';
 import type { IAdminService } from '../interfaces/IAdminService.js';
 import type { IUserRepository, UserFilter } from '../../users/interfaces/IUserRepository.js';
 import type { IBookingRepository, BookingFilter } from '../../bookings/interfaces/IBookingRepository.js';
 import type { IPlatformSettingRepository } from '../../platform-settings/interfaces/IPlatformSettingRepository.js';
+import type { IPricingRuleRepository, PricingRuleWithSkill } from '../../pricing-rules/interfaces/IPricingRuleRepository.js';
 import type { INotificationTemplateRepository } from '../../notifications/interfaces/INotificationTemplateRepository.js';
 import type { IWorkerRepository } from '../../workers/interfaces/IWorkerRepository.js';
 import type { IBookingStateService } from '../../bookings/interfaces/IBookingStateService.js';
@@ -26,6 +27,7 @@ export class AdminService extends BaseService implements IAdminService {
     private readonly notificationTemplateRepo: INotificationTemplateRepository,
     private readonly workerRepo: IWorkerRepository,
     private readonly bookingStateService: IBookingStateService,
+    private readonly pricingRuleRepo: IPricingRuleRepository,
   ) {
     super('AdminService');
   }
@@ -33,6 +35,82 @@ export class AdminService extends BaseService implements IAdminService {
   async getDashboardStats(): Promise<any> {
     this.log('Fetching system-wide admin dashboard statistics');
     return await this.adminRepo.getDashboardCounts();
+  }
+
+  async getPlatformAnalytics(range?: string, startDateStr?: string, endDateStr?: string): Promise<any> {
+    this.log('Fetching platform-wide analytics', { range });
+
+    const activeRange = range || '7days';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let trendStart = new Date(today);
+    trendStart.setDate(today.getDate() - 6);
+    let trendEnd = new Date(today);
+    trendEnd.setDate(today.getDate() + 1);
+
+    if (activeRange === '1month') {
+      trendStart = new Date(today);
+      trendStart.setDate(today.getDate() - 29);
+    } else if (activeRange === 'custom' && startDateStr && endDateStr) {
+      trendStart = new Date(startDateStr);
+      trendStart.setHours(0, 0, 0, 0);
+      trendEnd = new Date(endDateStr);
+      trendEnd.setHours(23, 59, 59, 999);
+    }
+
+    const [counts, analytics] = await Promise.all([
+      this.adminRepo.getDashboardCounts(),
+      this.adminRepo.getPlatformAnalyticsData(trendStart, trendEnd),
+    ]);
+
+    const diffDays = Math.min(
+      Math.ceil(Math.abs(trendEnd.getTime() - trendStart.getTime()) / (1000 * 60 * 60 * 24)),
+      100,
+    );
+
+    const signupTrend: { label: string; value: number }[] = [];
+    const bookingTrend: { label: string; value: number }[] = [];
+    const revenueTrend: { label: string; value: number }[] = [];
+
+    for (let i = 0; i < diffDays; i++) {
+      const current = new Date(trendStart);
+      current.setDate(trendStart.getDate() + i);
+      current.setHours(0, 0, 0, 0);
+      const next = new Date(current);
+      next.setDate(current.getDate() + 1);
+
+      const label = current.toLocaleDateString('en-IN', {
+        month: 'numeric',
+        day: 'numeric',
+        ...(activeRange === '7days' ? { weekday: 'short' } : {}),
+      });
+
+      signupTrend.push({
+        label,
+        value: analytics.signups.filter((s) => s.createdAt >= current && s.createdAt < next).length,
+      });
+      bookingTrend.push({
+        label,
+        value: analytics.bookings.filter((b) => b.createdAt >= current && b.createdAt < next).length,
+      });
+      revenueTrend.push({
+        label,
+        value: analytics.revenueEntries
+          .filter((r) => r.createdAt >= current && r.createdAt < next)
+          .reduce((sum, r) => sum + r.amount, 0),
+      });
+    }
+
+    return {
+      ...counts,
+      activeWorkers: analytics.activeWorkers,
+      activeProviders: analytics.activeProviders,
+      totalRevenue: analytics.totalRevenue,
+      signupTrend,
+      bookingTrend,
+      revenueTrend,
+    };
   }
 
   async getUsers(filter: UserFilter, page: number, limit: number): Promise<PaginatedResult<User>> {
@@ -120,6 +198,19 @@ export class AdminService extends BaseService implements IAdminService {
     await this.cache.del(cacheKey);
 
     return setting;
+  }
+
+  async getAllPricingRules(): Promise<PricingRuleWithSkill[]> {
+    this.log('Fetching all pricing rules');
+    return await this.pricingRuleRepo.findAll();
+  }
+
+  async upsertPricingRule(skillId: string, minFare?: number, maxFare?: number): Promise<PricingRule> {
+    this.log('Upserting pricing rule', { skillId, minFare, maxFare });
+    return await this.pricingRuleRepo.upsert(skillId, {
+      ...(minFare !== undefined && { minFare }),
+      ...(maxFare !== undefined && { maxFare }),
+    });
   }
 
   async getNotificationTemplates(page: number, limit: number): Promise<PaginatedResult<NotificationTemplate>> {

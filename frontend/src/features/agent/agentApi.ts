@@ -1,5 +1,5 @@
 import { apiSlice } from "@/services/api/apiSlice";
-import type { AgentProfile, Booking, DashboardAgent, JobApplication } from "@/types";
+import type { AgentProfile, AgentCommissionSummary, Booking, DashboardAgent, JobApplication } from "@/types";
 
 interface AgentDataResponse<T> {
   success: boolean;
@@ -43,6 +43,11 @@ export const agentApi = apiSlice.injectEndpoints({
       transformResponse: (response: AgentDataResponse<Booking[]>) => response.data,
       providesTags: ["AgentBooking"],
     }),
+    getAgentCommissions: builder.query<AgentCommissionSummary, void>({
+      query: () => "/agents/commissions",
+      transformResponse: (response: AgentDataResponse<AgentCommissionSummary>) => response.data,
+      providesTags: ["AgentBooking"],
+    }),
   }),
 });
 
@@ -53,4 +58,5 @@ export const {
   useGetAgentDashboardQuery,
   useGetAgentApplicationsQuery,
   useGetAgentBookingsQuery,
+  useGetAgentCommissionsQuery,
 } = agentApi;

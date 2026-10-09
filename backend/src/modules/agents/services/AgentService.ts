@@ -3,17 +3,36 @@ import { BaseService } from '../../../core/base/BaseService.js';
 import type { IAgentService } from '../interfaces/IAgentService.js';
 import type { IAgentRepository } from '../interfaces/IAgentRepository.js';
 import type { IAgentWorkerRepository } from '../interfaces/IAgentWorkerRepository.js';
+import type { IPlatformSettingRepository } from '../../platform-settings/interfaces/IPlatformSettingRepository.js';
+import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import { BookingStatus, ApplicationStatus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
+import { CacheKeys } from '../../../infrastructure/cache/cacheKeys.js';
+
+const DEFAULT_AGENT_COMMISSION_PERCENT = 10;
 
 export class AgentService extends BaseService implements IAgentService {
   constructor(
     private readonly agentRepo: IAgentRepository,
     private readonly agentWorkerRepo: IAgentWorkerRepository,
     private readonly prisma: PrismaService,
+    private readonly platformSettingRepo: IPlatformSettingRepository,
+    private readonly cache: ICacheService,
   ) {
     super('AgentService');
+  }
+
+  private async getAgentCommissionPercent(): Promise<number> {
+    const cacheKey = CacheKeys.platformSetting('agentCommissionPercent');
+    const cached = await this.cache.get<number>(cacheKey);
+    if (cached !== null) return cached;
+
+    const setting = await this.platformSettingRepo.get('agentCommissionPercent');
+    const percent = setting && setting.value ? Number(setting.value) : DEFAULT_AGENT_COMMISSION_PERCENT;
+
+    await this.cache.set(cacheKey, percent, 60);
+    return percent;
   }
 
   private async getAgentByUserId(userId: string): Promise<AgentProfile> {
@@ -182,5 +201,36 @@ export class AgentService extends BaseService implements IAgentService {
         createdAt: 'desc',
       },
     });
+  }
+
+  async getCommissionSummary(userId: string): Promise<any> {
+    this.log('Calculating agent commission summary', { agentUserId: userId });
+    const agent = await this.getAgentByUserId(userId);
+
+    const [bookings, commissionPercent] = await Promise.all([
+      this.agentRepo.findCommissionableBookings(agent.id),
+      this.getAgentCommissionPercent(),
+    ]);
+
+    const commissions = bookings.map((b) => {
+      const grossAmount = b.finalFare ?? b.amount;
+      return {
+        bookingId: b.id,
+        grossAmount,
+        commission: Math.round(grossAmount * (commissionPercent / 100) * 100) / 100,
+        completedAt: b.completedAt,
+      };
+    });
+
+    const totalGrossBookingValue = commissions.reduce((sum, c) => sum + c.grossAmount, 0);
+    const totalEarnings = commissions.reduce((sum, c) => sum + c.commission, 0);
+
+    return {
+      commissionPercent,
+      bookingCount: commissions.length,
+      totalGrossBookingValue,
+      totalEarnings,
+      recentCommissions: commissions.slice(0, 20),
+    };
   }
 }

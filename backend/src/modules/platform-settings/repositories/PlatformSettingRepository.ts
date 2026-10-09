@@ -45,16 +45,6 @@ export class PlatformSettingRepository extends BaseRepository<PlatformSetting>
     }
   }
 
-  async getPricingRule(
-    skillId: string,
-    tx?: Prisma.TransactionClient,
-  ): Promise<{ minFare?: number; maxFare?: number } | null> {
-    const key = `pricing:rule:${skillId}`;
-    const setting = await this.get(key, tx);
-    if (!setting) return null;
-    return setting.value as { minFare?: number; maxFare?: number };
-  }
-
   async listAll(tx?: Prisma.TransactionClient): Promise<PlatformSetting[]> {
     const client = tx ?? this.prisma.client;
     try {

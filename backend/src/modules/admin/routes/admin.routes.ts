@@ -13,7 +13,9 @@ export function createAdminRouter(controller: AdminController): Router {
 
   // Dashboard Overview
   router.get('/dashboard', controller.getDashboard);
-  router.get('/analytics/dashboard', controller.getDashboard);
+
+  // Platform-wide Analytics (revenue, active user counts, signup/booking/revenue trends)
+  router.get('/analytics/dashboard', controller.getPlatformAnalytics);
 
   // User Management
   router.get('/users', controller.getUsers);
@@ -29,6 +31,10 @@ export function createAdminRouter(controller: AdminController): Router {
   // Platform Settings Management
   router.get('/settings', controller.getAllSettings);
   router.put('/settings/:key', controller.updateSetting);
+
+  // Pricing Rules (per-skill min/max fare caps)
+  router.get('/pricing-rules', controller.getAllPricingRules);
+  router.put('/pricing-rules/:skillId', controller.upsertPricingRule);
 
   // Notification Templates Administration
   router.get('/notification-templates', controller.getNotificationTemplates);

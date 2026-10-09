@@ -5,4 +5,5 @@ export interface IAgentService {
   getDashboard(userId: string): Promise<any>;
   getMyApplications(userId: string): Promise<any[]>;
   getMyBookings(userId: string): Promise<any[]>;
+  getCommissionSummary(userId: string): Promise<any>;
 }

@@ -1,5 +1,6 @@
 import type { IFareCalculator, IPricingStrategy, PricingContext } from '../interfaces/IPricingStrategy.js';
 import type { IPlatformSettingRepository } from '../../platform-settings/interfaces/IPlatformSettingRepository.js';
+import type { IPricingRuleRepository } from '../../pricing-rules/interfaces/IPricingRuleRepository.js';
 import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import { CacheKeys } from '../../../infrastructure/cache/cacheKeys.js';
 import { Logger } from '../../../core/logger/Logger.js';
@@ -20,6 +21,7 @@ export class FareCalculator implements IFareCalculator {
     durationStrategy: IPricingStrategy,
     private readonly platformSettingRepo: IPlatformSettingRepository,
     private readonly cache: ICacheService,
+    private readonly pricingRuleRepo: IPricingRuleRepository,
   ) {
     this.optionalStrategies = [
       distanceStrategy,
@@ -67,14 +69,17 @@ export class FareCalculator implements IFareCalculator {
   }
 
   private async applyPricingRules(amount: number, skillId: string): Promise<number> {
-    const rules = await this.platformSettingRepo.getPricingRule(skillId);
-    if (!rules) return amount;
+    const rule = await this.pricingRuleRepo.findBySkillId(skillId);
+    if (!rule) return amount;
 
-    if (rules.minFare !== undefined && amount < rules.minFare) {
-      return rules.minFare;
+    const minFare = rule.minFare !== null ? Number(rule.minFare) : undefined;
+    const maxFare = rule.maxFare !== null ? Number(rule.maxFare) : undefined;
+
+    if (minFare !== undefined && amount < minFare) {
+      return minFare;
     }
-    if (rules.maxFare !== undefined && amount > rules.maxFare) {
-      return rules.maxFare;
+    if (maxFare !== undefined && amount > maxFare) {
+      return maxFare;
     }
     return amount;
   }

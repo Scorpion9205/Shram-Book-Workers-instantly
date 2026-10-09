@@ -54,6 +54,8 @@ import {
 
 import { ChatRepository, ChatService, ChatController, createChatRouter } from '../../modules/chat/index.js';
 import { CategoryRepository, CategoryService, CategoryController, createCategoryRouter } from '../../modules/categories/index.js';
+import { SupportRepository, SupportService, SupportController, createSupportRouter } from '../../modules/support/index.js';
+import { PricingRuleRepository } from '../../modules/pricing-rules/index.js';
 
 // Notifications Module Imports
 import {
@@ -104,6 +106,7 @@ export interface AppDependencies {
   pricingRouter: Router;
   chatRouter: Router;
   categoryRouter: Router;
+  supportRouter: Router;
 }
 
 /**
@@ -151,6 +154,8 @@ export async function wireModules(
   const pricingSkillRepo = new PricingSkillRepository(prismaService);
   const chatRepo = new ChatRepository(prismaService);
   const categoryRepo = new CategoryRepository(prismaService);
+  const supportRepo = new SupportRepository(prismaService);
+  const pricingRuleRepo = new PricingRuleRepository(prismaService);
 
   // 3. Providers
   const razorpayProvider = new RazorpayProvider(env.RAZORPAY_KEY_ID!, env.RAZORPAY_KEY_SECRET!);
@@ -199,6 +204,8 @@ export async function wireModules(
     agentRepo,
     agentWorkerRepo,
     prismaService,
+    platformSettingRepo,
+    cacheService,
   );
   const paymentService = new PaymentService(
     paymentRepo,
@@ -221,6 +228,7 @@ export async function wireModules(
     notificationTemplateRepo,
     workerRepo,
     bookingStateService,
+    pricingRuleRepo,
   );
   const notificationDispatcher = new NotificationDispatcher(
     notificationTemplateRepo,
@@ -258,6 +266,7 @@ export async function wireModules(
   const dashboardService = new DashboardService(dashboardRepo, cacheService);
   const chatService = new ChatService(chatRepo, bookingRepo, userRepo);
   const categoryService = new CategoryService(categoryRepo);
+  const supportService = new SupportService(supportRepo, userRepo);
 
   const baseRateStrategy = new BaseRateStrategy(pricingSkillRepo);
   const distanceStrategy = new DistanceStrategy(mapsProvider, cacheService, platformSettingRepo);
@@ -272,6 +281,7 @@ export async function wireModules(
     durationStrategy,
     platformSettingRepo,
     cacheService,
+    pricingRuleRepo,
   );
 
   // 5. Controllers
@@ -293,6 +303,7 @@ export async function wireModules(
   const dashboardController = new DashboardController(dashboardService);
   const chatController = new ChatController(chatService);
   const categoryController = new CategoryController(categoryService);
+  const supportController = new SupportController(supportService);
   const pricingController = new PricingController(fareCalculator);
 
   // 6. Routers
@@ -314,6 +325,7 @@ export async function wireModules(
   const dashboardRouter = createDashboardRouter(dashboardController);
   const chatRouter = createChatRouter(chatController);
   const categoryRouter = createCategoryRouter(categoryController);
+  const supportRouter = createSupportRouter(supportController);
   const pricingRouter = createPricingRouter(pricingController);
 
   // 7. Start Queue Consumers
@@ -361,5 +373,6 @@ export async function wireModules(
     pricingRouter,
     chatRouter,
     categoryRouter,
+    supportRouter,
   };
 }

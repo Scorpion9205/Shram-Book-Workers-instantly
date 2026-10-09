@@ -49,5 +49,12 @@ export function createAgentRouter(controller: AgentController): Router {
     controller.getMyBookings,
   );
 
+  router.get(
+    '/commissions',
+    authenticate,
+    authorize(UserRole.AGENT),
+    controller.getCommissionSummary,
+  );
+
   return router;
 }

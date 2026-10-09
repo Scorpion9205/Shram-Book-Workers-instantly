@@ -12,7 +12,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useAppDispatch, useAppSelector } from "@/hooks/redux";
+import { useAppDispatch } from "@/hooks/redux";
+import { useAuth } from "@/hooks/useAuth";
 import { clearAuth } from "@/store/authSlice";
 import { useLogoutMutation } from "@/features/auth/authApi";
 import { toast } from "sonner";
@@ -21,7 +22,7 @@ import { dashboardPathForRole } from "@/lib/utils/role-routing";
 export function ProfileMenu() {
   const router = useRouter();
   const dispatch = useAppDispatch();
-  const user = useAppSelector((s) => s.auth.user);
+  const { user } = useAuth();
   const [logout] = useLogoutMutation();
 
   const basePath = dashboardPathForRole(user?.role).replace("/dashboard", "");

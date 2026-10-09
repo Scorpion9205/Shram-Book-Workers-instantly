@@ -5,7 +5,9 @@ import { io, type Socket } from "socket.io-client";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { SOCKET_URL } from "@/lib/constants";
-import { useAppDispatch, useAppSelector } from "@/hooks/redux";
+import { useAppDispatch } from "@/hooks/redux";
+import { useAuth } from "@/hooks/useAuth";
+import { usePermission } from "@/hooks/usePermission";
 import { showIncomingInstantRequest } from "@/store/uiSlice";
 import { notificationReceived } from "@/store/notificationSlice";
 import { apiSlice } from "@/services/api/apiSlice";
@@ -26,9 +28,8 @@ export function useSocket() {
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const dispatch = useAppDispatch();
-  const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
-  const accessToken = useAppSelector((s) => s.auth.accessToken);
-  const role = useAppSelector((s) => s.auth.user?.role);
+  const { isAuthenticated, accessToken } = useAuth();
+  const { isWorker, isProvider } = usePermission();
   const socketRef = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
 
@@ -36,7 +37,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   // skill rooms this socket should join so instant-request pushes for
   // those skills reach it.
   const { data: workerProfile } = useGetMyWorkerProfileQuery(undefined, {
-    skip: !isAuthenticated || role !== "worker",
+    skip: !isAuthenticated || !isWorker,
   });
 
   useEffect(() => {
@@ -58,7 +59,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     socket.on("connect", () => {
       setConnected(true);
-      if (role === "worker") {
+      if (isWorker) {
         workerProfile?.skills?.forEach((s) => socket.emit("join_skill_room", s.id));
       }
     });
@@ -105,10 +106,10 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       if (msg) toast.success(msg);
 
       if (booking.status === "WORKER_ASSIGNED") {
-        if (role?.toLowerCase() === "worker") {
+        if (isWorker) {
           toast.success("You have been assigned to a booking!");
           router.push(`/worker/booking/${booking.id}`);
-        } else if (role?.toLowerCase() === "provider") {
+        } else if (isProvider) {
           router.push(`/provider/booking/${booking.id}`);
         }
       }
@@ -138,20 +139,20 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       socketRef.current = null;
       setConnected(false);
     };
-  }, [isAuthenticated, accessToken, role, dispatch]);
+  }, [isAuthenticated, accessToken, isWorker, isProvider, dispatch]);
 
   // Re-join skill rooms if the worker's skill list loads or changes
   // after the socket already connected (e.g. profile fetch finishes late).
   useEffect(() => {
     const socket = socketRef.current;
-    if (!socket || !connected || role !== "worker" || !workerProfile?.skills) return;
+    if (!socket || !connected || !isWorker || !workerProfile?.skills) return;
 
     workerProfile.skills.forEach((s) => socket.emit("join_skill_room", s.id));
 
     return () => {
       workerProfile.skills?.forEach((s) => socket.emit("leave_skill_room", s.id));
     };
-  }, [workerProfile, role, connected]);
+  }, [workerProfile, isWorker, connected]);
 
   return (
     <SocketContext.Provider value={{ socket: socketRef.current, connected }}>

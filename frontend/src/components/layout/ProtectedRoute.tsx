@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAppSelector } from "@/hooks/redux";
+import { useAuth } from "@/hooks/useAuth";
 import type { UserRole } from "@/types";
 import { dashboardPathForRole } from "@/lib/utils/role-routing";
 
@@ -14,7 +14,7 @@ export function ProtectedRoute({
   role?: UserRole;
 }) {
   const router = useRouter();
-  const { isAuthenticated, loading, user } = useAppSelector((s) => s.auth);
+  const { isAuthenticated, loading, user } = useAuth();
 
   useEffect(() => {
     if (loading) return;
@@ -41,7 +41,7 @@ export function ProtectedRoute({
 /** Guest-only wrapper for auth pages — redirects logged-in users to their dashboard. */
 export function GuestRoute({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const { isAuthenticated, loading, user } = useAppSelector((s) => s.auth);
+  const { isAuthenticated, loading, user } = useAuth();
 
   useEffect(() => {
     if (loading) return;

@@ -11,6 +11,8 @@ import {
   Users,
   UserCog,
   Mail,
+  BarChart3,
+  Wallet,
 } from "lucide-react";
 
 export interface NavItem {
@@ -45,6 +47,7 @@ export const agentNavItems: NavItem[] = [
   { label: "Workers", href: "/agent/workers", icon: Users },
   { label: "Applications", href: "/agent/applications", icon: ClipboardList },
   { label: "Bookings", href: "/agent/bookings", icon: CalendarCheck },
+  { label: "Commissions", href: "/agent/commissions", icon: Wallet },
   { label: "Profile", href: "/agent/profile", icon: UserCog },
   { label: "Settings", href: "/agent/settings", icon: Settings },
 ];
@@ -72,6 +75,7 @@ export const agentBottomNavItems: NavItem[] = [
 
 export const adminNavItems: NavItem[] = [
   { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
+  { label: "Analytics", href: "/admin/analytics", icon: BarChart3 },
   { label: "Users", href: "/admin/users", icon: Users },
   { label: "Bookings", href: "/admin/bookings", icon: CalendarCheck },
   { label: "Settings", href: "/admin/settings", icon: Settings },

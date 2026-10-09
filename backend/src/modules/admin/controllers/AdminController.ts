@@ -38,6 +38,11 @@ const UpdateSettingSchema = z.object({
   value: z.any(),
 });
 
+const UpsertPricingRuleBodySchema = z.object({
+  minFare: z.number().nonnegative().optional(),
+  maxFare: z.number().nonnegative().optional(),
+});
+
 const UpdateTemplateBodySchema = z.object({
   subject: z.string().optional().nullable(),
   body: z.string().min(1),
@@ -57,6 +62,16 @@ export class AdminController extends BaseController {
   getDashboard = async (req: Request, res: Response): Promise<void> => {
     const stats = await this.adminService.getDashboardStats();
     this.ok(res, stats, 'Admin dashboard statistics retrieved successfully.');
+  };
+
+  getPlatformAnalytics = async (req: Request, res: Response): Promise<void> => {
+    const { range, startDate, endDate } = req.query;
+    const analytics = await this.adminService.getPlatformAnalytics(
+      range as string,
+      startDate as string,
+      endDate as string,
+    );
+    this.ok(res, analytics, 'Platform analytics retrieved successfully.');
   };
 
   getUsers = async (req: Request, res: Response): Promise<void> => {
@@ -113,6 +128,18 @@ export class AdminController extends BaseController {
     const dto = this.validate(UpdateSettingSchema, req.body);
     const setting = await this.adminService.updatePlatformSetting(key, dto.value);
     this.ok(res, setting, 'Platform setting updated successfully.');
+  };
+
+  getAllPricingRules = async (req: Request, res: Response): Promise<void> => {
+    const rules = await this.adminService.getAllPricingRules();
+    this.ok(res, { rules }, 'Pricing rules retrieved successfully.');
+  };
+
+  upsertPricingRule = async (req: Request, res: Response): Promise<void> => {
+    const skillId = req.params.skillId as string;
+    const dto = this.validate(UpsertPricingRuleBodySchema, req.body);
+    const rule = await this.adminService.upsertPricingRule(skillId, dto.minFare, dto.maxFare);
+    this.ok(res, { rule }, 'Pricing rule updated successfully.');
   };
 
   getNotificationTemplates = async (req: Request, res: Response): Promise<void> => {

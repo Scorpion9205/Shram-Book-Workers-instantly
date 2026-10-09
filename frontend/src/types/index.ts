@@ -366,6 +366,21 @@ export interface DashboardAgent {
   completedBookings: number;
 }
 
+export interface AgentCommission {
+  bookingId: string;
+  grossAmount: number;
+  commission: number;
+  completedAt: string | null;
+}
+
+export interface AgentCommissionSummary {
+  commissionPercent: number;
+  bookingCount: number;
+  totalGrossBookingValue: number;
+  totalEarnings: number;
+  recentCommissions: AgentCommission[];
+}
+
 export interface AppNotification {
   id: string;
   title: string;

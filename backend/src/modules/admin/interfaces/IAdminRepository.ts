@@ -7,6 +7,16 @@ export interface DashboardCounts {
   totalJobs: number;
 }
 
+export interface PlatformAnalyticsRawData {
+  activeWorkers: number;
+  activeProviders: number;
+  totalRevenue: number;
+  signups: { createdAt: Date }[];
+  bookings: { createdAt: Date }[];
+  revenueEntries: { createdAt: Date; amount: number }[];
+}
+
 export interface IAdminRepository {
   getDashboardCounts(): Promise<DashboardCounts>;
+  getPlatformAnalyticsData(trendStart: Date, trendEnd: Date): Promise<PlatformAnalyticsRawData>;
 }

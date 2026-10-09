@@ -45,4 +45,10 @@ export class AgentController extends BaseController {
     const bookings = await this.agentService.getMyBookings(user.userId);
     this.ok(res, bookings, 'Agent bookings retrieved successfully.');
   };
+
+  getCommissionSummary = async (req: Request, res: Response): Promise<void> => {
+    const user = (req as any).user;
+    const summary = await this.agentService.getCommissionSummary(user.userId);
+    this.ok(res, summary, 'Agent commission summary retrieved successfully.');
+  };
 }
