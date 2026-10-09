@@ -153,6 +153,7 @@ mountDI(app, "/api/v1/auth", (deps) => deps.authRouter);
 mountDI(app, "/api/v1/location", (deps) => deps.locationRouter);
 mountDI(app, "/api/v1/providers", (deps) => deps.providerRouter);
 mountDI(app, "/api/v1/skills", (deps) => deps.skillRouter);
+mountDI(app, "/api/v1/categories", (deps) => deps.categoryRouter);
 mountDI(app, "/api/v1/dashboard", (deps) => deps.dashboardRouter);
 mountDI(app, "/api/v1/pricing", (deps) => deps.pricingRouter);
 mountDI(app, "/api/v1/users", (deps) => deps.userRouter);

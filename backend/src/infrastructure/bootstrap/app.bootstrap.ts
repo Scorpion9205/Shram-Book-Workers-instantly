@@ -53,6 +53,7 @@ import {
 } from '../../modules/pricing/index.js';
 
 import { ChatRepository, ChatService, ChatController, createChatRouter } from '../../modules/chat/index.js';
+import { CategoryRepository, CategoryService, CategoryController, createCategoryRouter } from '../../modules/categories/index.js';
 
 // Notifications Module Imports
 import {
@@ -102,6 +103,7 @@ export interface AppDependencies {
   dashboardRouter: Router;
   pricingRouter: Router;
   chatRouter: Router;
+  categoryRouter: Router;
 }
 
 /**
@@ -148,6 +150,7 @@ export async function wireModules(
   const dashboardRepo = new DashboardRepository(prismaService);
   const pricingSkillRepo = new PricingSkillRepository(prismaService);
   const chatRepo = new ChatRepository(prismaService);
+  const categoryRepo = new CategoryRepository(prismaService);
 
   // 3. Providers
   const razorpayProvider = new RazorpayProvider(env.RAZORPAY_KEY_ID!, env.RAZORPAY_KEY_SECRET!);
@@ -254,6 +257,7 @@ export async function wireModules(
   const providerService = new ProviderService(providerRepo);
   const dashboardService = new DashboardService(dashboardRepo, cacheService);
   const chatService = new ChatService(chatRepo, bookingRepo, userRepo);
+  const categoryService = new CategoryService(categoryRepo);
 
   const baseRateStrategy = new BaseRateStrategy(pricingSkillRepo);
   const distanceStrategy = new DistanceStrategy(mapsProvider, cacheService, platformSettingRepo);
@@ -288,6 +292,7 @@ export async function wireModules(
   const providerController = new ProviderController(providerService);
   const dashboardController = new DashboardController(dashboardService);
   const chatController = new ChatController(chatService);
+  const categoryController = new CategoryController(categoryService);
   const pricingController = new PricingController(fareCalculator);
 
   // 6. Routers
@@ -308,6 +313,7 @@ export async function wireModules(
   const providerRouter = createProviderRouter(providerController);
   const dashboardRouter = createDashboardRouter(dashboardController);
   const chatRouter = createChatRouter(chatController);
+  const categoryRouter = createCategoryRouter(categoryController);
   const pricingRouter = createPricingRouter(pricingController);
 
   // 7. Start Queue Consumers
@@ -354,5 +360,6 @@ export async function wireModules(
     dashboardRouter,
     pricingRouter,
     chatRouter,
+    categoryRouter,
   };
 }

@@ -6,7 +6,10 @@ export class SkillRepository implements ISkillRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async findAllSkills(): Promise<Skill[]> {
-    return this.prisma.client.skill.findMany({ orderBy: { name: "asc" } });
+    return this.prisma.client.skill.findMany({
+      orderBy: { name: "asc" },
+      include: { category: true },
+    });
   }
 
   async upsertWorkerProfile(userId: string): Promise<{ id: string }> {
