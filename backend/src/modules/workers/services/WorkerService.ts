@@ -3,7 +3,7 @@ import { BaseService } from '../../../core/base/BaseService.js';
 import type { IWorkerService } from '../interfaces/IWorkerService.js';
 import type { IWorkerRepository } from '../interfaces/IWorkerRepository.js';
 import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
-import { ConflictException, NotFoundException } from '../../../core/exceptions/index.js';
+import { BusinessException, ConflictException, NotFoundException } from '../../../core/exceptions/index.js';
 
 export class WorkerService extends BaseService implements IWorkerService {
   constructor(
@@ -50,6 +50,21 @@ export class WorkerService extends BaseService implements IWorkerService {
 
   async updateAvailability(userId: string, isAvailable: boolean): Promise<WorkerProfile> {
     this.log('Updating worker availability status', { userId, isAvailable });
+
+    // Going online with no known location previously succeeded silently and just skipped the
+    // Redis geo-index sync below — the worker's own UI showed them "Online" with no error, but
+    // they'd never actually appear in any instant-request match. Reject this case outright
+    // instead, so the client finds out immediately rather than the worker silently going deaf.
+    if (isAvailable) {
+      const current = await this.workerRepo.getProfileWithSkillsAndUser(userId);
+      if (!current || current.latitude === null || current.longitude === null) {
+        throw new BusinessException(
+          'LOCATION_REQUIRED',
+          'Your location is required to go online. Please enable location access and try again.',
+        );
+      }
+    }
+
     const updated = await this.workerRepo.updateAvailability(userId, isAvailable);
 
     // Sync Redis GEO presence index
@@ -57,7 +72,7 @@ export class WorkerService extends BaseService implements IWorkerService {
     if (workerWithSkills) {
       for (const item of workerWithSkills.skills) {
         const geoKey = `geo:instant-workers:${item.skillId}`;
-        
+
         if (
           isAvailable &&
           workerWithSkills.user.isActive &&

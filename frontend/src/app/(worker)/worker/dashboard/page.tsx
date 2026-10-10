@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -30,10 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  useGetMyWorkerProfileQuery,
-  useUpdateAvailabilityMutation,
-} from "@/features/worker/workerApi";
+import { useGetMyWorkerProfileQuery } from "@/features/worker/workerApi";
 import {
   useGetNearbyInstantRequestsQuery,
   useAcceptInstantRequestItemMutation,
@@ -55,9 +51,8 @@ export default function WorkerDashboardPage() {
     endDate: range === "custom" && endDate ? endDate : undefined,
   });
   const { data: profile } = useGetMyWorkerProfileQuery();
-  const [updateAvailability, { isLoading: isToggling }] = useUpdateAvailabilityMutation();
 
-  
+
   const {
     data: nearbyRequests,
     isLoading: isNearbyLoading,
@@ -84,15 +79,6 @@ export default function WorkerDashboardPage() {
     if (h < 17) return "Good afternoon";
     return "Good evening";
   })();
-
-  async function handleToggleAvailability(checked: boolean) {
-    try {
-      await updateAvailability({ isAvailable: checked }).unwrap();
-      toast.success(checked ? "You're now online and visible to providers" : "You're now offline");
-    } catch {
-      toast.error("Couldn't update availability — please try again");
-    }
-  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">

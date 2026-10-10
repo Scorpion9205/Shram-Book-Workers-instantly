@@ -1,10 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { MapPin, Navigation } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+
+const LocationPickerMap = dynamic(
+  () => import("@/components/maps/LocationPickerMap").then((m) => m.LocationPickerMap),
+  { ssr: false }
+);
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN || "";
 
@@ -34,6 +40,7 @@ export function AddressSearch({ value = "", onChange, placeholder = "Search addr
   const [isDetecting, setIsDetecting] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedPosition, setSelectedPosition] = useState<{ lat: number; lng: number } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -97,7 +104,32 @@ export function AddressSearch({ value = "", onChange, placeholder = "Search addr
     setInputValue(suggestion.address);
     setShowSuggestions(false);
     setSuggestions([]);
+    setSelectedPosition({ lat: suggestion.lat, lng: suggestion.lng });
     onChange(suggestion);
+  }
+
+  async function reverseGeocode(lat: number, lng: number): Promise<{ address: string; placeId: string } | null> {
+    if (!MAPBOX_TOKEN) return null;
+    try {
+      const url = `https://api.mapbox.com/search/geocode/v6/reverse?longitude=${lng}&latitude=${lat}&access_token=${MAPBOX_TOKEN}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const feature = data.features?.[0];
+      return {
+        address: feature?.properties?.full_address || `Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
+        placeId: feature?.properties?.mapbox_id || "map_pin",
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async function handlePinDragged(lat: number, lng: number) {
+    setSelectedPosition({ lat, lng });
+    const result = await reverseGeocode(lat, lng);
+    const address = result?.address || `Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+    setInputValue(address);
+    onChange({ address, lat, lng, placeId: result?.placeId || "map_pin" });
   }
 
   const handleUseCurrentLocation = () => {
@@ -115,18 +147,15 @@ export function AddressSearch({ value = "", onChange, placeholder = "Search addr
       async (position) => {
         const { latitude, longitude } = position.coords;
         try {
-          const url = `https://api.mapbox.com/search/geocode/v6/reverse?longitude=${longitude}&latitude=${latitude}&access_token=${MAPBOX_TOKEN}`;
-          const res = await fetch(url);
-          const data = await res.json();
-          const feature = data.features?.[0];
-
+          const result = await reverseGeocode(latitude, longitude);
           const details: AddressDetails = {
-            address: feature?.properties?.full_address || `Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`,
+            address: result?.address || `Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`,
             lat: latitude,
             lng: longitude,
-            placeId: feature?.properties?.mapbox_id || "current_location",
+            placeId: result?.placeId || "current_location",
           };
           setInputValue(details.address);
+          setSelectedPosition({ lat: latitude, lng: longitude });
           onChange(details);
         } catch {
           toast.error("Failed to reverse geocode current coordinates.");
@@ -144,21 +173,40 @@ export function AddressSearch({ value = "", onChange, placeholder = "Search addr
 
   return (
     <div className="relative space-y-2" ref={containerRef}>
-      <div className="relative">
-        <MapPin className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          type="text"
-          value={inputValue}
-          onChange={handleInputChange}
-          onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-          placeholder={placeholder}
-          className="pl-9 pr-24"
-        />
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <MapPin className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="text"
+            value={inputValue}
+            onChange={handleInputChange}
+            onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+            placeholder={placeholder}
+            className="truncate pl-9"
+          />
+
+          {showSuggestions && suggestions.length > 0 && (
+            <div className="absolute z-20 w-full overflow-hidden rounded-xl border border-border bg-card shadow-lg">
+              {suggestions.map((s) => (
+                <button
+                  key={s.placeId || s.address}
+                  type="button"
+                  onClick={() => handleSelectSuggestion(s)}
+                  className="flex w-full items-start gap-2 px-3.5 py-2.5 text-left text-sm hover:bg-secondary"
+                >
+                  <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{s.address}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <Button
           type="button"
-          variant="ghost"
+          variant="outline"
           size="sm"
-          className="absolute right-1 top-1/2 h-8 -translate-y-1/2 text-xs font-semibold text-primary hover:bg-primary/5"
+          className="shrink-0 text-xs font-semibold text-primary"
           onClick={handleUseCurrentLocation}
           loading={isDetecting}
         >
@@ -167,23 +215,16 @@ export function AddressSearch({ value = "", onChange, placeholder = "Search addr
         </Button>
       </div>
 
-      {showSuggestions && suggestions.length > 0 && (
-        <div className="absolute z-20 w-full overflow-hidden rounded-xl border border-border bg-card shadow-lg">
-          {suggestions.map((s) => (
-            <button
-              key={s.placeId || s.address}
-              type="button"
-              onClick={() => handleSelectSuggestion(s)}
-              className="flex w-full items-start gap-2 px-3.5 py-2.5 text-left text-sm hover:bg-secondary"
-            >
-              <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-              <span className="truncate">{s.address}</span>
-            </button>
-          ))}
-        </div>
-      )}
       {isSearching && !showSuggestions && (
         <p className="text-xs text-muted-foreground">Searching...</p>
+      )}
+
+      {selectedPosition && (
+        <LocationPickerMap
+          lat={selectedPosition.lat}
+          lng={selectedPosition.lng}
+          onPositionChange={handlePinDragged}
+        />
       )}
     </div>
   );

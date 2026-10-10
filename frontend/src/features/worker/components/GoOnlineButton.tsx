@@ -44,8 +44,9 @@ export function GoOnlineButton() {
               socket.emit("worker:go_online", { latitude, longitude });
             }
             toast.success("You are now online! Watching for instant requests...");
-          } catch (err) {
-            toast.error("Failed to go online.");
+          } catch (err: unknown) {
+            const message = (err as { data?: { message?: string } })?.data?.message || "Failed to go online.";
+            toast.error(message);
           }
         },
         (error) => {
