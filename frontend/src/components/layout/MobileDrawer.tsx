@@ -61,7 +61,7 @@ export function MobileDrawer({ items }: { items: NavItem[] }) {
                         : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                     )}
                   >
-                    <Icon className="size-[18px]" />
+                    <Icon className="size-4.5" />
                     {item.label}
                   </Link>
                 );

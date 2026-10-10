@@ -165,7 +165,7 @@ export default function ProviderDashboardPage() {
                 </div>
               )}
               <Select value={range} onValueChange={setRange}>
-                <SelectTrigger className="h-9 w-[130px] rounded-lg">
+                <SelectTrigger className="h-9 w-32.5 rounded-lg">
                   <SelectValue placeholder="Select range" />
                 </SelectTrigger>
                 <SelectContent>

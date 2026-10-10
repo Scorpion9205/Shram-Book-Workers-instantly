@@ -50,7 +50,7 @@ export function Sidebar({ items }: { items: NavItem[] }) {
                   transition={{ type: "spring", stiffness: 350, damping: 30 }}
                 />
               )}
-              <Icon className="size-[18px] shrink-0" />
+              <Icon className="size-4.5 shrink-0" />
               {!collapsed && <span className="truncate">{item.label}</span>}
             </Link>
           );
