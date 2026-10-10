@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Briefcase, ShieldCheck, Zap, Star } from "lucide-react";
+import { Logo } from "@/components/layout/Logo";
 
 export function AuthLayout({
   children,
@@ -21,9 +22,7 @@ export function AuthLayout({
         <div className="absolute -bottom-24 -right-10 size-96 rounded-full bg-accent/20 blur-3xl animate-[float_10s_ease-in-out_infinite]" />
 
         <Link href="/" className="relative z-10 flex items-center gap-2.5">
-          <div className="flex size-10 items-center justify-center rounded-xl bg-white text-primary font-bold text-lg">
-            S
-          </div>
+          <Logo size={40} className="bg-white" />
           <span className="text-xl font-bold">SHRAM</span>
         </Link>
 
@@ -76,9 +75,7 @@ export function AuthLayout({
           className="w-full max-w-sm"
         >
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold">
-              S
-            </div>
+            <Logo size={36} />
             <span className="text-lg font-bold">SHRAM</span>
           </div>
           <h1 className="text-2xl font-bold tracking-tight">{title}</h1>

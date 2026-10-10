@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "@/hooks/redux";
 import { setMobileDrawerOpen } from "@/store/uiSlice";
+import { Logo } from "@/components/layout/Logo";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "@/lib/constants/nav";
 
@@ -34,9 +35,7 @@ export function MobileDrawer({ items }: { items: NavItem[] }) {
           >
             <div className="mb-6 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold">
-                  S
-                </div>
+                <Logo size={36} />
                 <span className="text-lg font-bold">SHRAM</span>
               </div>
               <button

@@ -161,7 +161,7 @@ export async function wireModules(
   const razorpayProvider = new RazorpayProvider(env.RAZORPAY_KEY_ID!, env.RAZORPAY_KEY_SECRET!);
   const emailProvider = new ResendProvider(env.RESEND_API_KEY, env.EMAIL_FROM);
   const smsProvider = new ExotelProvider(env.EXOTEL_API_KEY, env.EXOTEL_API_TOKEN, env.EXOTEL_SID, env.EXOTEL_FROM);
-  const pushProvider = new FirebaseProvider(env.FIREBASE_SERVICE_ACCOUNT);
+  const pushProvider = new FirebaseProvider(env.FIREBASE_PROJECT_ID, env.FIREBASE_CLIENT_EMAIL, env.FIREBASE_PRIVATE_KEY);
   const s3Provider = new S3Provider(env.AWS_S3_BUCKET, env.AWS_REGION, env.AWS_ACCESS_KEY_ID, env.AWS_SECRET_ACCESS_KEY);
   S3Provider.setInstance(s3Provider);
   const mapsProvider = new MapsProvider();

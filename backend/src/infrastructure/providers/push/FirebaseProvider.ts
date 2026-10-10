@@ -6,22 +6,22 @@ export class FirebaseProvider implements IPushProvider {
   private readonly logger = new Logger('FirebaseProvider');
   private readonly app: any = null;
 
-  constructor(serviceAccountJson?: string) {
-    if (!serviceAccountJson) {
+  constructor(projectId?: string, clientEmail?: string, privateKey?: string) {
+    if (!projectId || !clientEmail || !privateKey) {
       this.logger.warn('Firebase service account config is missing. Push notifications will be logged as warnings.');
       return;
     }
 
     try {
-      let credentials;
-      try {
-        credentials = JSON.parse(serviceAccountJson);
-      } catch (err) {
-        credentials = JSON.parse(Buffer.from(serviceAccountJson, 'base64').toString('utf8'));
-      }
-
       this.app = admin.initializeApp({
-        credential: (admin as any).credential.cert(credentials),
+        // .env files typically store the private key with literal "\n" escape sequences
+        // rather than real newlines — without this replace, Firebase rejects the PEM as
+        // malformed.
+        credential: admin.cert({
+          projectId,
+          clientEmail,
+          privateKey: privateKey.replace(/\\n/g, '\n'),
+        }),
       });
       this.logger.info('Firebase Admin SDK initialized successfully');
     } catch (err: any) {

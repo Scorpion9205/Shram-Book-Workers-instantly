@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
+import { Logo } from "@/components/layout/Logo";
 import { cn } from "@/lib/utils";
 
 export function LandingNavbar() {
@@ -27,9 +28,7 @@ export function LandingNavbar() {
     >
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 lg:px-8">
         <Link href="/" className="flex items-center gap-2.5">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold">
-            S
-          </div>
+          <Logo size={36} />
           <span className="text-lg font-bold tracking-tight">SHRAM</span>
         </Link>
 

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Briefcase, AtSign, Globe, Send } from "lucide-react";
+import { Logo } from "@/components/layout/Logo";
 
 export function LandingFooter() {
   return (
@@ -8,9 +9,7 @@ export function LandingFooter() {
         <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
           <div className="col-span-2 sm:col-span-1">
             <div className="flex items-center gap-2.5">
-              <div className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold">
-                S
-              </div>
+              <Logo size={36} />
               <span className="text-lg font-bold">SHRAM</span>
             </div>
             <p className="mt-3 text-sm text-muted-foreground">

@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useState, useEffect } from "react";
+import dynamic from "next/dynamic";
 import { ArrowLeft, Phone, MapPin, Star, MessageCircle } from "lucide-react";
 import Link from "next/link";
 
@@ -14,8 +15,14 @@ import { EmptyState } from "@/components/cards/EmptyState";
 import { useGetBookingByIdQuery, useSettleBookingMutation, useCreatePaymentOrderMutation } from "@/features/booking/bookingApi";
 import { useSocket } from "@/providers/SocketProvider";
 import { useBookingLocationTracking } from "@/hooks/useBookingLocationTracking";
-import { LiveTrackingMap } from "@/components/maps/LiveTrackingMap";
 import { toast } from "sonner";
+
+// mapbox-gl is a large, browser-only library (DOM/window dependent) — loading it eagerly
+// added ~300kB to this page's bundle even for bookings that never reach WORKER_EN_ROUTE.
+const LiveTrackingMap = dynamic(
+  () => import("@/components/maps/LiveTrackingMap").then((m) => m.LiveTrackingMap),
+  { ssr: false, loading: () => <div className="h-64 w-full animate-pulse rounded-2xl bg-secondary" /> },
+);
 
 export default function ProviderBookingDetailPage({ params }: { params: Promise<{ bookingId: string }> }) {
   const { bookingId } = use(params);

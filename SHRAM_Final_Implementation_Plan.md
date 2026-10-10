@@ -322,6 +322,37 @@ User asked for one more full deep pass across both backend and frontend before c
 
 19 new backend unit tests added across `WalletRepository`, `WalletConsumer`, `BookingService`, `ApplicationService`, `AdminService`, `ReviewService`, `RabbitMQEventPublisher`, and `PaymentService`. Verified: `tsc --noEmit` clean on both, backend suite 107/107, frontend `eslint`/`next build` clean (41/41 routes).
 
+### Unplanned — ✅ DONE (10 Oct 2026): Migrated from Google Maps to Mapbox
+Google Cloud billing enablement kept failing on the user's account (a one-time ₹3,000 prepayment requirement on top of the earlier billing-setup errors), blocking address autocomplete, "Locate Me", and the newly-built live tracking map entirely. Rather than stay blocked on a third-party billing issue, swapped the whole Maps integration to Mapbox (confirmed via grep only 3 files touched Google Maps, both consumers of `AddressSearch`'s public `AddressDetails` interface needed zero changes):
+- `AddressSearch.tsx` rewritten to call Mapbox's Geocoding API (`/search/geocode/v6/forward` for debounced autocomplete suggestions, `/search/geocode/v6/reverse` for "Locate Me") via plain `fetch` — no new UI dependency, same public interface.
+- `LiveTrackingMap.tsx` rewritten on `mapbox-gl` (`Map`/`Marker`/`NavigationControl`) instead of the Google Maps JS SDK.
+- `useGoogleMapsScript.ts` deleted (Mapbox GL JS is an npm import, not a script-tag loader — no replacement hook needed).
+- `.env` key renamed `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` → `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN` (user needs to sign up free at mapbox.com and paste their own token in — free tier is 50k map loads + 100k geocoding requests/month, no card required to start).
+- **Caught and fixed along the way**: `mapbox-gl` is a large library — importing `LiveTrackingMap` eagerly on the provider booking page ballooned its First Load JS from 231kB to 522kB. Fixed by lazy-loading it via `next/dynamic` with `ssr: false` (it's DOM/window-dependent anyway) — back down to 232kB.
+- Verified: `tsc --noEmit` clean, `eslint` clean (0 errors), full `next build` succeeds (41/41 routes, correct bundle size).
+
+### Unplanned — ✅ DONE (10 Oct 2026): Pre-deployment full-stack verification — 2 real boot-blocking bugs found and fixed
+User asked for a full real-world verification pass (not just unit tests) before deploying: every env/API key tested live, both servers actually started and hit with real HTTP requests, instead of just trusting `tsc`/`vitest`/`next build` passing in isolation.
+
+**Infra**: Docker Desktop wasn't running — Redis and RabbitMQ (both containerized) were down, meaning the backend literally could not have booted. Started Docker Desktop, confirmed Postgres (native Windows service), Redis, and RabbitMQ all reachable.
+
+**Found and fixed — backend crashed on boot**: `RabbitMQBootstrap`'s queue setup threw `PRECONDITION_FAILED` on `analytics.queue` — the queue already existed in RabbitMQ (created at some earlier point before `x-dead-letter-exchange` was added to the bootstrap code) with no DLX argument, and RabbitMQ refuses to redeclare an existing queue with different arguments than it currently has. `cleanup.queue` had the same staleness; `notification.queue` happened to already be correct. Confirmed both stale queues were empty (0 messages, so no data loss) before deleting them via the management API (with explicit user confirmation — this went through the permission system as a destructive action) so they'd recreate with the correct config on next boot. Backend now boots cleanly end-to-end.
+
+**Found and fixed — push notifications silently non-functional**: `FirebaseProvider` called `admin.credential.cert(...)`, an API that doesn't exist in the installed `firebase-admin@14` (the `.credential` namespace was removed in favor of calling `admin.cert()` directly) — the resulting `TypeError` was being caught and silently downgraded to "falling back to warning mode" on every boot, so push notifications have likely never worked. Also found `env.ts`/bootstrap read a single `FIREBASE_SERVICE_ACCOUNT` JSON-blob var that doesn't exist in `.env` at all (the real file has the service account split into 3 separate vars: `FIREBASE_PROJECT_ID`/`FIREBASE_CLIENT_EMAIL`/`FIREBASE_PRIVATE_KEY`) — fixed both: `env.ts` and `FirebaseProvider`'s constructor now take the 3 separate vars, and it calls the correct `admin.cert()`. **Not fully resolved**: the `FIREBASE_PRIVATE_KEY` value currently in `.env` is itself corrupted (valid base64 characters, but doesn't decode to a structurally valid PKCS#8 key — likely mangled during an earlier copy-paste) and needs to be re-copied fresh from Firebase Console. Deferred per user's explicit choice — push notifications are a secondary channel; in-app (Socket.IO) and email (Resend, confirmed working) notifications are unaffected.
+
+**Every external credential tested live** (not just presence-checked):
+| Service | Test performed | Result |
+|---|---|---|
+| AWS S3 | Real `HeadBucket` + `PutObject` + cleanup `DeleteObject` | ✅ Working |
+| Mapbox | Real forward-geocoding search | ✅ Working |
+| Razorpay | Real authenticated orders-list call | ✅ Working (TEST mode key, correct for pre-launch) |
+| Resend (email) | Real authenticated domains-list call | ✅ Working — `theshram.co.in` verified |
+| Exotel (SMS) | Real authenticated account-info call | ✅ Working — **Trial account**, flagging: SMS likely restricted to verified numbers only until upgraded to a paid plan |
+| Google OAuth | Client ID format + Google's public cert endpoint reachability | ✅ Looks correct (full login flow needs a real user token to fully verify) |
+| Firebase (push) | Admin SDK init | ❌ Corrupted private key — deferred (see above) |
+
+**End-to-end connectivity, both servers live**: backend boots clean (`Server running on port 5000`), `/api/v1/health` reports `database: CONNECTED, redis: CONNECTED`; hit real routes across every module built this session (categories, support, admin analytics, instant-requests, pricing) confirming correct mounting and auth-gating (401 where expected, 200 on public reads); CORS preflight from `localhost:3000` → `localhost:5000` correctly allowed; Socket.IO server reachable and correctly rejects an invalid JWT. Frontend boots clean (`next dev --turbopack`, ready in 5.5s), home/login/signup pages all render 200 with no compile errors. Backend suite still 107/107 after all fixes.
+
 ### Phase 6d — pending
 Monitoring/observability.
 
