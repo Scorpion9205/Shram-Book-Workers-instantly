@@ -91,7 +91,14 @@ export const authApi = apiSlice.injectEndpoints({
 
     }),
     login: builder.mutation<AuthResponse, LoginPayload>({
-      query: (body) => ({ url: "/auth/login", method: "POST", body }),
+      // Backend requires this header on auth-critical routes (see requireIdempotencyKey) to
+      // safely dedupe a retried submit — a fresh UUID per actual mutate() call.
+      query: (body) => ({
+        url: "/auth/login",
+        method: "POST",
+        body,
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+      }),
       transformResponse: normalizeAuthResponse,
       invalidatesTags: ["User"],
     }),
@@ -127,7 +134,12 @@ export const authApi = apiSlice.injectEndpoints({
       query: (body) => ({ url: "/auth/send-otp", method: "POST", body }),
     }),
     verifyOtp: builder.mutation<AuthResponse, VerifyOtpPayload>({
-      query: (body) => ({ url: "/auth/verify-otp", method: "POST", body }),
+      query: (body) => ({
+        url: "/auth/verify-otp",
+        method: "POST",
+        body,
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+      }),
       transformResponse: normalizeAuthResponse,
     }),
     resendOtp: builder.mutation<{ success: boolean }, OtpPayload>({

@@ -180,6 +180,9 @@ export const bookingApi = apiSlice.injectEndpoints({
         url: `/payments/orders`,
         method: "POST",
         body: { bookingId },
+        // Backend requires this on payment-order creation (requireIdempotencyKey) to safely
+        // dedupe a retried submit — a fresh UUID per actual mutate() call.
+        headers: { "Idempotency-Key": crypto.randomUUID() },
       }),
       transformResponse: (response: any) =>
         response.data || response,

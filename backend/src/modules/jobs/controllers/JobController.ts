@@ -22,7 +22,15 @@ export class JobController extends BaseController {
 
   getAllJobs = async (req: Request, res: Response): Promise<void> => {
     const user = (req as any).user;
-    const result = await this.jobService.getAllJobs(user.userId);
+    const { search, category, minSalary, maxSalary, sort } = req.query;
+
+    const result = await this.jobService.getAllJobs(user.userId, {
+      ...(typeof search === 'string' && search && { search }),
+      ...(typeof category === 'string' && category && { category }),
+      ...(typeof minSalary === 'string' && minSalary && { minSalary: Number(minSalary) }),
+      ...(typeof maxSalary === 'string' && maxSalary && { maxSalary: Number(maxSalary) }),
+      ...(typeof sort === 'string' && sort && { sort: sort as any }),
+    });
     this.ok(res, result.jobs, 'Jobs retrieved successfully');
   };
 

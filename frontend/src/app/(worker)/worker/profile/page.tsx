@@ -18,7 +18,7 @@ import { useUpdateMeMutation, useUploadProfileImageMutation, useDeleteProfileIma
 export default function WorkerProfilePage() {
   const user = useAppSelector((s) => s.auth.user);
   const { data: profile, isLoading } = useGetMyWorkerProfileQuery();
-  const { data: allSkills } = useGetSkillsQuery();
+  const { data: allSkills, isLoading: isSkillsLoading, isError: isSkillsError } = useGetSkillsQuery();
   const [updateProfile, { isLoading: isProfileSaving }] = useUpdateMyWorkerProfileMutation();
   const [updateMe, { isLoading: isMeSaving }] = useUpdateMeMutation();
   const [addSkill] = useAddWorkerSkillMutation();
@@ -84,16 +84,9 @@ export default function WorkerProfilePage() {
     }
   }
 
-    console.log("All Skills", allSkills);
-  console.log("Profile Skills", profile?.skills);
-
   const existingSkillIds = new Set((profile?.skills || []).map((s) => s.id));
-    
-  console.log("Existing Skill Ids", existingSkillIds);
-
   const availableSkills = (allSkills || []).filter((s) => !existingSkillIds.has(s.id));
 
-   console.log("Available Skills", availableSkills);
   async function handleAddSkill(skillId: string) {
     try {
       await addSkill({
@@ -332,9 +325,13 @@ export default function WorkerProfilePage() {
             ))}
             {!profile?.skills?.length && <p className="text-sm text-muted-foreground">No skills added yet.</p>}
           </div>
-          {availableSkills.length > 0 && (
-            <div className="mt-4">
-              <p className="mb-2 text-xs font-medium text-muted-foreground">Add a skill</p>
+          <div className="mt-4">
+            <p className="mb-2 text-xs font-medium text-muted-foreground">Add a skill</p>
+            {isSkillsLoading ? (
+              <p className="text-xs text-muted-foreground">Loading skills...</p>
+            ) : isSkillsError ? (
+              <p className="text-xs text-destructive">Couldn't load the skills list. Please refresh the page.</p>
+            ) : availableSkills.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {availableSkills.map((s) => (
                   <button
@@ -346,8 +343,12 @@ export default function WorkerProfilePage() {
                   </button>
                 ))}
               </div>
-            </div>
-          )}
+            ) : (allSkills?.length ?? 0) === 0 ? (
+              <p className="text-xs text-muted-foreground">No skills are available to add right now.</p>
+            ) : (
+              <p className="text-xs text-muted-foreground">You've added every available skill.</p>
+            )}
+          </div>
         </CardContent>
       </Card>
 

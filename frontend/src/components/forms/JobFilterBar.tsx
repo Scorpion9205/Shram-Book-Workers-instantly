@@ -3,7 +3,7 @@
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { WORKER_CATEGORIES } from "@/lib/constants";
+import { useGetSkillsQuery } from "@/features/skills/skillsApi";
 import type { JobFilters } from "@/features/jobs/jobsApi";
 
 export function JobFilterBar({
@@ -13,6 +13,8 @@ export function JobFilterBar({
   filters: JobFilters;
   onChange: (next: JobFilters) => void;
 }) {
+  const { data: skills } = useGetSkillsQuery();
+
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
       <div className="relative flex-1">
@@ -33,9 +35,9 @@ export function JobFilterBar({
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All Categories</SelectItem>
-          {WORKER_CATEGORIES.map((c) => (
-            <SelectItem key={c.value} value={c.value}>
-              {c.label}
+          {(skills || []).map((s) => (
+            <SelectItem key={s.id} value={s.id}>
+              {s.name}
             </SelectItem>
           ))}
         </SelectContent>

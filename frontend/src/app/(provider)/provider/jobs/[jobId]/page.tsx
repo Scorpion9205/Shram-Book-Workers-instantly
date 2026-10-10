@@ -13,7 +13,12 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/cards/EmptyState";
 import { ListSkeleton } from "@/components/loaders/Skeletons";
-import { useGetJobByIdQuery, useGetJobApplicationsQuery, useAcceptApplicationMutation } from "@/features/jobs/jobsApi";
+import {
+  useGetJobByIdQuery,
+  useGetJobApplicationsQuery,
+  useAcceptApplicationMutation,
+  useRejectApplicationMutation,
+} from "@/features/jobs/jobsApi";
 
 export default function ProviderJobDetailPage({ params }: { params: Promise<{ jobId: string }> }) {
   const router = useRouter();
@@ -21,8 +26,10 @@ export default function ProviderJobDetailPage({ params }: { params: Promise<{ jo
   const { data: job, isLoading: jobLoading } = useGetJobByIdQuery(jobId);
   const { data: applications, isLoading: appsLoading } = useGetJobApplicationsQuery(jobId);
   const [acceptApplication, { isLoading: isAccepting }] = useAcceptApplicationMutation();
+  const [rejectApplication, { isLoading: isRejecting }] = useRejectApplicationMutation();
 
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
+  const [rejectingAppId, setRejectingAppId] = useState<string | null>(null);
 
   function handleAccept(applicationId: string) {
     setSelectedAppId(applicationId);
@@ -38,6 +45,18 @@ export default function ProviderJobDetailPage({ params }: { params: Promise<{ jo
       }
     } catch {
       toast.error("Couldn't accept this applicant.");
+    }
+  }
+
+  async function handleReject(applicationId: string) {
+    setRejectingAppId(applicationId);
+    try {
+      await rejectApplication({ applicationId, jobId }).unwrap();
+      toast.success("Applicant rejected.");
+    } catch {
+      toast.error("Couldn't reject this applicant.");
+    } finally {
+      setRejectingAppId(null);
     }
   }
 
@@ -103,9 +122,25 @@ export default function ProviderJobDetailPage({ params }: { params: Promise<{ jo
                     </div>
                   </div>
                   {app.status === "PENDING" ? (
-                    <Button size="sm" onClick={() => handleAccept(app.id)} loading={isAccepting}>
-                      Accept
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleReject(app.id)}
+                        loading={isRejecting && rejectingAppId === app.id}
+                        disabled={isAccepting || isRejecting}
+                      >
+                        Reject
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => handleAccept(app.id)}
+                        loading={isAccepting}
+                        disabled={isAccepting || isRejecting}
+                      >
+                        Accept
+                      </Button>
+                    </div>
                   ) : (
                     <Badge variant={app.status === "ACCEPTED" ? "success" : "destructive"} className="capitalize">
                       {app.status}

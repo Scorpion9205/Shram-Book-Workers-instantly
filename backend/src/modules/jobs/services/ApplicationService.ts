@@ -257,6 +257,20 @@ export class ApplicationService extends BaseService implements IApplicationServi
 
     await this.applicationRepo.update(applicationId, { status: 'REJECTED' });
 
+    try {
+      const io = getIO();
+      const recipientUserId = application.worker?.userId ?? application.agent?.userId;
+      if (recipientUserId) {
+        io.to(`user:${recipientUserId}`).emit('applicationUpdated', {
+          applicationId,
+          jobId: application.jobId,
+          status: 'REJECTED',
+        });
+      }
+    } catch (err) {
+      this.logger.error('Failed to emit application rejection socket event', err);
+    }
+
     return { success: true };
   }
 

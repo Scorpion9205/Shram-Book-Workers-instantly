@@ -53,7 +53,8 @@ export default function SignupPage() {
       }).unwrap();
 
       toast.success("OTP sent to your phone and email.");
-      router.push(`/verify-otp?identifier=${encodeURIComponent(values.phone)}&channel=SMS&role=${values.role}`);
+      const emailParam = values.email ? `&email=${encodeURIComponent(values.email)}` : "";
+      router.push(`/verify-otp?identifier=${encodeURIComponent(values.phone)}&channel=SMS&role=${values.role}${emailParam}`);
     } catch (err: any) {
       const msg = err?.data?.message || "Signup failed. Please try again.";
       toast.error(msg);

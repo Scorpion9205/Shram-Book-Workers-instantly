@@ -94,7 +94,10 @@ export class UserService extends BaseService implements IUserService {
       throw new NotFoundException('User', userId);
     }
 
-    await this.userRepo.update(userId, { isActive: false });
+    // deletedAt (not isActive) is what findByEmail/findByPhone/findById actually filter on —
+    // without setting it, a "deleted" account's email/phone permanently blocks re-signup,
+    // since those lookups never stop finding the old, merely-deactivated row.
+    await this.userRepo.update(userId, { isActive: false, deletedAt: new Date() });
 
     // Clear refresh tokens cached in Redis
     const cacheKey = CacheKeys.refreshToken(userId);

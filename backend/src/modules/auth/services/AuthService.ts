@@ -55,6 +55,21 @@ export class AuthService implements IAuthService {
     const hash = await argon2.hash(code);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
 
+    // Expire any still-active OTP from a previous signup attempt for this phone/email —
+    // without this, retrying signup (e.g. after a validation error) leaves multiple active
+    // rows and findActiveOTP always matches the newest, silently invalidating a code the
+    // user may have already seen in an earlier email/SMS.
+    await this.prisma.client.otp.updateMany({
+      where: { identifier: data.phone, purpose: 'LOGIN', consumedAt: null, expiresAt: { gte: new Date() } },
+      data: { expiresAt: new Date() },
+    });
+    if (data.email) {
+      await this.prisma.client.otp.updateMany({
+        where: { identifier: data.email, purpose: 'LOGIN', consumedAt: null, expiresAt: { gte: new Date() } },
+        data: { expiresAt: new Date() },
+      });
+    }
+
     // Save one OTP record for the phone number (primary identifier)
     await this.prisma.client.otp.create({
       data: {

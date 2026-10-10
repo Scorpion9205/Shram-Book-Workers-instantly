@@ -1,7 +1,7 @@
 import type { Job } from '@prisma/client';
 import { BaseService } from '../../../core/base/BaseService.js';
 import type { IJobService } from '../interfaces/IJobService.js';
-import type { IJobRepository } from '../interfaces/IJobRepository.js';
+import type { IJobRepository, JobListFilter } from '../interfaces/IJobRepository.js';
 import type { IWorkerRepository } from '../../workers/interfaces/IWorkerRepository.js';
 import type { IAgentRepository } from '../../agents/interfaces/IAgentRepository.js';
 import type { IAgentWorkerRepository } from '../../agents/interfaces/IAgentWorkerRepository.js';
@@ -58,8 +58,8 @@ export class JobService extends BaseService implements IJobService {
     return job;
   }
 
-  async getAllJobs(userId: string): Promise<any> {
-    this.log('Retrieving jobs for user', { userId });
+  async getAllJobs(userId: string, filter?: JobListFilter): Promise<any> {
+    this.log('Retrieving jobs for user', { userId, filter });
 
     const user = await this.prisma.client.user.findUnique({
       where: { id: userId },
@@ -105,15 +105,26 @@ export class JobService extends BaseService implements IJobService {
       return { jobs: [] };
     }
 
-    const cachedJobs = await this.cache.get<any>(cacheKey);
-    if (cachedJobs) {
-      this.log('Retrieved jobs from cache', { cacheKey });
-      return cachedJobs;
+    // Caching is keyed only by userId (the common "just open my job feed" case) — a specific
+    // search/category/sort combination would either serve another filter's stale results or
+    // need the whole filter object folded into the key for correctness. Simplest safe choice:
+    // bypass the cache entirely whenever any filter is actually active.
+    const hasFilter = Boolean(filter?.search || filter?.category || filter?.minSalary !== undefined || filter?.maxSalary !== undefined || filter?.sort);
+
+    if (!hasFilter) {
+      const cachedJobs = await this.cache.get<any>(cacheKey);
+      if (cachedJobs) {
+        this.log('Retrieved jobs from cache', { cacheKey });
+        return cachedJobs;
+      }
     }
 
-    const jobs = await this.jobRepo.findManyOpenBySkillIds(skillIds);
+    const jobs = await this.jobRepo.findManyOpenBySkillIds(skillIds, filter);
     const result = { jobs };
-    await this.cache.set(cacheKey, result, 120);
+
+    if (!hasFilter) {
+      await this.cache.set(cacheKey, result, 120);
+    }
 
     return result;
   }

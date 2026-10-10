@@ -20,15 +20,33 @@ function VerifyOtpInner() {
   const dispatch = useAppDispatch();
   const searchParams = useSearchParams();
   
-  const identifier = searchParams.get("identifier") || "";
-  const channel = (searchParams.get("channel") || "SMS") as "EMAIL" | "SMS";
+  const phoneIdentifier = searchParams.get("identifier") || "";
+  const emailIdentifier = searchParams.get("email") || "";
   const roleParam = searchParams.get("role");
   const role = roleParam ? (roleParam.toUpperCase() as "WORKER" | "PROVIDER" | "AGENT") : undefined;
+
+  const [channel, setChannel] = useState<"EMAIL" | "SMS">(
+    (searchParams.get("channel") || "SMS") as "EMAIL" | "SMS"
+  );
+  const identifier = channel === "EMAIL" ? emailIdentifier : phoneIdentifier;
 
   const [otp, setOtp] = useState("");
   const [verifyOtp, { isLoading }] = useVerifyOtpMutation();
   const [resendOtp, { isLoading: isResending }] = useResendOtpMutation();
   const [secondsLeft, setSecondsLeft] = useState(RESEND_SECONDS);
+
+  async function switchChannel(next: "EMAIL" | "SMS") {
+    setChannel(next);
+    setOtp("");
+    try {
+      await resendOtp({ channel: next, identifier: next === "EMAIL" ? emailIdentifier : phoneIdentifier, role }).unwrap();
+      setSecondsLeft(RESEND_SECONDS);
+      toast.success(next === "EMAIL" ? "A code has been sent to your email" : "A code has been sent to your phone");
+    } catch (err: any) {
+      const msg = err?.data?.message || "Couldn't send code. Please try again.";
+      toast.error(msg);
+    }
+  }
 
   useEffect(() => {
     if (secondsLeft <= 0) return;
@@ -80,6 +98,11 @@ function VerifyOtpInner() {
           </div>
         </div>
 
+        <p className="text-center text-xs text-muted-foreground">
+          Code sent via {channel === "EMAIL" ? "email" : "SMS"} to{" "}
+          <span className="font-medium text-foreground">{identifier}</span>
+        </p>
+
         <OtpInput value={otp} onChange={setOtp} />
 
         <Button onClick={handleVerify} className="w-full" size="lg" loading={isLoading}>
@@ -100,6 +123,19 @@ function VerifyOtpInner() {
             </button>
           )}
         </p>
+
+        {emailIdentifier && phoneIdentifier && (
+          <p className="text-center text-sm text-muted-foreground">
+            {channel === "SMS" ? "Not getting the SMS?" : "Want to use your phone instead?"}{" "}
+            <button
+              onClick={() => switchChannel(channel === "SMS" ? "EMAIL" : "SMS")}
+              disabled={isResending}
+              className="font-medium text-primary hover:underline disabled:opacity-50"
+            >
+              Verify via {channel === "SMS" ? "email" : "SMS"} instead
+            </button>
+          </p>
+        )}
       </div>
     </AuthLayout>
   );

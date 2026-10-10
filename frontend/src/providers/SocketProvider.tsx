@@ -136,6 +136,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       dispatch(apiSlice.util.invalidateTags(["DashboardWorker", "DashboardProvider", "AgentDashboard"]));
     });
 
+    // --- Job application status updates (e.g. a Provider rejecting an application) ---
+    socket.on("applicationUpdated", () => {
+      dispatch(apiSlice.util.invalidateTags(["MyApplications", "JobApplications"]));
+    });
+
     return () => {
       socket.disconnect();
       socketRef.current = null;

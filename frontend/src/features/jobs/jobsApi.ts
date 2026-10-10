@@ -96,8 +96,6 @@ export const jobsApi = apiSlice.injectEndpoints({
         return toPaginatedJobs(data.jobs || data);
       },
       providesTags: (result) => {
-        console.log("PROVIDES TAGS RESULT", result);
-
         const items = Array.isArray(result?.items) ? result.items : [];
 
         return [
@@ -179,8 +177,24 @@ export const jobsApi = apiSlice.injectEndpoints({
         "AgentApplication",
         "AgentBooking",
         "AgentDashboard",
+        // Lets the accepting Provider's own session see the Worker's applications list
+        // update immediately if both happen to share it; the Worker's own session finds out
+        // via the bookingUpdated socket event (see SocketProvider), not this tag.
+        "MyApplications",
         // getJobById caches under a specific { type: "Job", id: jobId } tag — without this,
         // the job detail page (status badge, applicant count) stays stale until a manual reload.
+        ...(jobId ? [{ type: "Job" as const, id: jobId }] : []),
+      ],
+    }),
+    rejectApplication: builder.mutation<any, { applicationId: string; jobId?: string }>({
+      query: ({ applicationId }) => ({
+        url: `/jobs/applications/${applicationId}/reject`,
+        method: "PATCH",
+      }),
+      invalidatesTags: (result, error, { jobId }) => [
+        "JobApplications",
+        "AgentApplication",
+        "MyApplications",
         ...(jobId ? [{ type: "Job" as const, id: jobId }] : []),
       ],
     }),
@@ -204,5 +218,6 @@ export const {
   useApplyToJobMutation,
   useGetJobApplicationsQuery,
   useAcceptApplicationMutation,
+  useRejectApplicationMutation,
   useGetMyApplicationsQuery,
 } = jobsApi;
