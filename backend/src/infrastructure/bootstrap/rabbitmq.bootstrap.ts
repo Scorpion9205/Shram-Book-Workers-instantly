@@ -13,7 +13,12 @@ export async function bootstrapRabbitMQ(): Promise<amqp.Connection> {
   try {
     logger.info('Connecting to RabbitMQ...', { url: env.RABBITMQ_URL });
     const connection = await amqp.connect(env.RABBITMQ_URL);
-    const channel = await connection.createChannel();
+    // A channel-level error (e.g. deleteQueue 404ing below) closes the channel and emits
+    // 'error' asynchronously — without a listener, that crashes the whole process even
+    // though the rejected promise is already caught where it's awaited.
+    connection.on('error', () => {});
+    let channel = await connection.createChannel();
+    channel.on('error', () => {});
 
     // 1. Assert Exchanges
     logger.info('Asserting exchanges...');
@@ -26,7 +31,10 @@ export async function bootstrapRabbitMQ(): Promise<amqp.Connection> {
     try {
       await channel.deleteQueue(QueueNames.NOTIFICATION);
     } catch (e) {
-      // Ignore if queue does not exist
+      // Deleting a queue that doesn't exist (e.g. a fresh broker) 404s and kills the channel
+      // above — open a fresh one before continuing instead of reusing a dead one.
+      channel = await connection.createChannel();
+      channel.on('error', () => {});
     }
 
     await channel.assertQueue(QueueNames.NOTIFICATION, {

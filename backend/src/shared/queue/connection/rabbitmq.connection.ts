@@ -26,8 +26,14 @@ class RabbitMQConnection {
                 process.env.RABBITMQ_URL!
             );
 
+        // A channel-level error (e.g. deleteQueue 404ing below) closes the channel and emits
+        // 'error' asynchronously — without a listener, that crashes the whole process even
+        // though the rejected promise is already caught where it's awaited.
+        this.connection.on("error", () => {});
+
         this.channel =
             await this.connection.createChannel();
+        this.channel.on("error", () => {});
 
         await this.channel.assertExchange(
             EXCHANGES.APP,
@@ -54,7 +60,10 @@ class RabbitMQConnection {
         try {
             await this.channel.deleteQueue(QUEUES.NOTIFICATION);
         } catch (err) {
-            // Ignore if queue does not exist
+            // Deleting a queue that doesn't exist (e.g. a fresh broker) 404s and kills the
+            // channel above — open a fresh one before continuing instead of reusing a dead one.
+            this.channel = await this.connection.createChannel();
+            this.channel.on("error", () => {});
         }
 
         await this.channel.assertQueue(
