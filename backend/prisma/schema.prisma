@@ -581,7 +581,11 @@ model Transaction {
   wallet    Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
   amount    Decimal
   type      String   // CREDIT or DEBIT
-  reference String
+  // Unique so a redelivered RabbitMQ message (e.g. consumer crashes after crediting but
+  // before acking) can't double-pay — the second insert attempt fails fast instead of
+  // silently moving money twice. Every caller today derives this as "{purpose}:{bookingId}",
+  // which is naturally unique per booking since each booking settles payment exactly once.
+  reference String   @unique
   createdAt DateTime @default(now())
 }
 

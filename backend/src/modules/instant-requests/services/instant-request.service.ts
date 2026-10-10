@@ -276,18 +276,22 @@ export class InstantRequestService implements IInstantRequestService {
 
       await CacheInvalidationService.afterInstantRequestAccepted(result.providerUserId, result.workerUserId);
 
-      const io = getIO();
-
-      io.to(`user:${result.providerUserId}`).emit("bookingUpdated", {
-        id: result.bookingId,
-        status: "accepted",
-        workerId: worker.id,
-        requestId: result.item?.requestId,
-        itemId,
-      });
-
-      // Notify worker of confirmation
-      io.to(`user:${result.workerUserId}`).emit("instant-request:matched");
+      // Best-effort real-time notification — the booking above is already committed, so a
+      // socket hiccup (or sockets simply not initialized, e.g. in a test process) must not
+      // fail this request after the DB work already succeeded.
+      try {
+        const io = getIO();
+        io.to(`user:${result.providerUserId}`).emit("bookingUpdated", {
+          id: result.bookingId,
+          status: "accepted",
+          workerId: worker.id,
+          requestId: result.item?.requestId,
+          itemId,
+        });
+        io.to(`user:${result.workerUserId}`).emit("instant-request:matched");
+      } catch (err) {
+        this.logger.debug("Skipped accept socket emit — socket not initialized", { itemId });
+      }
 
       return {
         ...result.item,
@@ -345,17 +349,21 @@ export class InstantRequestService implements IInstantRequestService {
       return this.requestRepo.upsertBid(requestId, worker.id, bidAmount, tx);
     });
 
-    // Notify provider of the live bid via Socket.IO
-    const io = getIO();
-    io.to(`user:${request.providerId}`).emit("instant-bidding:bid-submitted", {
-      bidId: bid.id,
-      instantRequestId: bid.instantRequestId,
-      bidAmount: bid.bidAmount,
-      workerName: bid.worker.user.name,
-      rating: bid.worker.rating,
-      experience: bid.worker.experience,
-      totalJobs: bid.worker.totalJobs,
-    });
+    // Notify provider of the live bid via Socket.IO — best-effort, the bid is already saved.
+    try {
+      const io = getIO();
+      io.to(`user:${request.providerId}`).emit("instant-bidding:bid-submitted", {
+        bidId: bid.id,
+        instantRequestId: bid.instantRequestId,
+        bidAmount: bid.bidAmount,
+        workerName: bid.worker.user.name,
+        rating: bid.worker.rating,
+        experience: bid.worker.experience,
+        totalJobs: bid.worker.totalJobs,
+      });
+    } catch (err) {
+      this.logger.debug("Skipped bid-submitted socket emit — socket not initialized", { requestId });
+    }
 
     return bid;
   }
@@ -452,10 +460,14 @@ export class InstantRequestService implements IInstantRequestService {
         };
       });
 
-      // Socket notifies
-      const io = getIO();
-      io.to(`user:${result.providerUserId}`).emit("instant-bidding:closed");
-      io.to(`user:${result.workerUserId}`).emit("instant-request:matched");
+      // Socket notifies — best-effort, the booking above is already committed.
+      try {
+        const io = getIO();
+        io.to(`user:${result.providerUserId}`).emit("instant-bidding:closed");
+        io.to(`user:${result.workerUserId}`).emit("instant-request:matched");
+      } catch (err) {
+        this.logger.debug("Skipped select-bid socket emit — socket not initialized", { requestId, bidId });
+      }
 
       return result;
     } finally {

@@ -2,8 +2,13 @@ import type * as amqp from 'amqplib';
 import type { IWalletService } from '../../../modules/wallet/interfaces/IWalletService.js';
 import type { IBookingRepository } from '../../../modules/bookings/interfaces/IBookingRepository.js';
 import type { IBookingStateService } from '../../../modules/bookings/interfaces/IBookingStateService.js';
+import type { IPlatformSettingRepository } from '../../../modules/platform-settings/interfaces/IPlatformSettingRepository.js';
+import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import { BookingStatus } from '@prisma/client';
 import { Logger } from '../../../core/logger/Logger.js';
+import { CacheKeys } from '../../cache/cacheKeys.js';
+
+const DEFAULT_COMMISSION_PERCENT = 15;
 
 export class WalletConsumer {
   private readonly logger = new Logger('WalletConsumer');
@@ -13,7 +18,25 @@ export class WalletConsumer {
     private readonly walletService: IWalletService,
     private readonly bookingRepo: IBookingRepository,
     private readonly bookingStateService: IBookingStateService,
+    private readonly platformSettingRepo: IPlatformSettingRepository,
+    private readonly cache: ICacheService,
   ) {}
+
+  // Mirrors FareCalculator.applyCommission() exactly — the rate the Provider was actually
+  // charged must be the same rate used to compute the Worker's payout, or the platform
+  // silently over/under-pays on every settlement (previously hardcoded to 10% here while
+  // FareCalculator defaulted to 15%, drifting further whenever an admin changed the setting).
+  private async getCommissionPercent(): Promise<number> {
+    const cacheKey = CacheKeys.platformSetting('commissionPercent');
+    const cached = await this.cache.get<number>(cacheKey);
+    if (cached !== null) return cached;
+
+    const setting = await this.platformSettingRepo.get('commissionPercent');
+    const percent = setting && setting.value ? Number(setting.value) : DEFAULT_COMMISSION_PERCENT;
+
+    await this.cache.set(cacheKey, percent, 60);
+    return percent;
+  }
 
   async start(): Promise<void> {
     this.logger.info('Starting Wallet Queue Consumer...');
@@ -65,7 +88,7 @@ export class WalletConsumer {
         }
 
         const amount = Number(booking.amount);
-        const commissionPercent = 10;
+        const commissionPercent = await this.getCommissionPercent();
 
         if (booking.paymentMode === 'ONLINE') {
           // Online payment captured: credit 90% to worker's wallet

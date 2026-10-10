@@ -99,6 +99,15 @@ export class WorkerRepository extends BaseRepository<WorkerProfile> implements I
     }
   }
 
+  async markUnavailableIfAvailable(workerId: string, tx?: Prisma.TransactionClient): Promise<number> {
+    const client = tx ?? this.prisma.client;
+    const result = await client.workerProfile.updateMany({
+      where: { id: workerId, isAvailable: true },
+      data: { isAvailable: false },
+    });
+    return result.count;
+  }
+
   async getProfileWithSkillsAndUser(userId: string, tx?: Prisma.TransactionClient): Promise<any> {
     const client = tx ?? this.prisma.client;
     try {

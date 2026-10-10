@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { AdminService } from "../services/AdminService.js";
+import { BusinessException } from "../../../core/exceptions/index.js";
 
 describe("AdminService", () => {
   let adminRepoMock: any;
   let pricingRuleRepoMock: any;
+  let bookingRepoMock: any;
+  let workerRepoMock: any;
+  let bookingStateServiceMock: any;
   let service: AdminService;
 
   beforeEach(() => {
@@ -15,18 +19,48 @@ describe("AdminService", () => {
       findAll: vi.fn(),
       upsert: vi.fn(),
     };
+    bookingRepoMock = { findById: vi.fn(), update: vi.fn() };
+    workerRepoMock = { findById: vi.fn(), markUnavailableIfAvailable: vi.fn() };
+    bookingStateServiceMock = { transition: vi.fn() };
 
     service = new AdminService(
       adminRepoMock,
       {} as any, // cache
       {} as any, // userRepo
-      {} as any, // bookingRepo
+      bookingRepoMock,
       {} as any, // platformSettingRepo
       {} as any, // notificationTemplateRepo
-      {} as any, // workerRepo
-      {} as any, // bookingStateService
+      workerRepoMock,
+      bookingStateServiceMock,
       pricingRuleRepoMock,
     );
+  });
+
+  describe("assignWorker", () => {
+    const booking = { id: "booking_1", status: "PAYMENT_CONFIRMED" };
+    const worker = { id: "worker_1", isAvailable: true };
+
+    it("claims the worker atomically and transitions the booking when the worker is available", async () => {
+      bookingRepoMock.findById.mockResolvedValue(booking);
+      workerRepoMock.findById.mockResolvedValue(worker);
+      workerRepoMock.markUnavailableIfAvailable.mockResolvedValue(1);
+      bookingStateServiceMock.transition.mockResolvedValue({ ...booking, status: "WORKER_ASSIGNED" });
+
+      await service.assignWorker("booking_1", "worker_1", "admin_1");
+
+      expect(workerRepoMock.markUnavailableIfAvailable).toHaveBeenCalledWith("worker_1");
+      expect(bookingRepoMock.update).toHaveBeenCalledWith("booking_1", { workerId: "worker_1" });
+    });
+
+    it("rejects assignment when the worker was already claimed elsewhere, without touching the booking", async () => {
+      bookingRepoMock.findById.mockResolvedValue(booking);
+      workerRepoMock.findById.mockResolvedValue(worker);
+      workerRepoMock.markUnavailableIfAvailable.mockResolvedValue(0);
+
+      await expect(service.assignWorker("booking_1", "worker_1", "admin_1")).rejects.toThrow(BusinessException);
+      expect(bookingRepoMock.update).not.toHaveBeenCalled();
+      expect(bookingStateServiceMock.transition).not.toHaveBeenCalled();
+    });
   });
 
   describe("getPlatformAnalytics", () => {

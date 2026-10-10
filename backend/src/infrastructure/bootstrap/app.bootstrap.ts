@@ -244,6 +244,7 @@ export async function wireModules(
     bookingStateService,
     eventPublisher,
     cacheService,
+    jobRepo,
   );
   const instantMatchingService = new InstantMatchingService(
     instantRequestRepo,
@@ -335,7 +336,7 @@ export async function wireModules(
     const notificationConsumer = new NotificationConsumer(channel, notificationDispatcher);
     await notificationConsumer.start();
     
-    const walletConsumer = new WalletConsumer(channel, walletService, bookingRepo, bookingStateService);
+    const walletConsumer = new WalletConsumer(channel, walletService, bookingRepo, bookingStateService, platformSettingRepo, cacheService);
     await walletConsumer.start();
     
     const cleanupConsumer = new CleanupConsumer(channel, prismaService);

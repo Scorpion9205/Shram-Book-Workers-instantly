@@ -16,7 +16,6 @@ export const createJobSchema = z.object({
   description: z.string().min(20, "Description must be at least 20 characters"),
 
   skillId: z.string().uuid("Please select a skill"),
-  date: z.string().min(1, "Select a date"),
   address: z.string().min(5, "Enter a valid address"),
 
   salary: z.coerce.number().min(100, "Minimum salary is ₹100"),

@@ -174,6 +174,11 @@ export const jobsApi = apiSlice.injectEndpoints({
         "MyJobs",
         "Booking",
         "DashboardProvider",
+        // The accepted applicant may be an Agent (or one of their workers) — without these,
+        // the Agent's own dashboard/bookings/applications views stay stale.
+        "AgentApplication",
+        "AgentBooking",
+        "AgentDashboard",
         // getJobById caches under a specific { type: "Job", id: jobId } tag — without this,
         // the job detail page (status badge, applicant count) stays stale until a manual reload.
         ...(jobId ? [{ type: "Job" as const, id: jobId }] : []),

@@ -88,6 +88,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
           "InstantRequest",
           "DashboardWorker",
           "DashboardProvider",
+          "AgentBooking",
+          "AgentDashboard",
         ])
       );
       const statusMessages: Record<string, string> = {
@@ -131,7 +133,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     // --- Worker availability / dashboard refresh hooks ---
     socket.on("dashboardRefresh", () => {
-      dispatch(apiSlice.util.invalidateTags(["DashboardWorker", "DashboardProvider"]));
+      dispatch(apiSlice.util.invalidateTags(["DashboardWorker", "DashboardProvider", "AgentDashboard"]));
     });
 
     return () => {

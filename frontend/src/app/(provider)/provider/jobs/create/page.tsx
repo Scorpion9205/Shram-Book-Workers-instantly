@@ -143,12 +143,7 @@ export default function CreateJobPage() {
                 {errors.address && <p className="text-xs text-destructive">{errors.address.message}</p>}
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="date">Date</Label>
-                  <Input id="date" type="date" {...register("date")} />
-                  {errors.date && <p className="text-xs text-destructive">{errors.date.message}</p>}
-                </div>
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="salary">Budget (₹)</Label>
                   <Input id="salary" type="number" placeholder="800" {...register("salary")} />

@@ -9,7 +9,6 @@ import { CreateBookingSchema } from '../dto/CreateBooking.dto.js';
 import { CancelBookingSchema } from '../dto/CancelBooking.dto.js';
 import { FilterBookingsSchema } from '../dto/FilterBookings.dto.js';
 import { AuthorizationException, BusinessException } from '../../../core/exceptions/index.js';
-import { Prisma } from '@prisma/client';
 import { bookingStartOtpCacheKey } from '../../../shared/utils/booking-otp.util.js';
 
 export class BookingController extends BaseController {
@@ -71,19 +70,16 @@ export class BookingController extends BaseController {
 
   createBooking = async (req: Request, res: Response): Promise<void> => {
     const dto = this.validate(CreateBookingSchema, req.body);
+    const user = (req as any).user;
 
-    const booking = await this.bookingService.createBooking({
+    const booking = await this.bookingService.createBooking(user.userId, {
       jobId: dto.jobId,
-      providerId: dto.providerId,
       workerId: dto.workerId,
       agentId: dto.agentId,
-      amount: new Prisma.Decimal(dto.amount),
-      estimatedFare: new Prisma.Decimal(dto.estimatedFare),
       type: dto.type,
       address: dto.address,
     });
 
-    const user = (req as any).user;
     this.created(res, BookingMapper.toResponse(booking, user), 'Booking created successfully');
   };
 

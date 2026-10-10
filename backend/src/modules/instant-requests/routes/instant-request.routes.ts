@@ -20,13 +20,31 @@ export function createInstantRequestRouter(controller: InstantRequestController)
 
   router.post("/calculate-fare", authenticate, authorize(UserRole.PROVIDER), controller.calculateFare);
 
-  router.post("/items/:itemId/accept", authenticate, authorize(UserRole.WORKER), controller.acceptRequest);
+  router.post(
+    "/items/:itemId/accept",
+    authenticate,
+    authorize(UserRole.WORKER),
+    rateLimiter("instant:accept", 20, 60),
+    controller.acceptRequest,
+  );
 
   router.get("/my-requests", authenticate, authorize(UserRole.PROVIDER), controller.getMyRequests);
 
-  router.post("/:id/bids", authenticate, authorize(UserRole.WORKER), controller.submitBid);
+  router.post(
+    "/:id/bids",
+    authenticate,
+    authorize(UserRole.WORKER),
+    rateLimiter("instant:bid", 20, 60),
+    controller.submitBid,
+  );
 
-  router.post("/:id/bids/:bidId/select", authenticate, authorize(UserRole.PROVIDER), controller.selectBid);
+  router.post(
+    "/:id/bids/:bidId/select",
+    authenticate,
+    authorize(UserRole.PROVIDER),
+    rateLimiter("instant:select-bid", 10, 60),
+    controller.selectBid,
+  );
 
   router.post("/:id/cancel", authenticate, authorize(UserRole.PROVIDER), controller.cancelRequest);
 

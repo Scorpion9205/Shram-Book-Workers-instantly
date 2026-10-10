@@ -1,9 +1,10 @@
 import { BookingStatus } from '@prisma/client';
 import type { Booking } from '@prisma/client';
 import { BaseService } from '../../../core/base/BaseService.js';
-import type { IBookingService } from '../interfaces/IBookingService.js';
-import type { IBookingRepository, BookingFilter, CreateBookingInput } from '../interfaces/IBookingRepository.js';
+import type { IBookingService, CreateBookingRequest } from '../interfaces/IBookingService.js';
+import type { IBookingRepository, BookingFilter } from '../interfaces/IBookingRepository.js';
 import type { IBookingStateService } from '../interfaces/IBookingStateService.js';
+import type { IJobRepository } from '../../jobs/interfaces/IJobRepository.js';
 import type { IEventPublisher } from '../../../core/interfaces/IEventPublisher.js';
 import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import type { PaginatedResult } from '../../../core/base/BaseRepository.js';
@@ -17,6 +18,7 @@ export class BookingService extends BaseService implements IBookingService {
     private readonly stateService: IBookingStateService,
     private readonly eventPublisher: IEventPublisher,
     private readonly cache: ICacheService,
+    private readonly jobRepo: IJobRepository,
   ) {
     super('BookingService');
   }
@@ -37,9 +39,33 @@ export class BookingService extends BaseService implements IBookingService {
     return await this.bookingRepo.findManyByFilter(filter, page, limit);
   }
 
-  async createBooking(input: CreateBookingInput): Promise<Booking> {
-    this.log('Creating new booking', { providerId: input.providerId, type: input.type });
-    const booking = await this.bookingRepo.create(input);
+  async createBooking(providerId: string, input: CreateBookingRequest): Promise<Booking> {
+    this.log('Creating new booking', { providerId, jobId: input.jobId, type: input.type });
+
+    // The Job is the only source of truth for price here — never trust a client-supplied
+    // amount, and never let a caller create a booking under a Job (and thus a Provider
+    // identity) they don't own.
+    const job = await this.jobRepo.findById(input.jobId);
+    if (!job) {
+      throw new NotFoundException('Job', input.jobId);
+    }
+    if (job.providerId !== providerId) {
+      throw new BusinessException('UNAUTHORIZED_PROVIDER', 'You do not own this job');
+    }
+    if (job.budget === null || job.budget === undefined) {
+      throw new BusinessException('JOB_HAS_NO_BUDGET', 'This job has no budget set and cannot be booked directly');
+    }
+
+    const booking = await this.bookingRepo.create({
+      jobId: input.jobId,
+      providerId,
+      workerId: input.workerId,
+      agentId: input.agentId,
+      amount: job.budget,
+      estimatedFare: job.budget,
+      type: input.type,
+      address: input.address as any,
+    });
     await this.eventPublisher.publish(RoutingKeys.BOOKING_CREATED, booking);
     return booking;
   }
@@ -135,6 +161,13 @@ export class BookingService extends BaseService implements IBookingService {
     // Validate that the user is the provider of the booking
     if (booking.providerId !== userId) {
       throw new BusinessException('UNAUTHORIZED_PROVIDER', 'You are not the provider of this booking');
+    }
+
+    // OFFLINE (cash/UPI) bookings are settled by the Worker confirming receipt
+    // (settleOfflinePayment), never by the Provider unilaterally — otherwise a Provider could
+    // mark the job paid without the Worker ever actually receiving the money.
+    if (booking.paymentMode !== 'ONLINE') {
+      throw new BusinessException('INVALID_PAYMENT_MODE', 'This booking is not an online payment and cannot be settled this way');
     }
 
     await this.stateService.transition(id, BookingStatus.PAYMENT_SETTLED, {

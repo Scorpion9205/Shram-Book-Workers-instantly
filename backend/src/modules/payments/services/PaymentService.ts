@@ -32,8 +32,13 @@ export class PaymentService extends BaseService implements IPaymentService {
       throw new BusinessException('UNAUTHORIZED_PAYMENT', 'Unauthorized to pay for this booking');
     }
 
-    if (booking.status !== BookingStatus.CREATED) {
-      throw new BusinessException('INVALID_BOOKING_STATUS', `Booking is not in CREATED status. Current: ${booking.status}`);
+    // PAYMENT_PENDING is allowed too — it just means a previous order was created but the
+    // Provider abandoned/closed the Razorpay checkout before paying (or it expired) and is
+    // now retrying. Without this, that first attempt permanently bricks the booking: every
+    // retry would hit this guard since createOrder() already moved it out of CREATED on
+    // attempt one, with no code path anywhere to move it back.
+    if (booking.status !== BookingStatus.CREATED && booking.status !== BookingStatus.PAYMENT_PENDING) {
+      throw new BusinessException('INVALID_BOOKING_STATUS', `Booking is not awaiting payment. Current: ${booking.status}`);
     }
 
     let payment = await this.paymentRepo.findByBookingId(bookingId);
@@ -62,10 +67,14 @@ export class PaymentService extends BaseService implements IPaymentService {
       });
     }
 
-    await this.bookingStateService.transition(bookingId, BookingStatus.PAYMENT_PENDING, {
-      changedBy: providerId,
-      reason: 'Payment order created on Razorpay',
-    });
+    // Only transition on the FIRST order attempt — CREATED -> PAYMENT_PENDING is a real FSM
+    // edge, but PAYMENT_PENDING -> PAYMENT_PENDING (a retry) isn't, and would throw.
+    if (booking.status === BookingStatus.CREATED) {
+      await this.bookingStateService.transition(bookingId, BookingStatus.PAYMENT_PENDING, {
+        changedBy: providerId,
+        reason: 'Payment order created on Razorpay',
+      });
+    }
 
     return {
       orderId: order.id,

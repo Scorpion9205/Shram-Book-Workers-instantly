@@ -139,6 +139,21 @@ export class ApplicationService extends BaseService implements IApplicationServi
         throw new BusinessException('JOB_FULL', 'Not enough worker slots remaining on this job');
       }
 
+      // Only WORKER-type applications pin down a specific worker at this point (AGENT
+      // applications resolve to a worker pool assignment elsewhere) — atomically claim that
+      // worker's availability so they can't be accepted onto two different jobs at once. The
+      // slot guard above only serializes concurrent accepts on the SAME job, so a worker who
+      // applied to two different jobs could otherwise be accepted onto both.
+      if (application.applicantType === 'WORKER' && application.workerId) {
+        const workerClaimed = await tx.workerProfile.updateMany({
+          where: { id: application.workerId, isAvailable: true },
+          data: { isAvailable: false },
+        });
+        if (workerClaimed.count === 0) {
+          throw new BusinessException('WORKER_UNAVAILABLE', 'This worker has just been booked on another job');
+        }
+      }
+
       await this.applicationRepo.update(applicationId, { status: 'ACCEPTED' }, tx);
 
       // Generate a cryptographically secure 6-digit start OTP — only the Argon2id hash is

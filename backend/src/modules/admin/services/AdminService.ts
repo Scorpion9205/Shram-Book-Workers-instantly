@@ -174,6 +174,13 @@ export class AdminService extends BaseService implements IAdminService {
       );
     }
 
+    // Atomically claim the worker so Admin can't double-book one who was just assigned
+    // elsewhere (by this same endpoint or the normal accept-application/instant-request flows).
+    const claimed = await this.workerRepo.markUnavailableIfAvailable(workerId);
+    if (claimed === 0) {
+      throw new BusinessException('WORKER_UNAVAILABLE', 'This worker is already assigned to another active booking');
+    }
+
     // Step 1: Update the booking workerId
     await this.bookingRepo.update(bookingId, { workerId });
 

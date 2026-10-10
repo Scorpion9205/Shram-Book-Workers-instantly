@@ -60,6 +60,8 @@ export const bookingApi = apiSlice.injectEndpoints({
         { type: "Booking", id: bookingId },
         "DashboardWorker",
         "DashboardProvider",
+        "AgentBooking",
+        "AgentDashboard",
       ],
     }),
     verifyStartOtp: builder.mutation<Booking, { bookingId: string; code: string }>({
@@ -87,6 +89,8 @@ export const bookingApi = apiSlice.injectEndpoints({
         { type: "Booking", id: bookingId },
         "DashboardWorker",
         "DashboardProvider",
+        "AgentBooking",
+        "AgentDashboard",
       ],
     }),
     completeBooking: builder.mutation<Booking, string>({
@@ -113,6 +117,8 @@ export const bookingApi = apiSlice.injectEndpoints({
         { type: "Booking", id: bookingId },
         "DashboardWorker",
         "DashboardProvider",
+        "AgentBooking",
+        "AgentDashboard",
       ],
     }),
     settleBooking: builder.mutation<Booking, string>({
@@ -138,6 +144,8 @@ export const bookingApi = apiSlice.injectEndpoints({
         { type: "Booking", id: bookingId },
         "DashboardWorker",
         "DashboardProvider",
+        "AgentBooking",
+        "AgentDashboard",
       ],
     }),
     settleOfflineBooking: builder.mutation<Booking, string>({
@@ -163,6 +171,8 @@ export const bookingApi = apiSlice.injectEndpoints({
         { type: "Booking", id: bookingId },
         "DashboardWorker",
         "DashboardProvider",
+        "AgentBooking",
+        "AgentDashboard",
       ],
     }),
     createPaymentOrder: builder.mutation<any, string>({
@@ -184,6 +194,8 @@ export const bookingApi = apiSlice.injectEndpoints({
         { type: "Booking", id: bookingId },
         "DashboardWorker",
         "DashboardProvider",
+        "AgentBooking",
+        "AgentDashboard",
       ],
     }),
   }),

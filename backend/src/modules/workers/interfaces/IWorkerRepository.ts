@@ -18,6 +18,9 @@ export interface IWorkerRepository {
     isAvailable: boolean,
     tx?: Prisma.TransactionClient,
   ): Promise<WorkerProfile>;
+  /** Atomic conditional claim — returns the count of rows actually flipped (0 or 1), so the
+   *  caller can tell whether it genuinely won the claim or the worker was already unavailable. */
+  markUnavailableIfAvailable(workerId: string, tx?: Prisma.TransactionClient): Promise<number>;
   getProfileWithSkillsAndUser(
     userId: string,
     tx?: Prisma.TransactionClient,

@@ -53,32 +53,40 @@ export class ReviewService extends BaseService implements IReviewService {
         comment: data.comment ?? null,
       }, tx);
 
-      const worker = await this.workerRepo.findById(workerId, tx);
-      if (!worker) {
-        throw new NotFoundException('WorkerProfile', workerId);
+      // Read-then-write on worker.rating/totalReviews races under concurrent reviews (two
+      // different bookings reviewed near-simultaneously both read the same starting
+      // totalReviews, so a plain SET overwrites one contribution). Reusing the same
+      // optimistic-conditional-update pattern as the instant-request accept race fix:
+      // the update's WHERE re-checks totalReviews hasn't moved since we read it, and a
+      // 0-row result means another concurrent review beat us — retry with fresh data.
+      const MAX_ATTEMPTS = 5;
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        const worker = await this.workerRepo.findById(workerId, tx);
+        if (!worker) {
+          throw new NotFoundException('WorkerProfile', workerId);
+        }
+
+        const newRating =
+          (worker.rating * worker.totalReviews + data.rating) /
+          (worker.totalReviews + 1);
+
+        const updateResult = await tx.workerProfile.updateMany({
+          where: { id: workerId, totalReviews: worker.totalReviews },
+          data: {
+            rating: Number(newRating.toFixed(2)),
+            totalReviews: { increment: 1 },
+          },
+        });
+
+        if (updateResult.count > 0) {
+          return review;
+        }
       }
 
-      const newRating =
-        (worker.rating * worker.totalReviews + data.rating) /
-        (worker.totalReviews + 1);
-
-      await this.workerRepo.updateProfile(worker.userId, {
-        dailyRate: worker.dailyRate as any, // Keep existing rate
-        experience: worker.experience,
-      }, tx);
-
-      // Explicitly update totalReviews and rating on workerProfile
-      await tx.workerProfile.update({
-        where: { id: workerId },
-        data: {
-          rating: Number(newRating.toFixed(2)),
-          totalReviews: {
-            increment: 1,
-          },
-        },
-      });
-
-      return review;
+      throw new BusinessException(
+        'RATING_UPDATE_CONFLICT',
+        'Could not update the worker rating due to high contention — please retry',
+      );
     });
   }
 

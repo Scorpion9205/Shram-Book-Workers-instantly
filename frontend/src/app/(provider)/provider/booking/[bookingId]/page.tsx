@@ -78,6 +78,16 @@ export default function ProviderBookingDetailPage({ params }: { params: Promise<
         theme: {
           color: "#4F46E5",
         },
+        modal: {
+          // Without this, closing the checkout (changed mind, wrong card, network blip)
+          // leaves the Provider with no feedback and no obvious next step — the booking is
+          // still payable (the backend now allows retrying from PAYMENT_PENDING), but nothing
+          // told them that.
+          ondismiss: () => {
+            toast.info("Payment was not completed. You can try again whenever you're ready.");
+            refetch();
+          },
+        },
       };
 
       const paymentObject = new (window as any).Razorpay(options);
@@ -226,66 +236,73 @@ export default function ProviderBookingDetailPage({ params }: { params: Promise<
           Live map tracking will appear here once the worker is on the way.
         </Card>
       )}
-      <div className="border-t pt-4 space-y-2">
+      {booking.worker && (
+        <div className="border-t pt-4 space-y-2">
 
-        <h3 className="font-semibold">
-          Assigned Worker
-        </h3>
+          <h3 className="font-semibold">
+            Assigned Worker
+          </h3>
 
-        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4">
 
-          <Avatar className="size-14">
+            <Avatar className="size-14">
 
-            <AvatarImage
-              src={booking.worker?.user?.profileImage}
-            />
+              <AvatarImage
+                src={booking.worker.user?.profileImage}
+              />
 
-            <AvatarFallback>
-              {booking.worker?.user?.name?.[0]}
-            </AvatarFallback>
+              <AvatarFallback>
+                {booking.worker.user?.name?.[0] || "W"}
+              </AvatarFallback>
 
-          </Avatar>
+            </Avatar>
 
-          <div className="flex-1">
+            <div className="flex-1">
 
-            <p className="font-semibold">
-              {booking.worker?.user?.name}
-            </p>
+              <p className="font-semibold">
+                {booking.worker.user?.name}
+              </p>
 
-            <p className="text-sm text-muted-foreground">
-              {booking.worker?.user?.phone}
-            </p>
+              <p className="text-sm text-muted-foreground">
+                {booking.worker.user?.phone}
+              </p>
 
-            <div className="mt-2 flex gap-4 text-sm text-muted-foreground">
+              <div className="mt-2 flex gap-4 text-sm text-muted-foreground">
 
-              <span>
-                ⭐ {booking.worker?.rating}
-              </span>
+                <span>
+                  ⭐ {booking.worker.rating}
+                </span>
 
-              <span>
-                {booking.worker?.experience} yrs
-              </span>
+                <span>
+                  {booking.worker.experience} yrs
+                </span>
 
-              <span>
-                {booking.worker?.totalJobs} Jobs
-              </span>
+                <span>
+                  {booking.worker.totalJobs} Jobs
+                </span>
+
+              </div>
 
             </div>
 
           </div>
 
         </div>
-
-      </div>
+      )}
       {(booking.status === "CREATED" || booking.status === "PAYMENT_PENDING") && booking.paymentMode === "ONLINE" && (
         <Button className="w-full text-white bg-indigo-600 hover:bg-indigo-700" size="lg" onClick={handleOnlinePayment} loading={isPaying}>
           Pay Online (₹{booking.amount})
         </Button>
       )}
-      {booking.status === "WORK_COMPLETED" && (
+      {booking.status === "WORK_COMPLETED" && booking.paymentMode === "ONLINE" && (
         <Button className="w-full text-white bg-emerald-600 hover:bg-emerald-700" size="lg" onClick={handleSettle} loading={isSettling}>
           Confirm & Release Payment
         </Button>
+      )}
+      {booking.status === "WORK_COMPLETED" && booking.paymentMode !== "ONLINE" && (
+        <Card className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+          Waiting for the worker to confirm they've received the offline payment.
+        </Card>
       )}
       {(booking.status === "WORK_COMPLETED" || booking.status === "PAYMENT_SETTLED") && !booking.review && (
         <Button className="w-full" size="lg" variant="outline" onClick={() => setReviewOpen(true)}>
