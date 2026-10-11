@@ -123,6 +123,7 @@ export class AuthService implements IAuthService {
         const body = await renderEmail(React.createElement(OtpEmail, {
           name: data.name,
           otp: code,
+          frontendUrl: env.FRONTEND_URL,
         }));
         await this.emailProvider.send(data.email, 'Your SHRAM Verification Code', body);
         emailSuccess = true;

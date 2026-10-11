@@ -10,10 +10,10 @@ interface BookingCancelledProps {
 export function BookingCancelled({ bookingShortId, reason, frontendUrl }: BookingCancelledProps) {
   return (
     <Layout>
-      <Header />
+      <Header frontendUrl={frontendUrl} />
       <Card>
-        <h2 style={{ color: "#dc2626", marginBottom: "20px" }}>
-          ❌ Booking Cancelled
+        <h2 style={{ color: "#dc2626", marginBottom: "20px", fontSize: "22px" }}>
+          Booking Cancelled
         </h2>
         <Text>
           Your service booking <strong>#{bookingShortId}</strong> has been cancelled.
@@ -33,7 +33,7 @@ export function BookingCancelled({ bookingShortId, reason, frontendUrl }: Bookin
           </Button>
         </div>
       </Card>
-      <Footer />
+      <Footer frontendUrl={frontendUrl} />
     </Layout>
   );
 }

@@ -1,52 +1,25 @@
 import React from "react";
 
-import {
-  Layout,
-  Header,
-  Footer,
-  Card,
-  Text,
-  Divider,
-} from "../components/index.js";
+import { Layout, Header, Footer, Card, Text, Divider } from "../components/index.js";
+import type { PasswordChangedProps } from "../types/email.types.js";
 
-interface PasswordChangedProps {
-  name: string;
-}
-
-export default function PasswordChanged({
-  name,
-}: PasswordChangedProps) {
-
+export default function PasswordChanged({ name, frontendUrl }: PasswordChangedProps) {
   return (
-
     <Layout>
-
-      <Header />
+      <Header frontendUrl={frontendUrl} />
 
       <Card>
-
-        <h2
-          style={{
-            color: "#16a34a",
-            marginBottom: "20px",
-          }}
-        >
-          ✅ Password Changed Successfully
+        <h2 style={{ color: "#15803d", marginBottom: "20px", fontSize: "22px" }}>
+          Password Changed Successfully
         </h2>
 
         <Text>
           Hello <strong>{name}</strong>,
         </Text>
 
-        <Text>
-          Your SHRAM account password has been
-          changed successfully.
-        </Text>
+        <Text>Your SHRAM account password has been changed successfully.</Text>
 
-        <Text>
-          If you made this change,
-          no further action is required.
-        </Text>
+        <Text>If you made this change, no further action is required.</Text>
 
         <Divider />
 
@@ -55,17 +28,12 @@ export default function PasswordChanged({
         </Text>
 
         <Text>
-          Your account may be compromised.
-          Please contact SHRAM Support
-          immediately and secure your account.
+          Your account may be compromised. Please contact SHRAM Support immediately and
+          secure your account.
         </Text>
-
       </Card>
 
-      <Footer />
-
+      <Footer frontendUrl={frontendUrl} />
     </Layout>
-
   );
-
 }

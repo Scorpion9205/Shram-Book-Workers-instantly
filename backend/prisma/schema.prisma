@@ -166,6 +166,12 @@ model WorkerProfile {
   totalReviews            Int                      @default(0)
   latitude                Decimal?
   longitude               Decimal?
+  // For agent-managed, phone-less workers paid via bank transfer — the Agent fills these in
+  // and does the actual transfer manually outside the app; SHRAM only stores them for reference.
+  bankAccountHolderName   String?
+  bankAccountNumber       String?
+  bankIfscCode            String?
+  bankName                String?
   agentLinks              AgentWorker[]
   applications            Application[]
   bookings                Booking[]
@@ -243,13 +249,16 @@ model WorkerSkill {
 }
 
 model AgentWorker {
-  id        String        @id @default(uuid())
-  agentId   String
-  workerId  String
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-  agent     AgentProfile  @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  worker    WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  id             String        @id @default(uuid())
+  agentId        String
+  workerId       String
+  // The Agent's own "I vouch for this worker" trust flag — scoped to this roster link only,
+  // separate from User.isVerified (Admin's platform-wide compliance verification).
+  verifiedByAgent Boolean      @default(false)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  agent          AgentProfile  @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  worker         WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)
 
   @@unique([agentId, workerId])
   @@index([agentId])
@@ -344,6 +353,15 @@ model Booking {
   address                  Json?
   notes                    String?
   deletedAt                DateTime?
+  // Agent-managed-worker payout tracking only — the Agent manually settles what a worker has
+  // earned (cash or bank transfer, outside the app) and marks it paid here. Not used for
+  // self-managed-worker bookings, which still settle via the Wallet as before.
+  payoutPaidAt             DateTime?
+  payoutMethod             String?
+  // Separate from the above — this is the Agent's own commission on this booking being claimed
+  // from the company (their salary arrangement, handled outside the app). Independent of
+  // whether the worker has been paid yet.
+  commissionCheckedOutAt   DateTime?
   agent                    AgentProfile?           @relation(fields: [agentId], references: [id])
   instantRequest           InstantRequest?         @relation(fields: [instantRequestId], references: [id])
   response                 InstantRequestResponse? @relation(fields: [instantRequestResponseId], references: [id])

@@ -24,7 +24,7 @@ describe("AdminService", () => {
       findBySkillId: vi.fn().mockResolvedValue(null),
     };
     bookingRepoMock = { findById: vi.fn(), update: vi.fn() };
-    workerRepoMock = { findById: vi.fn(), markUnavailableIfAvailable: vi.fn() };
+    workerRepoMock = { findById: vi.fn(), findByUserId: vi.fn(), markUnavailableIfAvailable: vi.fn() };
     bookingStateServiceMock = { transition: vi.fn() };
     settingRepoMock = { set: vi.fn() };
     cacheMock = { del: vi.fn(), set: vi.fn() };
@@ -70,6 +70,33 @@ describe("AdminService", () => {
       await expect(service.assignWorker("booking_1", "worker_1", "admin_1")).rejects.toThrow(BusinessException);
       expect(bookingRepoMock.update).not.toHaveBeenCalled();
       expect(bookingStateServiceMock.transition).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("verifyWorker", () => {
+    it("looks up the worker profile by userId (not WorkerProfile.id, which the admin Users list never has)", async () => {
+      workerRepoMock.findByUserId.mockResolvedValue({ id: "worker_profile_1", userId: "user_1" });
+      userRepoMock.update.mockResolvedValue({ id: "user_1", isVerified: true });
+
+      await service.verifyWorker("user_1", true);
+
+      expect(workerRepoMock.findByUserId).toHaveBeenCalledWith("user_1");
+      expect(userRepoMock.update).toHaveBeenCalledWith("user_1", { isVerified: true });
+    });
+
+    it("honors isVerified: false so a Provider's 'Revoke Verification' action actually revokes", async () => {
+      workerRepoMock.findByUserId.mockResolvedValue({ id: "worker_profile_1", userId: "user_1" });
+
+      await service.verifyWorker("user_1", false);
+
+      expect(userRepoMock.update).toHaveBeenCalledWith("user_1", { isVerified: false });
+    });
+
+    it("404s when the given userId has no worker profile", async () => {
+      workerRepoMock.findByUserId.mockResolvedValue(null);
+
+      await expect(service.verifyWorker("user_1", true)).rejects.toThrow();
+      expect(userRepoMock.update).not.toHaveBeenCalled();
     });
   });
 

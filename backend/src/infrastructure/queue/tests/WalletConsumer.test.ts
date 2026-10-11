@@ -101,4 +101,23 @@ describe("WalletConsumer — commission rate", () => {
       expect(bookingRepoMock.update).not.toHaveBeenCalled();
     });
   });
+
+  describe("agent-managed bookings skip the wallet entirely", () => {
+    // Agent-managed workers have no login, so there's no wallet for them to ever see or
+    // withdraw from. The Agent settles what's owed manually instead (Booking.payoutPaidAt) —
+    // the wallet should never be touched for either payment mode.
+    it("does not credit/debit any wallet for an ONLINE agent-sourced booking", async () => {
+      await dispatchPaymentSettled({ ...onlineBooking, agentId: "agent_1" });
+
+      expect(walletServiceMock.creditWallet).not.toHaveBeenCalled();
+      expect(walletServiceMock.debitWallet).not.toHaveBeenCalled();
+    });
+
+    it("does not credit/debit any wallet for an OFFLINE agent-sourced booking", async () => {
+      await dispatchPaymentSettled({ ...offlineBooking, agentId: "agent_1" });
+
+      expect(walletServiceMock.creditWallet).not.toHaveBeenCalled();
+      expect(walletServiceMock.debitWallet).not.toHaveBeenCalled();
+    });
+  });
 });

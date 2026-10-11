@@ -9,7 +9,11 @@ services:
       POSTGRES_PASSWORD: shram
       POSTGRES_DB: shram
     ports:
-      - "5432:5432"
+      # Mapped to 5433 on the host — port 5432 is already owned by a native Windows
+      # postgres.exe service on this machine, which was silently intercepting connections
+      # meant for this container (TCP connected fine, but auth always failed since it was
+      # hitting the wrong Postgres instance entirely).
+      - "5433:5432"
     volumes:
       - shram_postgres_data:/var/lib/postgresql/data
     healthcheck:

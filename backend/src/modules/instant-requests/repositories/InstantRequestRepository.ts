@@ -257,6 +257,7 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
         amount: data.amount,
         status: data.status as any,
         startOtp: data.startOtp,
+        agentId: data.agentId ?? null,
         // Instant-request bookings never go through Razorpay — there is no payment-collection
         // step anywhere in this flow. Leaving this at the schema default ("ONLINE") made
         // WalletConsumer treat it as "the platform already holds this money" on completion and

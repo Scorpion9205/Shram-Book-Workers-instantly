@@ -4,4 +4,5 @@ export interface IApplicationService {
   acceptApplication(userId: string, applicationId: string, paymentMode?: string): Promise<any>;
   rejectApplication(userId: string, applicationId: string): Promise<any>;
   getMyApplications(userId: string): Promise<any[]>;
+  assignWorkerToApplication(agentId: string, applicationId: string, workerId: string): Promise<any>;
 }

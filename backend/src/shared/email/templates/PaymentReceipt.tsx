@@ -12,10 +12,10 @@ interface PaymentReceiptProps {
 export function PaymentReceipt({ providerName, bookingShortId, workerName, amount, frontendUrl }: PaymentReceiptProps) {
   return (
     <Layout>
-      <Header />
+      <Header frontendUrl={frontendUrl} />
       <Card>
-        <h2 style={{ color: "#111827", marginBottom: "20px" }}>
-          🧾 Payment Receipt
+        <h2 style={{ color: "#18181b", marginBottom: "20px", fontSize: "22px" }}>
+          Payment Receipt
         </h2>
         <Text>
           Hello <strong>{providerName}</strong>,
@@ -41,7 +41,7 @@ export function PaymentReceipt({ providerName, bookingShortId, workerName, amoun
           </Button>
         </div>
       </Card>
-      <Footer />
+      <Footer frontendUrl={frontendUrl} />
     </Layout>
   );
 }

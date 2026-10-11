@@ -179,6 +179,7 @@ export async function wireModules(
 
   const userService = new UserService(userRepo, cacheService, s3Provider);
   const workerService = new WorkerService(workerRepo, cacheService);
+  const locationService = new LocationService(locationRepo, cacheService);
   const jobService = new JobService(
     jobRepo,
     workerRepo,
@@ -203,12 +204,36 @@ export async function wireModules(
     workerRepo,
     prismaService,
   );
+  const walletService = new WalletService(
+    walletRepo,
+    transactionRepo,
+    workerRepo,
+  );
+  const instantMatchingService = new InstantMatchingService(
+    instantRequestRepo,
+    cacheService,
+    platformSettingRepo,
+    mapsProvider,
+  );
+  const instantRequestService = new InstantRequestService(
+    instantRequestRepo,
+    cacheService,
+    prismaService,
+    instantMatchingService,
+    bookingHistoryRepo,
+    eventPublisher,
+  );
   const agentService = new AgentService(
     agentRepo,
     agentWorkerRepo,
     prismaService,
     platformSettingRepo,
     cacheService,
+    workerService,
+    locationService,
+    userService,
+    applicationService,
+    instantRequestService,
   );
   const paymentService = new PaymentService(
     paymentRepo,
@@ -216,11 +241,6 @@ export async function wireModules(
     bookingStateService,
     razorpayProvider,
     prismaService,
-  );
-  const walletService = new WalletService(
-    walletRepo,
-    transactionRepo,
-    workerRepo,
   );
   const adminService = new AdminService(
     adminRepo,
@@ -249,25 +269,11 @@ export async function wireModules(
     cacheService,
     jobRepo,
     paymentService,
-  );
-  const instantMatchingService = new InstantMatchingService(
-    instantRequestRepo,
-    cacheService,
-    platformSettingRepo,
-    mapsProvider,
-  );
-  const instantRequestService = new InstantRequestService(
-    instantRequestRepo,
-    cacheService,
-    prismaService,
-    instantMatchingService,
-    bookingHistoryRepo,
-    eventPublisher,
+    agentRepo,
   );
   const tokenService = new TokenService(cacheService);
   const otpService = new OTPService(otpRepo, cacheService, emailProvider, smsProvider);
   const authService = new AuthService(authRepo, otpService, tokenService, cacheService, prismaService, emailProvider, smsProvider, googleOAuthProvider);
-  const locationService = new LocationService(locationRepo, cacheService);
   const skillService = new SkillService(skillRepo);
   const providerService = new ProviderService(providerRepo);
   const dashboardService = new DashboardService(dashboardRepo, cacheService);

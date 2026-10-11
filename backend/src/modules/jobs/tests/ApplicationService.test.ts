@@ -88,7 +88,7 @@ describe("ApplicationService.acceptApplication — worker double-booking guard",
     expect(txMock.booking.create).not.toHaveBeenCalled();
   });
 
-  it("skips the worker claim for AGENT-type applications with no pinned worker yet", async () => {
+  it("skips the worker claim AND booking creation for AGENT-type applications — no specific worker is known yet, so there's nothing to book until the Agent assigns one via assignWorkerToApplication", async () => {
     applicationRepoMock.findById.mockResolvedValue({
       ...pendingWorkerApplication,
       applicantType: "AGENT",
@@ -99,10 +99,11 @@ describe("ApplicationService.acceptApplication — worker double-booking guard",
     });
     txMock.workerProfile = { updateMany: vi.fn() };
 
-    await service.acceptApplication("provider_1", "app_1");
+    const result = await service.acceptApplication("provider_1", "app_1");
 
     expect(txMock.workerProfile.updateMany).not.toHaveBeenCalled();
-    expect(txMock.booking.create).toHaveBeenCalled();
+    expect(txMock.booking.create).not.toHaveBeenCalled();
+    expect(result.awaitingWorkerAssignment).toBe(true);
   });
 });
 
@@ -169,5 +170,103 @@ describe("ApplicationService.applyForJob", () => {
     await expect(
       service.applyForJob("agent_user_1", "job_1", { bidAmount: 500 }, "AGENT"),
     ).rejects.toThrow();
+  });
+});
+
+describe("ApplicationService.assignWorkerToApplication", () => {
+  let applicationRepoMock: any;
+  let cacheMock: any;
+  let prismaMock: any;
+  let eventPublisherMock: any;
+  let historyRepoMock: any;
+  let txMock: any;
+  let service: ApplicationService;
+
+  const acceptedAgentApplication = {
+    id: "app_1",
+    jobId: "job_1",
+    agentId: "agent_1",
+    applicantType: "AGENT",
+    status: "ACCEPTED",
+    workerCount: 2,
+    bidAmount: 1000,
+    job: { id: "job_1", providerId: "provider_1" },
+  };
+
+  beforeEach(() => {
+    txMock = {
+      booking: {
+        count: vi.fn().mockResolvedValue(0),
+        create: vi.fn().mockResolvedValue({ id: "booking_1", providerId: "provider_1", status: "WORKER_ASSIGNED" }),
+      },
+      workerProfile: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+
+    applicationRepoMock = { findById: vi.fn().mockResolvedValue(acceptedAgentApplication) };
+    cacheMock = { set: vi.fn() };
+    prismaMock = { client: { $transaction: vi.fn((cb: any) => cb(txMock)) } };
+    eventPublisherMock = { publish: vi.fn() };
+    historyRepoMock = { append: vi.fn() };
+
+    service = new ApplicationService(
+      applicationRepoMock,
+      {} as any,
+      {} as any,
+      {} as any,
+      cacheMock,
+      prismaMock,
+      eventPublisherMock,
+      historyRepoMock,
+    );
+  });
+
+  it("rejects an application that doesn't belong to this agent", async () => {
+    applicationRepoMock.findById.mockResolvedValue({ ...acceptedAgentApplication, agentId: "some_other_agent" });
+
+    await expect(service.assignWorkerToApplication("agent_1", "app_1", "worker_1")).rejects.toThrow(BusinessException);
+    expect(txMock.booking.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects an application that hasn't been accepted by the Provider yet", async () => {
+    applicationRepoMock.findById.mockResolvedValue({ ...acceptedAgentApplication, status: "PENDING" });
+
+    await expect(service.assignWorkerToApplication("agent_1", "app_1", "worker_1")).rejects.toThrow(BusinessException);
+  });
+
+  it("rejects once all workerCount slots have already been assigned", async () => {
+    txMock.booking.count.mockResolvedValue(2); // workerCount is 2
+
+    await expect(service.assignWorkerToApplication("agent_1", "app_1", "worker_1")).rejects.toThrow(BusinessException);
+    expect(txMock.booking.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects when the chosen worker was just claimed elsewhere", async () => {
+    txMock.workerProfile.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(service.assignWorkerToApplication("agent_1", "app_1", "worker_1")).rejects.toThrow(BusinessException);
+    expect(txMock.booking.create).not.toHaveBeenCalled();
+  });
+
+  it("creates one OFFLINE booking for the assigned worker, splitting bidAmount evenly across workerCount", async () => {
+    await service.assignWorkerToApplication("agent_1", "app_1", "worker_1");
+
+    expect(txMock.workerProfile.updateMany).toHaveBeenCalledWith({
+      where: { id: "worker_1", isAvailable: true },
+      data: { isAvailable: false },
+    });
+    expect(txMock.booking.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          jobId: "job_1",
+          workerId: "worker_1",
+          agentId: "agent_1",
+          amount: 500, // bidAmount(1000) / workerCount(2)
+          paymentMode: "OFFLINE",
+          status: "WORKER_ASSIGNED",
+        }),
+      }),
+    );
   });
 });

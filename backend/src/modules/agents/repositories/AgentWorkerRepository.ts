@@ -1,6 +1,47 @@
+import { Prisma, UserRole } from '@prisma/client';
 import { BaseRepository } from '../../../core/base/BaseRepository.js';
-import type { IAgentWorkerRepository } from '../interfaces/IAgentWorkerRepository.js';
+import type {
+  IAgentWorkerRepository,
+  AgentWorkerRosterEntry,
+  AgentWorkerLink,
+  CreateManagedWorkerInput,
+} from '../interfaces/IAgentWorkerRepository.js';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
+import { ConflictException, DatabaseException, NotFoundException } from '../../../core/exceptions/index.js';
+
+const rosterInclude = {
+  worker: {
+    include: {
+      user: { select: { id: true, name: true, phone: true, isActive: true } },
+      skills: { include: { skill: true } },
+    },
+  },
+} satisfies Prisma.AgentWorkerInclude;
+
+function toRosterEntry(row: Prisma.AgentWorkerGetPayload<{ include: typeof rosterInclude }>): AgentWorkerRosterEntry {
+  return {
+    id: row.id,
+    workerId: row.workerId,
+    verifiedByAgent: row.verifiedByAgent,
+    createdAt: row.createdAt,
+    worker: {
+      id: row.worker.id,
+      userId: row.worker.userId,
+      isAvailable: row.worker.isAvailable,
+      dailyRate: row.worker.dailyRate !== null ? Number(row.worker.dailyRate) : null,
+      latitude: row.worker.latitude !== null ? Number(row.worker.latitude) : null,
+      longitude: row.worker.longitude !== null ? Number(row.worker.longitude) : null,
+      user: row.worker.user,
+      skills: row.worker.skills.map((s) => ({ skillId: s.skillId, skill: { id: s.skill.id, name: s.skill.name } })),
+      bankDetails: {
+        accountHolderName: row.worker.bankAccountHolderName,
+        accountNumber: row.worker.bankAccountNumber,
+        ifscCode: row.worker.bankIfscCode,
+        bankName: row.worker.bankName,
+      },
+    },
+  };
+}
 
 export class AgentWorkerRepository extends BaseRepository<any> implements IAgentWorkerRepository {
   constructor(private readonly prisma: PrismaService) {
@@ -24,16 +65,136 @@ export class AgentWorkerRepository extends BaseRepository<any> implements IAgent
     });
   }
 
-  async findManyByAgentId(agentId: string): Promise<any[]> {
-    return this.prisma.client.agentWorker.findMany({
+  async findManyByAgentId(agentId: string): Promise<AgentWorkerRosterEntry[]> {
+    const rows = await this.prisma.client.agentWorker.findMany({
       where: { agentId },
-      include: {
-        worker: {
-          include: {
-            skills: true,
-          },
-        },
-      },
+      include: rosterInclude,
+      orderBy: { createdAt: 'desc' },
     });
+    return rows.map(toRosterEntry);
+  }
+
+  async findLinkByAgentAndWorker(agentId: string, workerId: string): Promise<AgentWorkerLink | null> {
+    const row = await this.prisma.client.agentWorker.findUnique({
+      where: { agentId_workerId: { agentId, workerId } },
+      include: { worker: { select: { userId: true } } },
+    });
+    if (!row) return null;
+    return {
+      id: row.id,
+      agentId: row.agentId,
+      workerId: row.workerId,
+      verifiedByAgent: row.verifiedByAgent,
+      worker: { userId: row.worker.userId },
+    };
+  }
+
+  async createManagedWorker(agentId: string, data: CreateManagedWorkerInput): Promise<AgentWorkerRosterEntry> {
+    try {
+      const link = await this.prisma.client.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: {
+            name: data.name,
+            phone: data.phone ?? null,
+            role: UserRole.WORKER,
+            isVerified: false,
+          },
+        });
+
+        const worker = await tx.workerProfile.create({
+          data: {
+            userId: user.id,
+            experience: 0,
+            dailyRate: data.dailyRate ?? null,
+            latitude: data.latitude ?? null,
+            longitude: data.longitude ?? null,
+            // WorkerProfile.isAvailable defaults to true — misleading here since this worker
+            // isn't in the Redis geo-index yet (only AgentService.setWorkerAvailability adds
+            // them there). The Agent must explicitly mark them available once they've actually
+            // reported in for the day.
+            isAvailable: false,
+          },
+        });
+
+        if (data.skillIds.length > 0) {
+          await tx.workerSkill.createMany({
+            data: data.skillIds.map((skillId) => ({ workerId: worker.id, skillId })),
+          });
+        }
+
+        return tx.agentWorker.create({
+          data: { agentId, workerId: worker.id },
+          include: rosterInclude,
+        });
+      });
+
+      return toRosterEntry(link);
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException('A worker with this phone number already exists');
+      }
+      throw new DatabaseException('Failed to create managed worker', err);
+    }
+  }
+
+  async setVerified(agentId: string, workerId: string, verified: boolean): Promise<AgentWorkerRosterEntry> {
+    try {
+      const row = await this.prisma.client.agentWorker.update({
+        where: { agentId_workerId: { agentId, workerId } },
+        data: { verifiedByAgent: verified },
+        include: rosterInclude,
+      });
+      return toRosterEntry(row);
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+        throw new NotFoundException('AgentWorker', workerId);
+      }
+      throw new DatabaseException('Failed to update worker verification status', err);
+    }
+  }
+
+  async setWorkerBankDetails(
+    workerId: string,
+    data: { accountHolderName: string; accountNumber: string; ifscCode: string; bankName: string },
+  ): Promise<AgentWorkerRosterEntry> {
+    try {
+      await this.prisma.client.workerProfile.update({
+        where: { id: workerId },
+        data: {
+          bankAccountHolderName: data.accountHolderName,
+          bankAccountNumber: data.accountNumber,
+          bankIfscCode: data.ifscCode,
+          bankName: data.bankName,
+        },
+      });
+
+      const link = await this.prisma.client.agentWorker.findFirst({
+        where: { workerId },
+        include: rosterInclude,
+      });
+      if (!link) {
+        throw new NotFoundException('AgentWorker', workerId);
+      }
+      return toRosterEntry(link);
+    } catch (err) {
+      if (err instanceof NotFoundException) throw err;
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+        throw new NotFoundException('WorkerProfile', workerId);
+      }
+      throw new DatabaseException('Failed to update worker bank details', err);
+    }
+  }
+
+  async deleteLink(agentId: string, workerId: string): Promise<void> {
+    try {
+      await this.prisma.client.agentWorker.delete({
+        where: { agentId_workerId: { agentId, workerId } },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+        throw new NotFoundException('AgentWorker', workerId);
+      }
+      throw new DatabaseException('Failed to remove worker from roster', err);
+    }
   }
 }

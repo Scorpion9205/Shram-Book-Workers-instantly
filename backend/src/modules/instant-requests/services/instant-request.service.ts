@@ -312,6 +312,152 @@ export class InstantRequestService implements IInstantRequestService {
     }
   }
 
+  async getOpenRequestsForSkills(skillIds: string[]): Promise<any[]> {
+    if (skillIds.length === 0) return [];
+    return this.requestRepo.findOpenNearbyRequestsForSkills(skillIds);
+  }
+
+  async assignWorkerToItem(agentId: string, itemId: string, workerId: string, workerUserId: string): Promise<any> {
+    const lockKey = `lock:instant-item:${itemId}`;
+    const lockToken = await this.cache.acquireLock(lockKey, 15);
+
+    if (!lockToken) {
+      throw new BusinessException("CONCURRENT_LOCK", "Someone else is already accepting this request item.");
+    }
+
+    try {
+      const result = await this.prisma.transaction(async (tx) => {
+        const item = await this.requestRepo.findRequestItemWithRequest(itemId, tx);
+
+        if (!item) {
+          throw new NotFoundException("InstantRequestItem", itemId);
+        }
+
+        if (item.request.bookingMode !== "DIRECT") {
+          throw new BadRequestException("This request does not support direct accept");
+        }
+
+        if (item.request.status !== "OPEN") {
+          throw new BusinessException("REQUEST_CLOSED", "Request is closed");
+        }
+
+        const workerSkillIds = await this.requestRepo.findWorkerSkillIds(workerId, tx);
+        if (!workerSkillIds.includes(item.skillId)) {
+          throw new BadRequestException("This worker doesn't have the required skill");
+        }
+
+        const alreadyAccepted = await this.requestRepo.findResponseByItemAndWorker(itemId, workerId, tx);
+        if (alreadyAccepted) {
+          throw new BusinessException("ALREADY_ACCEPTED", "This worker has already been assigned to this item");
+        }
+
+        if (item.acceptedWorkers >= item.requiredWorkers) {
+          throw new BusinessException("SLOTS_FILLED", "All slots are filled");
+        }
+
+        const response = await this.requestRepo.createResponse(itemId, workerId, tx);
+
+        const { code: startOtpPlain, hash: startOtp } = await generateHashedStartOtp();
+
+        const booking = await this.requestRepo.createBooking(
+          {
+            providerId: item.request.providerId,
+            workerId,
+            agentId,
+            instantRequestId: item.request.id,
+            instantRequestResponseId: response.id,
+            amount: item.request.amount,
+            status: BookingStatus.WORKER_ASSIGNED,
+            startOtp,
+          },
+          tx,
+        );
+
+        await this.cache.set(bookingStartOtpCacheKey(booking.id), startOtpPlain, BOOKING_START_OTP_CACHE_TTL_SECONDS);
+
+        // See the identical comment in acceptRequest() — booking creation bypasses
+        // BookingStateService, so this writes the missing genesis audit-history row directly.
+        await this.historyRepo.append(
+          {
+            bookingId: booking.id,
+            fromStatus: BookingStatus.CREATED,
+            toStatus: BookingStatus.WORKER_ASSIGNED,
+            changedBy: agentId,
+            reason: 'Agent assigned a roster worker to this instant request item',
+          },
+          tx,
+        );
+
+        // Same double-booking guard as acceptRequest — the Redis lock above only guards this
+        // one item, not the same worker being claimed concurrently by a different item/request.
+        const workerClaimed = await this.requestRepo.markWorkerUnavailableIfAvailable(workerId, tx);
+        if (workerClaimed === 0) {
+          throw new BusinessException("WORKER_UNAVAILABLE", "This worker has just been booked elsewhere");
+        }
+
+        for (const skillId of workerSkillIds) {
+          await this.cache.geoRemove(`geo:instant-workers:${skillId}`, workerId);
+        }
+
+        const updateCount = await this.requestRepo.incrementAcceptedWorkersIfSlotAvailable(
+          itemId,
+          item.requiredWorkers,
+          tx,
+        );
+
+        if (updateCount === 0) {
+          throw new BusinessException("SLOTS_FILLED", "All slots are already filled");
+        }
+
+        const updatedItem = await this.requestRepo.findItemById(itemId, tx);
+        if (!updatedItem) {
+          throw new NotFoundException("InstantRequestItem", itemId);
+        }
+
+        if (updatedItem.acceptedWorkers >= updatedItem.requiredWorkers) {
+          await this.requestRepo.markItemFilled(itemId, tx);
+        }
+
+        const openItems = await this.requestRepo.countOpenItemsForRequest(item.requestId, tx);
+        if (openItems === 0) {
+          await this.requestRepo.markRequestFilled(item.requestId, tx);
+        }
+
+        const finalItem = await this.requestRepo.findItemById(itemId, tx);
+
+        return {
+          item: finalItem,
+          providerUserId: item.request.providerId,
+          bookingId: booking.id,
+          booking,
+        };
+      });
+
+      await CacheInvalidationService.afterInstantRequestAccepted(result.providerUserId, workerUserId);
+      await this.eventPublisher.publish(RoutingKeys.BOOKING_CREATED, result.booking);
+
+      try {
+        const io = getIO();
+        io.to(`user:${result.providerUserId}`).emit("bookingUpdated", {
+          id: result.bookingId,
+          status: "accepted",
+          workerId,
+          requestId: result.item?.requestId,
+          itemId,
+        });
+      } catch (err) {
+        this.logger.debug("Skipped accept socket emit — socket not initialized", { itemId });
+      }
+
+      return {
+        ...result.item,
+        bookingId: result.bookingId,
+      };
+    } finally {
+      await this.cache.releaseLock(lockKey, lockToken);
+    }
+  }
+
   async getMyRequests(userId: string) {
     const provider = await this.requestRepo.findProviderProfileByUserId(userId);
     if (!provider) {

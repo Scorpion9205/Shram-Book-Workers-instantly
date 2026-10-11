@@ -12,6 +12,7 @@ import React from 'react';
 import { renderEmail } from '../../../shared/email/utils/render-email.js';
 import OtpEmail from '../../../shared/email/templates/OtpEmail.js';
 import { Logger } from '../../../core/logger/Logger.js';
+import { env } from '../../../config/env.js';
 
 export class OTPService implements IOTPService {
   private readonly logger = new Logger('OTPService');
@@ -104,7 +105,8 @@ export class OTPService implements IOTPService {
       try {
         const body = await renderEmail(React.createElement(OtpEmail, {
           name: 'User',
-          otp: code
+          otp: code,
+          frontendUrl: env.FRONTEND_URL,
         }));
         await this.emailProvider.send(identifier, 'Your SHRAM Verification Code', body);
       } catch (error) {

@@ -6,7 +6,6 @@ import "./shared/config/redis.js" // Keep legacy redis config active
 import app from "./app.js";
 import { env } from "./config/env.js";
 import { rabbitMQ } from "./shared/queue/connection/rabbitmq.connection.js";
-import { startEmailConsumer } from "./shared/email/consumers/email.consumer.js";
 import {
   initializeSocket,
 } from "./socket/socket.js";
@@ -26,9 +25,8 @@ const server =
 
 initializeSocket(server);
 
-// Boot legacy queue + email consumer
+// Boot legacy queue connection (still used by the /api/v1/ready probe)
 await rabbitMQ.connect();
-await startEmailConsumer();
 
 // Boot new infrastructure (Prisma, Redis, RabbitMQ)
 try {

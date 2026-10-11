@@ -5,8 +5,8 @@ export function Divider() {
     <hr
       style={{
         border: "none",
-        borderTop: "1px solid #e5e7eb",
-        margin: "30px 0",
+        borderTop: "1px solid #e4e4e7",
+        margin: "28px 0",
       }}
     />
   );

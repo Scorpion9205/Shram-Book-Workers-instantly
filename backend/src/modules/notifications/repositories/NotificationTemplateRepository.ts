@@ -77,7 +77,10 @@ export class NotificationTemplateRepository extends BaseRepository<NotificationT
         update: {
           subject: data.subject ?? null,
           body: data.body,
-          variables: data.variables ?? Prisma.DbNull,
+          // Admin edits never submit `variables` (the editor only exposes subject/body) — only
+          // touch it when the caller explicitly provided one, so a routine body edit doesn't
+          // silently wipe out the template's existing placeholder list.
+          ...(data.variables !== undefined && { variables: data.variables ?? Prisma.DbNull }),
         },
         create: {
           type,

@@ -32,7 +32,13 @@ interface PasswordForm {
   newPassword: string;
 }
 
-export function SettingsPanel() {
+export function SettingsPanel({
+  allowDeleteAccount = true,
+  showHeader = true,
+}: {
+  allowDeleteAccount?: boolean;
+  showHeader?: boolean;
+}) {
   const router = useRouter();
   const dispatch = useAppDispatch();
   const { theme, setTheme } = useTheme();
@@ -90,10 +96,12 @@ export function SettingsPanel() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">Manage your account preferences.</p>
-      </div>
+      {showHeader && (
+        <div>
+          <h1 className="text-xl font-bold tracking-tight">Settings</h1>
+          <p className="text-sm text-muted-foreground">Manage your account preferences.</p>
+        </div>
+      )}
 
       <Card>
         <CardHeader>
@@ -140,35 +148,41 @@ export function SettingsPanel() {
           <Button variant="outline" className="w-full justify-start" onClick={handleLogout}>
             <LogOut className="size-4" /> Logout
           </Button>
-          <Separator />
-          <Button
-            variant="outline"
-            className="w-full justify-start border-destructive/30 text-destructive hover:bg-destructive/5"
-            onClick={() => setDeleteOpen(true)}
-          >
-            <Trash2 className="size-4" /> Delete Account
-          </Button>
+          {allowDeleteAccount && (
+            <>
+              <Separator />
+              <Button
+                variant="outline"
+                className="w-full justify-start border-destructive/30 text-destructive hover:bg-destructive/5"
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 className="size-4" /> Delete Account
+              </Button>
+            </>
+          )}
         </CardContent>
       </Card>
 
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete your account?</DialogTitle>
-            <DialogDescription>
-              This action is permanent and cannot be undone. All your data will be removed.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleDelete} loading={isDeleting}>
-              Delete Account
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {allowDeleteAccount && (
+        <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete your account?</DialogTitle>
+              <DialogDescription>
+                This action is permanent and cannot be undone. All your data will be removed.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={handleDelete} loading={isDeleting}>
+                Delete Account
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

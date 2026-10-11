@@ -93,6 +93,14 @@ export class WalletConsumer {
           return;
         }
 
+        if (booking.agentId) {
+          // Agent-managed worker — they have no login to ever see or withdraw from a wallet,
+          // so this booking never touches one. The Agent settles what's owed manually instead
+          // (see AgentService.payoutWorker / Booking.payoutPaidAt), set directly on the booking.
+          this.logger.info(`Booking ${bookingId} is agent-managed — skipping wallet, payout is tracked manually`, { agentId: booking.agentId });
+          return;
+        }
+
         const amount = Number(booking.amount);
         const commissionPercent = await this.getCommissionPercent();
 

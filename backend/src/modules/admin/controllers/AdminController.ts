@@ -34,6 +34,10 @@ const SuspendUserBodySchema = z.object({
   isActive: z.boolean(),
 });
 
+const VerifyWorkerBodySchema = z.object({
+  isVerified: z.boolean(),
+});
+
 const GetBookingsQuerySchema = z.object({
   page: pageSchema,
   limit: limitSchema,
@@ -187,7 +191,8 @@ export class AdminController extends BaseController {
 
   verifyWorker = async (req: Request, res: Response): Promise<void> => {
     const id = req.params.id as string;
-    const updated = await this.adminService.verifyWorker(id);
-    this.ok(res, UserMapper.toDto(updated), 'Worker profile verified successfully.');
+    const dto = this.validate(VerifyWorkerBodySchema, req.body);
+    const updated = await this.adminService.verifyWorker(id, dto.isVerified);
+    this.ok(res, UserMapper.toDto(updated), dto.isVerified ? 'Worker profile verified successfully.' : 'Worker verification revoked.');
   };
 }

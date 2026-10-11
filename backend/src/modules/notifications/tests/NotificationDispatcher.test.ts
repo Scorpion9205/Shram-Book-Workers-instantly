@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NotificationDispatcher } from "../services/NotificationDispatcher.js";
 import { NotificationType, NotificationChannel } from "../enums/NotificationType.js";
+import { Layout } from "../../../shared/email/components/index.js";
 
 const { renderEmailMock } = vi.hoisted(() => ({
   renderEmailMock: vi.fn().mockResolvedValue("<html>built-in template</html>"),
@@ -55,13 +56,19 @@ describe("NotificationDispatcher — NOTIF-01 (DB templates must govern Email, n
       data: { name: "Test Provider" },
     });
 
+    // The DB template still wins outright over the built-in WelcomeEmail component — but its
+    // plain text is now wrapped in the same branded Layout/Header/Card/Footer shell so it
+    // never ships as unstyled raw text. renderEmail is called once, with that wrapper (not
+    // the WelcomeEmail component), and the admin's custom subject is preserved verbatim.
+    expect(renderEmailMock).toHaveBeenCalledTimes(1);
+    const renderedElement = renderEmailMock.mock.calls[0]?.[0];
+    expect(renderedElement.type).toBe(Layout);
+
     expect(emailProviderMock.send).toHaveBeenCalledWith(
       "provider@example.com",
       "Custom subject for Test Provider",
-      "Custom admin-edited body for Test Provider",
+      "<html>built-in template</html>",
     );
-    // The DB template must win outright — the built-in React component must never even render.
-    expect(renderEmailMock).not.toHaveBeenCalled();
   });
 
   it("falls back to the built-in React template only when no DB template is configured", async () => {
