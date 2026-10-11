@@ -26,6 +26,7 @@ import {
   InstantRequestController,
   createInstantRequestRouter,
 } from '../../modules/instant-requests/index.js';
+import type { IInstantMatchingService } from '../../modules/instant-requests/index.js';
 import {
   AuthRepository,
   OTPRepository,
@@ -85,7 +86,8 @@ export interface AppDependencies {
   cache: ICacheService;
   eventPublisher: IEventPublisher;
   rabbitConn: amqp.Connection;
-  
+  instantMatchingService: IInstantMatchingService;
+
   // Dynamic Routers
   userRouter: Router;
   workerRouter: Router;
@@ -189,6 +191,7 @@ export async function wireModules(
     applicationRepo,
     jobRepo,
     workerRepo,
+    agentRepo,
     cacheService,
     prismaService,
     eventPublisher,
@@ -245,11 +248,13 @@ export async function wireModules(
     eventPublisher,
     cacheService,
     jobRepo,
+    paymentService,
   );
   const instantMatchingService = new InstantMatchingService(
     instantRequestRepo,
     cacheService,
     platformSettingRepo,
+    mapsProvider,
   );
   const instantRequestService = new InstantRequestService(
     instantRequestRepo,
@@ -257,6 +262,7 @@ export async function wireModules(
     prismaService,
     instantMatchingService,
     bookingHistoryRepo,
+    eventPublisher,
   );
   const tokenService = new TokenService(cacheService);
   const otpService = new OTPService(otpRepo, cacheService, emailProvider, smsProvider);
@@ -355,6 +361,7 @@ export async function wireModules(
     cache: cacheService,
     eventPublisher,
     rabbitConn: rabbitConnection,
+    instantMatchingService,
     userRouter,
     workerRouter,
     jobRouter,

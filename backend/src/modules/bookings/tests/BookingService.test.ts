@@ -8,6 +8,7 @@ describe("BookingService", () => {
   let eventPublisherMock: any;
   let cacheMock: any;
   let jobRepoMock: any;
+  let paymentServiceMock: any;
   let service: BookingService;
 
   const onlineBooking = { id: "booking_1", providerId: "provider_1", worker: { userId: "worker_1" }, paymentMode: "ONLINE", amount: 500 };
@@ -19,8 +20,9 @@ describe("BookingService", () => {
     eventPublisherMock = { publish: vi.fn() };
     cacheMock = {};
     jobRepoMock = { findById: vi.fn() };
+    paymentServiceMock = { refundForCancelledBooking: vi.fn() };
 
-    service = new BookingService(bookingRepoMock, stateServiceMock, eventPublisherMock, cacheMock, jobRepoMock);
+    service = new BookingService(bookingRepoMock, stateServiceMock, eventPublisherMock, cacheMock, jobRepoMock, paymentServiceMock);
   });
 
   describe("createBooking", () => {
@@ -108,6 +110,36 @@ describe("BookingService", () => {
       bookingRepoMock.findById.mockResolvedValue(offlineBooking);
 
       await expect(service.settleOfflinePayment("booking_2", "someone_else")).rejects.toThrow(BusinessException);
+    });
+  });
+
+  describe("cancelBooking", () => {
+    it("attempts a refund after a successful cancellation", async () => {
+      bookingRepoMock.findById.mockResolvedValue(onlineBooking);
+      stateServiceMock.transition.mockResolvedValue({ ...onlineBooking, status: "CANCELLED_BY_PROVIDER" });
+
+      await service.cancelBooking("booking_1", "provider_1");
+
+      expect(paymentServiceMock.refundForCancelledBooking).toHaveBeenCalledWith("booking_1");
+    });
+
+    it("still returns the cancelled booking even if the refund attempt itself fails", async () => {
+      bookingRepoMock.findById.mockResolvedValue(onlineBooking);
+      stateServiceMock.transition.mockResolvedValue({ ...onlineBooking, status: "CANCELLED_BY_PROVIDER" });
+      paymentServiceMock.refundForCancelledBooking.mockRejectedValue(new Error("Razorpay API down"));
+
+      const result = await service.cancelBooking("booking_1", "provider_1");
+
+      expect(result.status).toBe("CANCELLED_BY_PROVIDER");
+    });
+
+    it("cancels as CANCELLED_BY_WORKER when the caller is the assigned worker, not the provider", async () => {
+      bookingRepoMock.findById.mockResolvedValue(onlineBooking);
+      stateServiceMock.transition.mockResolvedValue({ ...onlineBooking, status: "CANCELLED_BY_WORKER" });
+
+      await service.cancelBooking("booking_1", "worker_1");
+
+      expect(stateServiceMock.transition).toHaveBeenCalledWith("booking_1", "CANCELLED_BY_WORKER", expect.any(Object));
     });
   });
 });

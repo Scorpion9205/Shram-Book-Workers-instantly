@@ -58,6 +58,13 @@ export default function ProviderBookingDetailPage({ params }: { params: Promise<
   }
 
   async function handleOnlinePayment() {
+    if (!process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID) {
+      // No silent fallback to a hardcoded test key — that key could activate in production
+      // and open checkout against the wrong Razorpay account with no indication why.
+      toast.error("Online payments aren't configured. Please contact support.");
+      return;
+    }
+
     const loaded = await loadRazorpayScript();
     if (!loaded) {
       toast.error("Failed to load Razorpay SDK. Check your network.");
@@ -67,7 +74,7 @@ export default function ProviderBookingDetailPage({ params }: { params: Promise<
     try {
       const orderData = await createPaymentOrder(bookingId).unwrap();
       const options = {
-        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_U1bE9pYpZlZ1eW", // Razorpay test key ID
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
         amount: orderData.amount,
         currency: orderData.currency,
         name: "Shram Bookings",

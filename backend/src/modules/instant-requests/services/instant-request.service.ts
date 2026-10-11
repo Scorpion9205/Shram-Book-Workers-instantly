@@ -11,6 +11,8 @@ import {
 } from "../../../shared/utils/booking-otp.util.js";
 import { PrismaService } from "../../../database/prisma/PrismaService.js";
 import type { ICacheService } from "../../../core/interfaces/ICacheService.js";
+import type { IEventPublisher } from "../../../core/interfaces/IEventPublisher.js";
+import { RoutingKeys } from "../../../infrastructure/queue/queue.constants.js";
 import type { IBookingHistoryRepository } from "../../bookings/interfaces/IBookingHistoryRepository.js";
 import type { IInstantRequestRepository } from "../interfaces/IInstantRequestRepository.js";
 import type { IInstantMatchingService } from "../interfaces/IInstantMatchingService.js";
@@ -39,6 +41,7 @@ export class InstantRequestService implements IInstantRequestService {
     private readonly prisma: PrismaService,
     private readonly matchingService: IInstantMatchingService,
     private readonly historyRepo: IBookingHistoryRepository,
+    private readonly eventPublisher: IEventPublisher,
   ) {}
 
   async createInstantRequest(userId: string, data: CreateInstantRequestInput) {
@@ -271,10 +274,17 @@ export class InstantRequestService implements IInstantRequestService {
           providerUserId: item.request.providerId,
           workerUserId: worker.userId,
           bookingId: booking.id,
+          booking,
         };
       });
 
       await CacheInvalidationService.afterInstantRequestAccepted(result.providerUserId, result.workerUserId);
+
+      // Durable notification (email/SMS/push via RabbitMQ) — previously this flow only ever
+      // emitted a live Socket.IO event below, so a Provider/Worker with the app closed or
+      // offline at this exact instant got no notification at all, unlike the Job-application
+      // accept path which already published this same event.
+      await this.eventPublisher.publish(RoutingKeys.BOOKING_CREATED, result.booking);
 
       // Best-effort real-time notification — the booking above is already committed, so a
       // socket hiccup (or sockets simply not initialized, e.g. in a test process) must not
@@ -457,8 +467,13 @@ export class InstantRequestService implements IInstantRequestService {
           bookingId: booking.id,
           providerUserId: request.providerId,
           workerUserId: bid.worker.userId,
+          booking,
         };
       });
+
+      // Durable notification (email/SMS/push via RabbitMQ) — see the identical comment in
+      // acceptRequest() above; previously this flow only ever emitted a live socket event.
+      await this.eventPublisher.publish(RoutingKeys.BOOKING_CREATED, result.booking);
 
       // Socket notifies — best-effort, the booking above is already committed.
       try {

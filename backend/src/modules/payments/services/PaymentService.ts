@@ -125,12 +125,50 @@ export class PaymentService extends BaseService implements IPaymentService {
         return;
       }
 
-      await this.bookingStateService.transition(payment.bookingId, BookingStatus.PAYMENT_CONFIRMED, {
-        changedBy: 'RAZORPAY_WEBHOOK',
-        reason: 'Payment captured via Razorpay webhook',
-      });
+      try {
+        await this.bookingStateService.transition(payment.bookingId, BookingStatus.PAYMENT_CONFIRMED, {
+          changedBy: 'RAZORPAY_WEBHOOK',
+          reason: 'Payment captured via Razorpay webhook',
+        });
 
-      this.log('Payment completed and booking confirmed via webhook', { bookingId: payment.bookingId });
+        // The worker was already pinned to this booking at creation time (ApplicationService
+        // sets workerId up front, status just stays CREATED until payment clears) — nothing
+        // else in the app ever advances PAYMENT_CONFIRMED -> WORKER_ASSIGNED automatically, so
+        // without this the booking would be stuck here forever: the worker could never go
+        // en-route, start, or complete it, since those all require WORKER_ASSIGNED first.
+        await this.bookingStateService.transition(payment.bookingId, BookingStatus.WORKER_ASSIGNED, {
+          changedBy: 'RAZORPAY_WEBHOOK',
+          reason: 'Worker auto-assigned after payment confirmation',
+        });
+
+        this.log('Payment completed and booking confirmed via webhook', { bookingId: payment.bookingId });
+      } catch (err) {
+        // The booking was cancelled in the window between the Provider paying and this webhook
+        // arriving (a real, plausible race — Providers commonly cancel right after paying,
+        // before the async webhook lands). Razorpay has already captured real money at this
+        // point; refund it immediately rather than leaving Payment=COMPLETED with the booking
+        // CANCELLED and no recovery path, which previously happened silently forever.
+        this.logger.warn('Booking transition failed after payment capture (likely cancelled mid-flight) — issuing refund', {
+          bookingId: payment.bookingId,
+          err,
+        });
+        await this.refundForCancelledBooking(payment.bookingId);
+      }
     }
+  }
+
+  async refundForCancelledBooking(bookingId: string): Promise<void> {
+    const payment = await this.paymentRepo.findByBookingId(bookingId);
+    if (!payment || payment.status !== PaymentStatus.COMPLETED || !payment.razorpayPaymentId) {
+      return;
+    }
+
+    await this.paymentProvider.refundPayment(payment.razorpayPaymentId, Number(payment.amount));
+
+    // Only mark REFUNDED in our DB after Razorpay actually confirms the refund — marking it
+    // first and having the API call fail would show the Provider as refunded when they're not.
+    await this.paymentRepo.markRefundedIfCompleted(payment.id);
+
+    this.log('Refund issued for cancelled booking', { bookingId, paymentId: payment.id });
   }
 }

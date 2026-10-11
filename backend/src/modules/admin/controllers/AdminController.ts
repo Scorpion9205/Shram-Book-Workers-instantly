@@ -7,9 +7,23 @@ import { UserRole } from '../../../core/enums/Role.js';
 import { BookingStatus, BookingType } from '@prisma/client';
 import { z } from 'zod';
 
+// A bare `parseInt` with no bounds let `?limit=5000000` run an effectively unbounded query
+// against the DB (real perf/DoS risk on admin list routes), and a non-positive page/limit
+// (e.g. `?page=0`) produced a negative `skip` that Prisma rejected with a raw 500 instead of
+// a clean validation error. Clamping here fixes both.
+const pageSchema = z.string().optional().transform(val => {
+  const parsed = val ? parseInt(val, 10) : 1;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+});
+const limitSchema = z.string().optional().transform(val => {
+  const parsed = val ? parseInt(val, 10) : 10;
+  if (!Number.isFinite(parsed) || parsed <= 0) return 10;
+  return Math.min(parsed, 100);
+});
+
 const GetUsersQuerySchema = z.object({
-  page: z.string().optional().transform(val => val ? parseInt(val, 10) : 1),
-  limit: z.string().optional().transform(val => val ? parseInt(val, 10) : 10),
+  page: pageSchema,
+  limit: limitSchema,
   role: z.nativeEnum(UserRole).optional(),
   isActive: z.string().optional().transform(val => val === undefined ? undefined : val === 'true'),
   isVerified: z.string().optional().transform(val => val === undefined ? undefined : val === 'true'),
@@ -21,8 +35,8 @@ const SuspendUserBodySchema = z.object({
 });
 
 const GetBookingsQuerySchema = z.object({
-  page: z.string().optional().transform(val => val ? parseInt(val, 10) : 1),
-  limit: z.string().optional().transform(val => val ? parseInt(val, 10) : 10),
+  page: pageSchema,
+  limit: limitSchema,
   status: z.nativeEnum(BookingStatus).optional(),
   providerId: z.string().uuid().optional(),
   workerId: z.string().uuid().optional(),
@@ -38,10 +52,15 @@ const UpdateSettingSchema = z.object({
   value: z.any(),
 });
 
-const UpsertPricingRuleBodySchema = z.object({
-  minFare: z.number().nonnegative().optional(),
-  maxFare: z.number().nonnegative().optional(),
-});
+const UpsertPricingRuleBodySchema = z
+  .object({
+    minFare: z.number().nonnegative().optional(),
+    maxFare: z.number().nonnegative().optional(),
+  })
+  .refine(
+    (data) => data.minFare === undefined || data.maxFare === undefined || data.minFare <= data.maxFare,
+    { message: 'minFare cannot be greater than maxFare', path: ['minFare'] },
+  );
 
 const UpdateTemplateBodySchema = z.object({
   subject: z.string().optional().nullable(),
@@ -50,8 +69,8 @@ const UpdateTemplateBodySchema = z.object({
 });
 
 const PaginationQuerySchema = z.object({
-  page: z.string().optional().transform(val => val ? parseInt(val, 10) : 1),
-  limit: z.string().optional().transform(val => val ? parseInt(val, 10) : 10),
+  page: pageSchema,
+  limit: limitSchema,
 });
 
 export class AdminController extends BaseController {

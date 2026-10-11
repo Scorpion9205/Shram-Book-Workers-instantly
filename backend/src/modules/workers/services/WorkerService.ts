@@ -28,7 +28,7 @@ export class WorkerService extends BaseService implements IWorkerService {
 
   async getMyProfile(userId: string): Promise<any> {
     this.log('Retrieving worker profile details', { userId });
-    const profile = await this.workerRepo.getProfileWithSkillsAndUser(userId);
+    const profile = await this.workerRepo.getOrCreateProfileWithSkillsAndUser(userId);
     if (!profile) {
       throw new NotFoundException('WorkerProfile', userId);
     }
@@ -56,7 +56,7 @@ export class WorkerService extends BaseService implements IWorkerService {
     // they'd never actually appear in any instant-request match. Reject this case outright
     // instead, so the client finds out immediately rather than the worker silently going deaf.
     if (isAvailable) {
-      const current = await this.workerRepo.getProfileWithSkillsAndUser(userId);
+      const current = await this.workerRepo.getOrCreateProfileWithSkillsAndUser(userId);
       if (!current || current.latitude === null || current.longitude === null) {
         throw new BusinessException(
           'LOCATION_REQUIRED',
@@ -68,7 +68,7 @@ export class WorkerService extends BaseService implements IWorkerService {
     const updated = await this.workerRepo.updateAvailability(userId, isAvailable);
 
     // Sync Redis GEO presence index
-    const workerWithSkills = await this.workerRepo.getProfileWithSkillsAndUser(userId);
+    const workerWithSkills = await this.workerRepo.getOrCreateProfileWithSkillsAndUser(userId);
     if (workerWithSkills) {
       for (const item of workerWithSkills.skills) {
         const geoKey = `geo:instant-workers:${item.skillId}`;

@@ -17,6 +17,7 @@ import {
 import { BookingStatusHistoryRepository } from "../../modules/bookings/index.js";
 import { PlatformSettingRepository } from "../../modules/platform-settings/index.js";
 import { TokenService } from "../../modules/auth/index.js";
+import { MapsProvider } from "../../modules/pricing/providers/MapsProvider.js";
 
 /**
  * REAL-DB concurrency test for the instant-request accept race (Phase 6 "Hardening" — the
@@ -123,13 +124,18 @@ beforeAll(async () => {
   const instantRequestRepo = new InstantRequestRepository(prismaService);
   const platformSettingRepo = new PlatformSettingRepository(prismaService);
   const bookingHistoryRepo = new BookingStatusHistoryRepository(prismaService);
-  const matchingService = new InstantMatchingService(instantRequestRepo, cache, platformSettingRepo);
+  const mapsProvider = new MapsProvider();
+  const matchingService = new InstantMatchingService(instantRequestRepo, cache, platformSettingRepo, mapsProvider);
+  // This test exercises the worker-claiming race, not notification delivery — a real
+  // RabbitMQ-backed publisher isn't needed here, just something that resolves.
+  const noopEventPublisher = { publish: async () => {} };
   const instantRequestService = new InstantRequestService(
     instantRequestRepo,
     cache,
     prismaService,
     matchingService,
     bookingHistoryRepo,
+    noopEventPublisher,
   );
   const instantRequestController = new InstantRequestController(instantRequestService, cache);
   const instantRequestRouter = createInstantRequestRouter(instantRequestController);

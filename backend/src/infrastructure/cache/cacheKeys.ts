@@ -9,6 +9,9 @@ export const CacheKeys = {
   otpAttempts: (identifier: string) => `otp:attempts:${identifier}`,
   pendingSignup: (identifier: string) => `signup:pending:${identifier}`,
   resetPassword: (token: string) => `auth:reset:${token}`,
+  // Set on suspend/delete so `authenticate` rejects an already-issued access token immediately,
+  // instead of it staying valid for up to its remaining 15-minute lifetime.
+  revokedUser: (userId: string) => `auth:revoked:${userId}`,
 
   // Worker presence & location
   workerStatus: (workerId: string) => `worker:status:${workerId}`,

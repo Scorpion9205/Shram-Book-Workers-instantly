@@ -8,6 +8,9 @@ describe("AdminService", () => {
   let bookingRepoMock: any;
   let workerRepoMock: any;
   let bookingStateServiceMock: any;
+  let settingRepoMock: any;
+  let cacheMock: any;
+  let userRepoMock: any;
   let service: AdminService;
 
   beforeEach(() => {
@@ -18,17 +21,24 @@ describe("AdminService", () => {
     pricingRuleRepoMock = {
       findAll: vi.fn(),
       upsert: vi.fn(),
+      findBySkillId: vi.fn().mockResolvedValue(null),
     };
     bookingRepoMock = { findById: vi.fn(), update: vi.fn() };
     workerRepoMock = { findById: vi.fn(), markUnavailableIfAvailable: vi.fn() };
     bookingStateServiceMock = { transition: vi.fn() };
+    settingRepoMock = { set: vi.fn() };
+    cacheMock = { del: vi.fn(), set: vi.fn() };
+    userRepoMock = {
+      findById: vi.fn().mockResolvedValue({ id: "user_1", role: "PROVIDER" }),
+      update: vi.fn().mockResolvedValue({ id: "user_1", isActive: false }),
+    };
 
     service = new AdminService(
       adminRepoMock,
-      {} as any, // cache
-      {} as any, // userRepo
+      cacheMock,
+      userRepoMock,
       bookingRepoMock,
-      {} as any, // platformSettingRepo
+      settingRepoMock,
       {} as any, // notificationTemplateRepo
       workerRepoMock,
       bookingStateServiceMock,
@@ -135,6 +145,54 @@ describe("AdminService", () => {
       pricingRuleRepoMock.upsert.mockResolvedValue({ id: "pr_1", minFare: 500 });
       await service.upsertPricingRule("skill_1", 500);
       expect(pricingRuleRepoMock.upsert).toHaveBeenCalledWith("skill_1", { minFare: 500 });
+    });
+
+    it("rejects minFare greater than maxFare set in the same request", async () => {
+      await expect(service.upsertPricingRule("skill_1", 1000, 500)).rejects.toThrow(BusinessException);
+      expect(pricingRuleRepoMock.upsert).not.toHaveBeenCalled();
+    });
+
+    it("rejects a new minFare that would exceed an already-stored maxFare, even though this request only sends minFare", async () => {
+      pricingRuleRepoMock.findBySkillId.mockResolvedValue({ minFare: null, maxFare: 500 });
+      await expect(service.upsertPricingRule("skill_1", 1000)).rejects.toThrow(BusinessException);
+      expect(pricingRuleRepoMock.upsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("updatePlatformSetting", () => {
+    it("rejects a commissionPercent above 100, which would make FareCalculator's factor negative", async () => {
+      await expect(service.updatePlatformSetting("commissionPercent", 150)).rejects.toThrow(BusinessException);
+      expect(settingRepoMock.set).not.toHaveBeenCalled();
+    });
+
+    it("rejects a non-numeric commissionPercent", async () => {
+      await expect(service.updatePlatformSetting("commissionPercent", "ten")).rejects.toThrow(BusinessException);
+    });
+
+    it("accepts a valid commissionPercent and busts the cache", async () => {
+      settingRepoMock.set.mockResolvedValue({ key: "commissionPercent", value: 12 });
+      await service.updatePlatformSetting("commissionPercent", 12);
+      expect(settingRepoMock.set).toHaveBeenCalledWith("commissionPercent", 12);
+      expect(cacheMock.del).toHaveBeenCalled();
+    });
+
+    it("leaves unknown setting keys unvalidated", async () => {
+      settingRepoMock.set.mockResolvedValue({ key: "someCustomFlag", value: { anything: true } });
+      await expect(service.updatePlatformSetting("someCustomFlag", { anything: true })).resolves.toBeDefined();
+    });
+  });
+
+  describe("suspendUser", () => {
+    it("sets a revocation marker so an already-issued access token stops working immediately, not after its remaining ~15min lifetime", async () => {
+      await service.suspendUser("user_1", false);
+
+      expect(cacheMock.set).toHaveBeenCalledWith("auth:revoked:user_1", true, expect.any(Number));
+    });
+
+    it("does not set a revocation marker when re-activating a user", async () => {
+      await service.suspendUser("user_1", true);
+
+      expect(cacheMock.set).not.toHaveBeenCalled();
     });
   });
 });

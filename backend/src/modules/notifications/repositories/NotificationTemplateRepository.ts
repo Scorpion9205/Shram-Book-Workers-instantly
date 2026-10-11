@@ -41,16 +41,17 @@ export class NotificationTemplateRepository extends BaseRepository<NotificationT
   ): Promise<PaginatedResult<NotificationTemplate>> {
     const client = tx ?? this.prisma.client;
     const skip = this.buildSkip(page, limit);
+    const take = this.clampLimit(limit);
     try {
       const [items, total] = await Promise.all([
         client.notificationTemplate.findMany({
           skip,
-          take: limit,
+          take,
           orderBy: { type: 'asc' },
         }),
         client.notificationTemplate.count(),
       ]);
-      return this.buildPaginatedResult(items, total, page, limit);
+      return this.buildPaginatedResult(items, total, page, take);
     } catch (err) {
       throw new DatabaseException('Failed to query notification templates list', err);
     }

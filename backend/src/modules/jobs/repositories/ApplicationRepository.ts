@@ -32,6 +32,16 @@ export class ApplicationRepository extends BaseRepository<Application> implement
     });
   }
 
+  async findByJobAndAgent(jobId: string, agentId: string, tx?: Prisma.TransactionClient): Promise<Application | null> {
+    const client = tx || this.prisma.client;
+    return client.application.findFirst({
+      where: {
+        jobId,
+        agentId,
+      },
+    });
+  }
+
   async findManyByJobId(jobId: string, tx?: Prisma.TransactionClient): Promise<any[]> {
     const client = tx || this.prisma.client;
     return client.application.findMany({

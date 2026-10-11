@@ -41,6 +41,7 @@ export class BookingRepository extends BaseRepository<Booking> implements IBooki
   ): Promise<PaginatedResult<Booking>> {
     const client = tx ?? this.prisma.client;
     const skip = this.buildSkip(page, limit);
+    const take = this.clampLimit(limit);
 
     let resolvedWorkerId = filter.workerId;
     if (filter.workerId) {
@@ -71,7 +72,7 @@ export class BookingRepository extends BaseRepository<Booking> implements IBooki
         client.booking.findMany({
           where: whereClause,
           skip,
-          take: limit,
+          take,
           orderBy: { createdAt: 'desc' },
           include: {
             provider: { select: { id: true, name: true, profileImage: true } },
@@ -82,7 +83,7 @@ export class BookingRepository extends BaseRepository<Booking> implements IBooki
         client.booking.count({ where: whereClause }),
       ]);
 
-      return this.buildPaginatedResult(items, total, page, limit);
+      return this.buildPaginatedResult(items, total, page, take);
     } catch (err) {
       throw new DatabaseException('Error querying bookings by filter', err);
     }

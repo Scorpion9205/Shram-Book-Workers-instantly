@@ -16,7 +16,7 @@ describe("WalletConsumer — commission rate", () => {
   beforeEach(() => {
     channelMock = { prefetch: vi.fn(), consume: vi.fn() };
     walletServiceMock = { creditWallet: vi.fn(), debitWallet: vi.fn() };
-    bookingRepoMock = { findById: vi.fn() };
+    bookingRepoMock = { findById: vi.fn(), update: vi.fn() };
     bookingStateServiceMock = { transition: vi.fn() };
     platformSettingRepoMock = { get: vi.fn() };
     cacheMock = { get: vi.fn().mockResolvedValue(null), set: vi.fn() };
@@ -70,5 +70,35 @@ describe("WalletConsumer — commission rate", () => {
     await dispatchPaymentSettled(onlineBooking);
 
     expect(cacheMock.set).toHaveBeenCalledWith(expect.any(String), 25, 60);
+  });
+
+  describe("WORK_COMPLETED auto-settle (ONLINE bookings)", () => {
+    it("persists finalFare when auto-settling — this path bypasses BookingService.settlePayment, the only other place that sets it", async () => {
+      bookingRepoMock.findById.mockResolvedValue(onlineBooking);
+
+      await (consumer as any).handleEvent("booking.status_changed", {
+        toStatus: "WORK_COMPLETED",
+        bookingId: "booking_1",
+      });
+
+      expect(bookingStateServiceMock.transition).toHaveBeenCalledWith(
+        "booking_1",
+        "PAYMENT_SETTLED",
+        expect.any(Object),
+      );
+      expect(bookingRepoMock.update).toHaveBeenCalledWith("booking_1", { finalFare: 1000 });
+    });
+
+    it("does not touch finalFare for an OFFLINE booking — that's settled manually by the worker instead", async () => {
+      bookingRepoMock.findById.mockResolvedValue(offlineBooking);
+
+      await (consumer as any).handleEvent("booking.status_changed", {
+        toStatus: "WORK_COMPLETED",
+        bookingId: "booking_2",
+      });
+
+      expect(bookingStateServiceMock.transition).not.toHaveBeenCalled();
+      expect(bookingRepoMock.update).not.toHaveBeenCalled();
+    });
   });
 });

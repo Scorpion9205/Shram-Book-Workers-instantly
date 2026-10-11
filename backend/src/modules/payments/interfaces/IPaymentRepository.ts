@@ -21,4 +21,10 @@ export interface IPaymentRepository {
     razorpaySignature: string,
     tx?: Prisma.TransactionClient,
   ): Promise<number>;
+  /**
+   * Atomically marks a payment REFUNDED only if it is still COMPLETED.
+   * Returns the number of rows affected (0 = already refunded, or never completed —
+   * either way, no second refund should be issued against Razorpay).
+   */
+  markRefundedIfCompleted(id: string, tx?: Prisma.TransactionClient): Promise<number>;
 }

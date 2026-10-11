@@ -57,6 +57,7 @@ export class UserRepository extends BaseRepository<User> implements IUserReposit
   ): Promise<PaginatedResult<User>> {
     const client = tx ?? this.prisma.client;
     const skip = this.buildSkip(page, limit);
+    const take = this.clampLimit(limit);
 
     const whereClause: Prisma.UserWhereInput = {
       deletedAt: null,
@@ -77,13 +78,13 @@ export class UserRepository extends BaseRepository<User> implements IUserReposit
         client.user.findMany({
           where: whereClause,
           skip,
-          take: limit,
+          take,
           orderBy: { createdAt: 'desc' },
         }),
         client.user.count({ where: whereClause }),
       ]);
 
-      return this.buildPaginatedResult(items, total, page, limit);
+      return this.buildPaginatedResult(items, total, page, take);
     } catch (err) {
       throw new DatabaseException('Error querying users by filter', err);
     }

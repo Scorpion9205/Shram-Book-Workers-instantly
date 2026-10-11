@@ -44,6 +44,7 @@ export const providerNavItems: NavItem[] = [
 
 export const agentNavItems: NavItem[] = [
   { label: "Dashboard", href: "/agent/dashboard", icon: LayoutDashboard },
+  { label: "Job Feed", href: "/agent/jobs", icon: Briefcase },
   { label: "Workers", href: "/agent/workers", icon: Users },
   { label: "Applications", href: "/agent/applications", icon: ClipboardList },
   { label: "Bookings", href: "/agent/bookings", icon: CalendarCheck },
@@ -68,7 +69,7 @@ export const providerBottomNavItems: NavItem[] = [
 
 export const agentBottomNavItems: NavItem[] = [
   { label: "Home", href: "/agent/dashboard", icon: LayoutDashboard },
-  { label: "Workers", href: "/agent/workers", icon: Users },
+  { label: "Jobs", href: "/agent/jobs", icon: Briefcase },
   { label: "Bookings", href: "/agent/bookings", icon: CalendarCheck },
   { label: "Profile", href: "/agent/profile", icon: UserCog },
 ];

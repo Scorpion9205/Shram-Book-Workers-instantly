@@ -16,6 +16,48 @@ import type { PaginatedResult } from '../../../core/base/BaseRepository.js';
 import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
 import { VALID_TRANSITIONS } from '../../bookings/constants/booking-transitions.constants.js';
 import { UserRole } from '../../../core/enums/Role.js';
+import { env } from '../../../config/env.js';
+import { parseDurationToSeconds } from '../../../shared/utils/duration.util.js';
+
+// Known numeric PlatformSetting keys get sanity-checked before being persisted — a bad value
+// here (e.g. commissionPercent > 100, making FareCalculator's (1 - pct/100) factor negative)
+// previously broke fare calculation platform-wide for every booking/job/instant-request until
+// the 60s Redis cache expired and someone noticed. Keys not listed here stay unchecked.
+const PERCENT_SETTING_KEYS = new Set(['commissionPercent', 'agentCommissionPercent']);
+const POSITIVE_NUMBER_SETTING_KEYS = new Set([
+  'distanceRatePerKm',
+  'weatherMultiplier',
+  'surgeMultiplier',
+  'highDemandThreshold',
+  'surgeFlatFee',
+]);
+
+function validatePlatformSettingValue(key: string, value: unknown): void {
+  if (PERCENT_SETTING_KEYS.has(key)) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 100) {
+      throw new BusinessException('INVALID_SETTING_VALUE', `"${key}" must be a number between 0 and 100`);
+    }
+    return;
+  }
+
+  if (POSITIVE_NUMBER_SETTING_KEYS.has(key)) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+      throw new BusinessException('INVALID_SETTING_VALUE', `"${key}" must be a non-negative number`);
+    }
+    return;
+  }
+
+  if (key === 'instantRequestRadiusTiers') {
+    const isAscendingPositiveArray =
+      Array.isArray(value) &&
+      value.length > 0 &&
+      value.every((v) => typeof v === 'number' && Number.isFinite(v) && v > 0) &&
+      value.every((v, i) => i === 0 || v > value[i - 1]);
+    if (!isAscendingPositiveArray) {
+      throw new BusinessException('INVALID_SETTING_VALUE', `"${key}" must be an array of strictly ascending positive numbers`);
+    }
+  }
+}
 
 export class AdminService extends BaseService implements IAdminService {
   constructor(
@@ -131,11 +173,19 @@ export class AdminService extends BaseService implements IAdminService {
     const cacheKey = CacheKeys.refreshToken(id);
     await this.cache.del(cacheKey);
 
+    // Revoking the refresh token alone leaves an already-issued access token valid for up to
+    // its remaining 15-minute lifetime — `authenticate` checks this marker on every request so
+    // a suspension actually takes effect immediately instead of silently waiting out the token.
+    if (!isActive) {
+      const revokeTtl = parseDurationToSeconds(env.JWT_ACCESS_EXPIRY, 15 * 60);
+      await this.cache.set(CacheKeys.revokedUser(id), true, revokeTtl);
+    }
+
     // Suspending a worker must also pull them out of the Redis geo-index — otherwise they
     // stay eligible for (and can keep accepting) instant-request/bidding broadcasts after
     // suspension, since the matching query alone doesn't check user.isActive.
     if (!isActive && user.role === UserRole.WORKER) {
-      const workerWithSkills = await this.workerRepo.getProfileWithSkillsAndUser(id);
+      const workerWithSkills = await this.workerRepo.getOrCreateProfileWithSkillsAndUser(id);
       if (workerWithSkills) {
         for (const item of workerWithSkills.skills) {
           await this.cache.geoRemove(`geo:instant-workers:${item.skillId}`, workerWithSkills.id);
@@ -199,6 +249,8 @@ export class AdminService extends BaseService implements IAdminService {
   async updatePlatformSetting(key: string, value: any): Promise<PlatformSetting> {
     this.log('Updating platform setting', { key, value });
 
+    validatePlatformSettingValue(key, value);
+
     const setting = await this.settingRepo.set(key, value);
 
     const cacheKey = CacheKeys.platformSetting(key);
@@ -214,6 +266,18 @@ export class AdminService extends BaseService implements IAdminService {
 
   async upsertPricingRule(skillId: string, minFare?: number, maxFare?: number): Promise<PricingRule> {
     this.log('Upserting pricing rule', { skillId, minFare, maxFare });
+
+    // Validate against the FINAL combined state, not just this request's body — a request that
+    // only sets minFare above an already-stored maxFare (or vice versa) is just as invalid as
+    // setting both at once, since FareCalculator.applyPricingRules trusts minFare <= maxFare and
+    // silently clamps above the configured ceiling otherwise.
+    const existing = await this.pricingRuleRepo.findBySkillId(skillId);
+    const finalMinFare = minFare !== undefined ? minFare : existing?.minFare !== null ? Number(existing?.minFare) : undefined;
+    const finalMaxFare = maxFare !== undefined ? maxFare : existing?.maxFare !== null ? Number(existing?.maxFare) : undefined;
+    if (finalMinFare !== undefined && finalMaxFare !== undefined && finalMinFare > finalMaxFare) {
+      throw new BusinessException('INVALID_PRICING_RULE', 'minFare cannot be greater than maxFare');
+    }
+
     return await this.pricingRuleRepo.upsert(skillId, {
       ...(minFare !== undefined && { minFare }),
       ...(maxFare !== undefined && { maxFare }),

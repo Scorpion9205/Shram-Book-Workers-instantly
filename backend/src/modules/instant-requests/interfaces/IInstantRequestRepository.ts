@@ -36,6 +36,13 @@ export interface IInstantRequestRepository {
   findRequestWithItemsAndProvider(requestId: string, tx?: Prisma.TransactionClient): Promise<any | null>;
   findRequestById(requestId: string, tx?: Prisma.TransactionClient): Promise<InstantRequest | null>;
   findRequestsByProvider(providerId: string): Promise<any[]>;
+  /**
+   * All still-OPEN request ids, regardless of skill/provider — used once at server startup to
+   * resume matching for any request whose in-memory startMatching() loop died with the
+   * previous process (deploy/restart), so "stays open until cancelled" actually holds across
+   * restarts instead of silently orphaning requests that were mid-search.
+   */
+  findAllOpenRequestIds(): Promise<string[]>;
   findProviderProfileByUserId(userId: string): Promise<{ userId: string } | null>;
 
   findWorkerWithSkills(userId: string, tx?: Prisma.TransactionClient): Promise<any | null>;

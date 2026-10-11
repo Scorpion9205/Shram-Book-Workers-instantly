@@ -81,6 +81,14 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
     });
   }
 
+  async findAllOpenRequestIds(): Promise<string[]> {
+    const rows = await this.prisma.client.instantRequest.findMany({
+      where: { status: 'OPEN' },
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
+  }
+
   async findProviderProfileByUserId(userId: string): Promise<{ userId: string } | null> {
     return this.prisma.client.providerProfile.findUnique({
       where: { userId },
@@ -249,6 +257,13 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
         amount: data.amount,
         status: data.status as any,
         startOtp: data.startOtp,
+        // Instant-request bookings never go through Razorpay — there is no payment-collection
+        // step anywhere in this flow. Leaving this at the schema default ("ONLINE") made
+        // WalletConsumer treat it as "the platform already holds this money" on completion and
+        // auto-credit the worker's wallet with real money that was never actually collected
+        // from anyone. OFFLINE correctly triggers the "Provider paid the Worker directly, the
+        // platform deducts its commission from the Worker's wallet" path instead.
+        paymentMode: 'OFFLINE',
       },
     });
   }

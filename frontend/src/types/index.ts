@@ -4,7 +4,8 @@ export interface User {
   id: string;
   name: string;
   email?: string;
-  phone: string;
+  // Nullable: Google OAuth and email-only sign-up never collect a phone number.
+  phone: string | null;
   role: UserRole;
   profileImage?: string;
   isVerified?: boolean;

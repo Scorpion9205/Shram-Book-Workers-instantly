@@ -8,7 +8,7 @@ import { SOCKET_URL } from "@/lib/constants";
 import { useAppDispatch } from "@/hooks/redux";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermission } from "@/hooks/usePermission";
-import { showIncomingInstantRequest } from "@/store/uiSlice";
+import { showIncomingInstantRequest, showIncomingBiddingRequest } from "@/store/uiSlice";
 import { notificationReceived } from "@/store/notificationSlice";
 import { apiSlice } from "@/services/api/apiSlice";
 import { useGetMyWorkerProfileQuery } from "@/features/worker/workerApi";
@@ -76,6 +76,25 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
             receivedAt: Date.now(),
           })
         );
+      }
+    );
+
+    // --- Instant Requests (worker side, bidding mode) ---
+    socket.on(
+      "instant-bidding:new",
+      (payload: {
+        requestId: string;
+        title: string;
+        providerName: string;
+        workerType: string;
+        address?: string | null;
+        notes?: string | null;
+        amount: number;
+        expiresAt: string;
+        distanceKm: number;
+        estimatedMinutes: number;
+      }) => {
+        dispatch(showIncomingBiddingRequest({ ...payload, receivedAt: Date.now() }));
       }
     );
 

@@ -4,6 +4,7 @@ import type { IApplicationService } from '../interfaces/IApplicationService.js';
 import type { IApplicationRepository } from '../interfaces/IApplicationRepository.js';
 import type { IJobRepository } from '../interfaces/IJobRepository.js';
 import type { IWorkerRepository } from '../../workers/interfaces/IWorkerRepository.js';
+import type { IAgentRepository } from '../../agents/interfaces/IAgentRepository.js';
 import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import type { IEventPublisher } from '../../../core/interfaces/IEventPublisher.js';
 import { BookingStatus } from '@prisma/client';
@@ -25,6 +26,7 @@ export class ApplicationService extends BaseService implements IApplicationServi
     private readonly applicationRepo: IApplicationRepository,
     private readonly jobRepo: IJobRepository,
     private readonly workerRepo: IWorkerRepository,
+    private readonly agentRepo: IAgentRepository,
     private readonly cache: ICacheService,
     private readonly prisma: PrismaService,
     private readonly eventPublisher: IEventPublisher,
@@ -33,13 +35,8 @@ export class ApplicationService extends BaseService implements IApplicationServi
     super('ApplicationService');
   }
 
-  async applyForJob(userId: string, jobId: string, data: any): Promise<Application> {
-    this.log('Applying for job', { userId, jobId });
-
-    const worker = await this.workerRepo.findByUserId(userId);
-    if (!worker) {
-      throw new NotFoundException('WorkerProfile', userId);
-    }
+  async applyForJob(userId: string, jobId: string, data: any, role: 'WORKER' | 'AGENT' = 'WORKER'): Promise<Application> {
+    this.log('Applying for job', { userId, jobId, role });
 
     const job = await this.jobRepo.findById(jobId);
     if (!job) {
@@ -52,6 +49,38 @@ export class ApplicationService extends BaseService implements IApplicationServi
 
     if (job.status !== 'OPEN') {
       throw new BusinessException('JOB_CLOSED', 'Job is closed');
+    }
+
+    // AGENT applications are made on behalf of the agency itself (agentId set, workerId null) —
+    // the route already authorizes both WORKER and AGENT, but this method used to assume every
+    // caller had a WorkerProfile, so an Agent applying always 404'd on a profile they could
+    // never have. acceptApplication/the Prisma schema (@@unique([jobId, agentId])) already fully
+    // support this applicantType; nothing before this ever actually created one.
+    if (role === 'AGENT') {
+      const agent = await this.agentRepo.findByUserId(userId);
+      if (!agent) {
+        throw new NotFoundException('AgentProfile', userId);
+      }
+
+      const alreadyApplied = await this.applicationRepo.findByJobAndAgent(jobId, agent.id);
+      if (alreadyApplied) {
+        throw new BusinessException('ALREADY_APPLIED', 'You have already applied');
+      }
+
+      return await this.applicationRepo.create({
+        jobId,
+        applicantType: 'AGENT',
+        agentId: agent.id,
+        message: data.message ?? null,
+        workerCount: data.workerCount ?? null,
+        bidAmount: data.bidAmount,
+        status: 'PENDING',
+      });
+    }
+
+    const worker = await this.workerRepo.findByUserId(userId);
+    if (!worker) {
+      throw new NotFoundException('WorkerProfile', userId);
     }
 
     const alreadyApplied = await this.applicationRepo.findByJobAndWorker(jobId, worker.id);

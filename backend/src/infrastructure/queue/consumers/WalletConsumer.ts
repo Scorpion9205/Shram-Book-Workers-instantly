@@ -68,6 +68,12 @@ export class WalletConsumer {
             changedBy: 'SYSTEM',
             reason: 'Auto-settled upon completion (Online Booking)',
           });
+          // This auto-settle path bypasses BookingService.settlePayment() entirely, which is
+          // the only other place that persists finalFare — without this, finalFare stayed null
+          // forever for every ONLINE booking (auto-settle fires almost immediately after
+          // WORK_COMPLETED, before a Provider could ever reach settlePayment manually), breaking
+          // AgentService's commission/payout reconciliation that reads it.
+          await this.bookingRepo.update(bookingId, { finalFare: booking.amount });
         } else {
           this.logger.info(`Offline booking. Awaiting manual payment settlement for booking ${bookingId}`);
         }

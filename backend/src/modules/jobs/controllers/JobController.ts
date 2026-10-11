@@ -51,7 +51,7 @@ export class JobController extends BaseController {
       throw new BusinessException('INVALID_JOB_ID', 'Invalid job id');
     }
     const dto = await this.validate(applyJobSchema, req.body);
-    const application = await this.applicationService.applyForJob(user.userId, jobId, dto);
+    const application = await this.applicationService.applyForJob(user.userId, jobId, dto, user.role);
     this.created(res, application, 'Applied successfully');
   };
 

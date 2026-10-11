@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import type { UserController } from '../controllers/UserController.js';
 import { authenticate } from '../../auth/middleware/authenticate.middleware.js';
+import { rateLimiter } from '../../../shared/middleware/rateLimiter.middleware.js';
 import { BadRequestException } from '../../../core/exceptions/index.js';
 
 const ALLOWED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -26,7 +27,7 @@ export function createUserRouter(controller: UserController): Router {
   router.get('/me', authenticate, controller.getProfile);
   router.patch('/me', authenticate, controller.updateProfile);
   router.delete('/me', authenticate, controller.deleteAccount);
-  router.patch('/change-password', authenticate, controller.changePassword);
+  router.patch('/change-password', authenticate, rateLimiter('users:change-password', 5, 15 * 60, true), controller.changePassword);
   router.post('/upload-profile-image', authenticate, upload.single('profileImage'), controller.uploadProfileImage);
   router.delete('/profile-image', authenticate, controller.deleteProfileImage);
 

@@ -7,16 +7,32 @@ interface IncomingInstantRequest {
   receivedAt: number;
 }
 
+export interface IncomingBiddingRequest {
+  requestId: string;
+  title: string;
+  providerName: string;
+  workerType: string;
+  address?: string | null;
+  notes?: string | null;
+  amount: number;
+  expiresAt: string;
+  distanceKm: number;
+  estimatedMinutes: number;
+  receivedAt: number;
+}
+
 interface UiState {
   sidebarCollapsed: boolean;
   mobileDrawerOpen: boolean;
   incomingInstantRequest: IncomingInstantRequest | null;
+  incomingBiddingRequest: IncomingBiddingRequest | null;
 }
 
 const initialState: UiState = {
   sidebarCollapsed: false,
   mobileDrawerOpen: false,
   incomingInstantRequest: null,
+  incomingBiddingRequest: null,
 };
 
 const uiSlice = createSlice({
@@ -35,6 +51,12 @@ const uiSlice = createSlice({
     clearIncomingInstantRequest(state) {
       state.incomingInstantRequest = null;
     },
+    showIncomingBiddingRequest(state, action: PayloadAction<IncomingBiddingRequest>) {
+      state.incomingBiddingRequest = action.payload;
+    },
+    clearIncomingBiddingRequest(state) {
+      state.incomingBiddingRequest = null;
+    },
   },
 });
 
@@ -43,5 +65,7 @@ export const {
   setMobileDrawerOpen,
   showIncomingInstantRequest,
   clearIncomingInstantRequest,
+  showIncomingBiddingRequest,
+  clearIncomingBiddingRequest,
 } = uiSlice.actions;
 export default uiSlice.reducer;

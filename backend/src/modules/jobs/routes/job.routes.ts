@@ -17,7 +17,9 @@ export function createJobRouter(controller: JobController): Router {
   router.get(
     '/',
     authenticate,
-    authorize(UserRole.WORKER),
+    // JobService.getAllJobs already branches on role (WORKER matches own skills, AGENT
+    // matches its linked workers' skills) — this guard only needs to admit both roles.
+    authorize(UserRole.WORKER, UserRole.AGENT),
     controller.getAllJobs,
   );
 

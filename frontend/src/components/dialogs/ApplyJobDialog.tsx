@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { Job } from "@/types";
 import { useApplyToJobMutation } from "@/features/jobs/jobsApi";
+import { usePermission } from "@/hooks/usePermission";
 
 import {
   Dialog,
@@ -34,12 +35,15 @@ export default function ApplyJobDialog({
 }: ApplyJobDialogProps) {
   const [bidAmount, setBidAmount] = useState("");
   const [message, setMessage] = useState("");
+  const [workerCount, setWorkerCount] = useState("1");
+  const { isAgent } = usePermission();
 
   const [applyToJob, { isLoading }] = useApplyToJobMutation();
 
   useEffect(() => {
     setBidAmount(job.budget?.toString() ?? "");
     setMessage("");
+    setWorkerCount("1");
   }, [job, open]);
 
   async function handleApply() {
@@ -53,6 +57,7 @@ export default function ApplyJobDialog({
         jobId: job.id,
         bidAmount: Number(bidAmount),
         message,
+        ...(isAgent && { workerCount: Number(workerCount) || 1 }),
       }).unwrap();
 
       toast.success("Application submitted successfully.");
@@ -110,6 +115,21 @@ export default function ApplyJobDialog({
               }
             />
           </div>
+
+          {isAgent && (
+            <div>
+              <Label>Number of Workers You&apos;ll Provide</Label>
+
+              <Input
+                type="number"
+                min={1}
+                max={job.requiredWorkers}
+                placeholder="e.g. 2"
+                value={workerCount}
+                onChange={(e) => setWorkerCount(e.target.value)}
+              />
+            </div>
+          )}
 
           <div>
             <Label>Message (Optional)</Label>

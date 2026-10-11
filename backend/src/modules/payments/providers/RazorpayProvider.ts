@@ -27,4 +27,10 @@ export class RazorpayProvider implements IPaymentProvider {
       return false;
     }
   }
+
+  async refundPayment(razorpayPaymentId: string, amount: number): Promise<any> {
+    return this.razorpay.payments.refund(razorpayPaymentId, {
+      amount: Math.round(amount * 100), // paise
+    });
+  }
 }

@@ -7,6 +7,7 @@ import type { IBookingStateService } from '../interfaces/IBookingStateService.js
 import type { IJobRepository } from '../../jobs/interfaces/IJobRepository.js';
 import type { IEventPublisher } from '../../../core/interfaces/IEventPublisher.js';
 import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
+import type { IPaymentService } from '../../payments/interfaces/IPaymentService.js';
 import type { PaginatedResult } from '../../../core/base/BaseRepository.js';
 import { RoutingKeys } from '../../../infrastructure/queue/queue.constants.js';
 import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
@@ -19,6 +20,7 @@ export class BookingService extends BaseService implements IBookingService {
     private readonly eventPublisher: IEventPublisher,
     private readonly cache: ICacheService,
     private readonly jobRepo: IJobRepository,
+    private readonly paymentService: IPaymentService,
   ) {
     super('BookingService');
   }
@@ -82,10 +84,21 @@ export class BookingService extends BaseService implements IBookingService {
       ? BookingStatus.CANCELLED_BY_PROVIDER
       : BookingStatus.CANCELLED_BY_WORKER;
 
-    return await this.stateService.transition(bookingId, toStatus, {
+    const cancelled = await this.stateService.transition(bookingId, toStatus, {
       changedBy: userId,
       reason: reason || 'Cancellation requested by user',
     });
+
+    // Refund any captured payment — a no-op if nothing was ever paid or it's already refunded.
+    // Logged but not re-thrown: a Razorpay API hiccup shouldn't block the cancellation itself
+    // from completing; it needs manual follow-up instead of silently blocking the user.
+    try {
+      await this.paymentService.refundForCancelledBooking(bookingId);
+    } catch (err) {
+      this.logger.error('Refund failed after booking cancellation — needs manual reconciliation', err, { bookingId });
+    }
+
+    return cancelled;
   }
 
   async workerEnRoute(id: string, userId: string): Promise<Booking> {

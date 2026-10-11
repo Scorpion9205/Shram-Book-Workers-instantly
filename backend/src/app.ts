@@ -28,6 +28,12 @@ declare module "express-serve-static-core" {
 
 const app = express();
 
+// Render (and most PaaS hosts) sit behind a reverse proxy — without this, req.ip resolves to
+// the proxy's internal address for every request, collapsing the IP half of every unauthenticated
+// rate-limit key (login, signup, OTP) to one constant value platform-wide. `1` trusts exactly one
+// hop (the platform's own edge proxy), which is what Render's X-Forwarded-For actually reflects.
+app.set('trust proxy', 1);
+
 mountSwagger(app);
 
 // Traceable unique request identifier

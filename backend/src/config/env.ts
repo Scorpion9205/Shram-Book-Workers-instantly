@@ -43,8 +43,10 @@ const envSchema = z.object({
   RAZORPAY_KEY_SECRET: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
 
+  // Mapbox (server-side routing/ETA — Directions API)
+  MAPBOX_ACCESS_TOKEN: z.string().optional(),
+
   // Google
-  GOOGLE_MAPS_API_KEY: z.string().optional(),
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
 

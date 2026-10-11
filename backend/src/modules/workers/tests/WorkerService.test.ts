@@ -19,7 +19,7 @@ describe("WorkerService.updateAvailability", () => {
 
   beforeEach(() => {
     workerRepoMock = {
-      getProfileWithSkillsAndUser: vi.fn().mockResolvedValue(baseProfile),
+      getOrCreateProfileWithSkillsAndUser: vi.fn().mockResolvedValue(baseProfile),
       updateAvailability: vi.fn().mockResolvedValue({ ...baseProfile, isAvailable: true }),
     };
     cacheMock = {
@@ -36,7 +36,7 @@ describe("WorkerService.updateAvailability", () => {
   });
 
   it("allows going online and syncs the geo index once a location is known", async () => {
-    workerRepoMock.getProfileWithSkillsAndUser.mockResolvedValue({
+    workerRepoMock.getOrCreateProfileWithSkillsAndUser.mockResolvedValue({
       ...baseProfile,
       latitude: 12.9,
       longitude: 77.5,

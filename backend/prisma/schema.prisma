@@ -128,7 +128,7 @@ enum SupportTicketPriority {
 model User {
   id                 String           @id @default(uuid())
   name               String
-  phone              String           @unique
+  phone              String?          @unique
   email              String?          @unique
   passwordHash       String?          // Optional: only for ADMIN / AGENT passwords
   googleId           String?          @unique
@@ -419,6 +419,8 @@ model Notification {
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
 }
 
 model InstantRequest {
@@ -471,6 +473,7 @@ model InstantRequestItem {
   responses       InstantRequestResponse[]
 
   @@index([skillId])
+  @@index([requestId])
 }
 
 model InstantRequestBid {
@@ -524,6 +527,8 @@ model ChatMessage {
   senderId  String
   content   String
   createdAt DateTime   @default(now())
+
+  @@index([threadId])
 }
 
 model SupportTicket {

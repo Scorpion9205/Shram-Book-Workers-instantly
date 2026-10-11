@@ -3,9 +3,9 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { ShieldCheck } from "lucide-react";
 
 import { AuthLayout } from "@/components/layout/AuthLayout";
+import { Logo } from "@/components/layout/Logo";
 import { Button } from "@/components/ui/button";
 import { OtpInput } from "@/components/forms/OtpInput";
 import { useVerifyOtpMutation, useResendOtpMutation } from "@/features/auth/authApi";
@@ -20,15 +20,19 @@ function VerifyOtpInner() {
   const dispatch = useAppDispatch();
   const searchParams = useSearchParams();
   
-  const phoneIdentifier = searchParams.get("identifier") || "";
-  const emailIdentifier = searchParams.get("email") || "";
+  // The identifier whoever redirected here actually sent the OTP to (works for both login,
+  // where this is the only identifier that exists, and signup, where it's always the phone).
+  const urlIdentifier = searchParams.get("identifier") || "";
+  // Only signup ever sets this — an optional second identifier used purely for the
+  // "verify via email instead" fallback switch below.
+  const fallbackEmail = searchParams.get("email") || "";
   const roleParam = searchParams.get("role");
   const role = roleParam ? (roleParam.toUpperCase() as "WORKER" | "PROVIDER" | "AGENT") : undefined;
 
   const [channel, setChannel] = useState<"EMAIL" | "SMS">(
     (searchParams.get("channel") || "SMS") as "EMAIL" | "SMS"
   );
-  const identifier = channel === "EMAIL" ? emailIdentifier : phoneIdentifier;
+  const [identifier, setIdentifier] = useState(urlIdentifier);
 
   const [otp, setOtp] = useState("");
   const [verifyOtp, { isLoading }] = useVerifyOtpMutation();
@@ -36,10 +40,12 @@ function VerifyOtpInner() {
   const [secondsLeft, setSecondsLeft] = useState(RESEND_SECONDS);
 
   async function switchChannel(next: "EMAIL" | "SMS") {
+    const nextIdentifier = next === "EMAIL" ? fallbackEmail : urlIdentifier;
     setChannel(next);
+    setIdentifier(nextIdentifier);
     setOtp("");
     try {
-      await resendOtp({ channel: next, identifier: next === "EMAIL" ? emailIdentifier : phoneIdentifier, role }).unwrap();
+      await resendOtp({ channel: next, identifier: nextIdentifier, role }).unwrap();
       setSecondsLeft(RESEND_SECONDS);
       toast.success(next === "EMAIL" ? "A code has been sent to your email" : "A code has been sent to your phone");
     } catch (err: any) {
@@ -93,8 +99,8 @@ function VerifyOtpInner() {
     >
       <div className="space-y-6">
         <div className="flex justify-center">
-          <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <ShieldCheck className="size-7" />
+          <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 p-2">
+            <Logo size={36} />
           </div>
         </div>
 
@@ -124,7 +130,7 @@ function VerifyOtpInner() {
           )}
         </p>
 
-        {emailIdentifier && phoneIdentifier && (
+        {fallbackEmail && urlIdentifier && (
           <p className="text-center text-sm text-muted-foreground">
             {channel === "SMS" ? "Not getting the SMS?" : "Want to use your phone instead?"}{" "}
             <button

@@ -151,6 +151,9 @@ export const jobsApi = apiSlice.injectEndpoints({
       invalidatesTags: (result, error, { jobId }) => [
         { type: "Job", id: jobId },
         "MyApplications",
+        // An Agent applying on behalf of their agency needs their own Applications page
+        // (which reads a separate /agents/applications endpoint) to refresh too.
+        "AgentApplication",
       ],
     }),
     getJobApplications: builder.query<JobApplication[], string>({

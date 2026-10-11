@@ -80,7 +80,7 @@ export class JobService extends BaseService implements IJobService {
         throw new NotFoundException('WorkerProfile', userId);
       }
 
-      const workerWithSkills = await this.workerRepo.getProfileWithSkillsAndUser(userId);
+      const workerWithSkills = await this.workerRepo.getOrCreateProfileWithSkillsAndUser(userId);
       skillIds = workerWithSkills?.skills?.map((s: any) => s.skillId) || [];
     } else if (user.role === 'AGENT') {
       cacheKey = `jobs:agent:${userId}`;

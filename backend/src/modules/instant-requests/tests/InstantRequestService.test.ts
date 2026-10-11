@@ -20,6 +20,7 @@ describe("InstantRequestService", () => {
   let prismaMock: any;
   let matchingServiceMock: any;
   let historyRepoMock: any;
+  let eventPublisherMock: any;
   let service: InstantRequestService;
 
   beforeEach(() => {
@@ -67,6 +68,9 @@ describe("InstantRequestService", () => {
     historyRepoMock = {
       append: vi.fn(),
     };
+    eventPublisherMock = {
+      publish: vi.fn().mockResolvedValue(undefined),
+    };
 
     service = new InstantRequestService(
       requestRepoMock,
@@ -74,6 +78,7 @@ describe("InstantRequestService", () => {
       prismaMock,
       matchingServiceMock,
       historyRepoMock,
+      eventPublisherMock,
     );
   });
 
@@ -202,6 +207,9 @@ describe("InstantRequestService", () => {
         expect.objectContaining({ bookingId: "booking_1", toStatus: "WORKER_ASSIGNED" }),
         prismaMock,
       );
+      // Previously this flow only ever emitted a live socket event — a Provider/Worker with
+      // the app closed at this exact instant got no notification at all.
+      expect(eventPublisherMock.publish).toHaveBeenCalledWith("booking.created", { id: "booking_1" });
     });
 
     it("rejects the accept if the worker was just claimed by a concurrent request (BOOK-02)", async () => {
@@ -253,6 +261,29 @@ describe("InstantRequestService", () => {
 
       await expect(service.selectBid("provider_1", "req_1", "bid_1")).rejects.toThrow(BusinessException);
       expect(requestRepoMock.markBidSelected).toHaveBeenCalled();
+    });
+
+    it("publishes a durable booking.created notification on a successful selection, not just a live socket event", async () => {
+      requestRepoMock.findRequestById.mockResolvedValue({
+        id: "req_1",
+        providerId: "provider_1",
+        status: "OPEN",
+      });
+      requestRepoMock.findBidById.mockResolvedValue({
+        id: "bid_1",
+        instantRequestId: "req_1",
+        workerId: "worker_1",
+        status: "ACTIVE",
+        bidAmount: 900,
+        worker: { isAvailable: true, userId: "worker_user_1", user: { isActive: true } },
+      });
+      requestRepoMock.createBooking.mockResolvedValue({ id: "booking_1" });
+      requestRepoMock.markWorkerUnavailableIfAvailable.mockResolvedValue(1);
+
+      const result = await service.selectBid("provider_1", "req_1", "bid_1");
+
+      expect(result.bookingId).toBe("booking_1");
+      expect(eventPublisherMock.publish).toHaveBeenCalledWith("booking.created", { id: "booking_1" });
     });
   });
 

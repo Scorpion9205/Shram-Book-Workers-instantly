@@ -12,7 +12,11 @@ export const idempotencyMiddleware = (ttlSeconds = 24 * 60 * 60) => {
       return next();
     }
 
-    const redisKey = `idempotency:${key}`;
+    // Scoped by method+path (not just the raw key) — this middleware runs globally, before any
+    // route's `authenticate` has populated req.user, so a userId can't be included here. Scoping
+    // by endpoint at least stops an accidentally-reused/constant key on one route (e.g. a client
+    // bug sending the same key for every call) from colliding with a completely unrelated one.
+    const redisKey = `idempotency:${req.method}:${req.path}:${key}`;
 
     try {
       // Atomic claim: SET ... NX means only one concurrent request with this key can win the
@@ -35,15 +39,25 @@ export const idempotencyMiddleware = (ttlSeconds = 24 * 60 * 60) => {
         }
       }
 
-      // Intercept res.json to replace the PROCESSING marker with the real completed response.
+      // Intercept res.json: a 2xx gets cached so a retried request replays the same success
+      // without re-running the handler. A non-2xx (e.g. a typo'd OTP, or a transient 500)
+      // releases the claim instead of caching the failure — caching errors here previously
+      // meant one bad attempt permanently "poisoned" the key for its whole TTL (up to 24h),
+      // so a correct retry with the same key never actually re-ran and just replayed the old
+      // failure forever.
       const originalJson = res.json;
       res.json = function (body: any): Response {
         const status = res.statusCode;
-        const responseData = { status, body };
 
-        redis.set(redisKey, JSON.stringify(responseData), "EX", ttlSeconds).catch(err => {
-          console.error("Failed to set idempotency cache in Redis:", err);
-        });
+        if (status >= 200 && status < 300) {
+          redis.set(redisKey, JSON.stringify({ status, body }), "EX", ttlSeconds).catch(err => {
+            console.error("Failed to set idempotency cache in Redis:", err);
+          });
+        } else {
+          redis.del(redisKey).catch(err => {
+            console.error("Failed to release idempotency claim in Redis:", err);
+          });
+        }
 
         return originalJson.call(this, body);
       };

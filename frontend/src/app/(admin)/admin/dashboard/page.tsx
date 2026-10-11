@@ -1,19 +1,24 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Users, CalendarCheck, Sliders, Mail, HardHat, ShieldCheck } from "lucide-react";
+import { Users, CalendarCheck, Sliders, Mail } from "lucide-react";
 import Link from "next/link";
 
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
-import { useGetUsersQuery } from "@/features/admin/adminApi";
-import { useGetBookingsQuery } from "@/features/admin/adminApi";
+import { useGetUsersQuery, useGetBookingsQuery, useGetSettingsQuery, useGetTemplatesQuery } from "@/features/admin/adminApi";
 
 export default function AdminDashboardPage() {
   const { data: usersData, isLoading: isLoadingUsers } = useGetUsersQuery({ page: 1, limit: 1 });
   const { data: bookingsData, isLoading: isLoadingBookings } = useGetBookingsQuery({ page: 1, limit: 1 });
+  const { data: settingsData, isLoading: isLoadingSettings } = useGetSettingsQuery();
+  const { data: templatesData, isLoading: isLoadingTemplates } = useGetTemplatesQuery();
 
-  const totalUsersCount = usersData?.meta?.totalCount ?? 0;
-  const totalBookingsCount = bookingsData?.meta?.totalCount ?? 0;
+  // The backend's pagination meta field is `total`, not `totalCount` — these were silently
+  // always reading undefined and showing 0 regardless of the real counts.
+  const totalUsersCount = usersData?.meta?.total ?? 0;
+  const totalBookingsCount = bookingsData?.meta?.total ?? 0;
+  const totalSettingsCount = settingsData?.data?.length ?? 0;
+  const totalTemplatesCount = templatesData?.meta?.total ?? templatesData?.data?.length ?? 0;
 
   const stats = [
     {
@@ -36,7 +41,7 @@ export default function AdminDashboardPage() {
     },
     {
       title: "Platform Configurations",
-      value: "9",
+      value: isLoadingSettings ? "..." : totalSettingsCount.toString(),
       description: "Radius parameters, commission settings",
       icon: Sliders,
       color: "text-amber-500",
@@ -45,7 +50,7 @@ export default function AdminDashboardPage() {
     },
     {
       title: "Notification Templates",
-      value: "6",
+      value: isLoadingTemplates ? "..." : totalTemplatesCount.toString(),
       description: "Transactional Email & SMS setups",
       icon: Mail,
       color: "text-purple-500",

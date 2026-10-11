@@ -7,6 +7,13 @@ export interface PlatformSetting {
   description?: string;
 }
 
+export interface PaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
 export interface NotificationTemplate {
   type: string;
   channel: string;
@@ -37,7 +44,7 @@ export interface PlatformAnalytics {
 
 export const adminApi = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
-    getUsers: builder.query<{ success: boolean; data: User[]; meta: any }, { page: number; limit: number; search?: string; role?: string }>({
+    getUsers: builder.query<{ success: boolean; data: User[]; meta: PaginationMeta }, { page: number; limit: number; search?: string; role?: string }>({
       query: ({ page, limit, search, role }) => {
         let url = `/admin/users?page=${page}&limit=${limit}`;
         if (search) url += `&search=${encodeURIComponent(search)}`;
@@ -62,7 +69,7 @@ export const adminApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["User"],
     }),
-    getBookings: builder.query<{ success: boolean; data: Booking[]; meta: any }, { page: number; limit: number; status?: string; search?: string }>({
+    getBookings: builder.query<{ success: boolean; data: Booking[]; meta: PaginationMeta }, { page: number; limit: number; status?: string; search?: string }>({
       query: ({ page, limit, status, search }) => {
         let url = `/admin/bookings?page=${page}&limit=${limit}`;
         if (status) url += `&status=${status}`;
@@ -104,7 +111,7 @@ export const adminApi = apiSlice.injectEndpoints({
         return { url: `/admin/analytics/dashboard${queryString ? `?${queryString}` : ""}` };
       },
     }),
-    getTemplates: builder.query<{ success: boolean; data: NotificationTemplate[] }, void>({
+    getTemplates: builder.query<{ success: boolean; data: NotificationTemplate[]; meta?: PaginationMeta }, void>({
       query: () => ({ url: "/admin/notification-templates" }),
       providesTags: ["Templates" as any],
     }),

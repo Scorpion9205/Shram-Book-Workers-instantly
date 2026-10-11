@@ -26,10 +26,16 @@ export class SkillRepository implements ISkillRepository {
   }
 
   async replaceWorkerSkills(workerId: string, skillIds: string[]): Promise<void> {
-    await this.prisma.client.workerSkill.deleteMany({ where: { workerId } });
-    await this.prisma.client.workerSkill.createMany({
-      data: skillIds.map((skillId) => ({ workerId, skillId })),
-    });
+    // Atomic — without a transaction, a failure between the delete and the create (a transient
+    // DB error, or a skillId deleted by another process in that exact window) leaves the worker
+    // with zero skills and no way to recover except re-submitting, since the delete had already
+    // committed on its own.
+    await this.prisma.client.$transaction([
+      this.prisma.client.workerSkill.deleteMany({ where: { workerId } }),
+      this.prisma.client.workerSkill.createMany({
+        data: skillIds.map((skillId) => ({ workerId, skillId })),
+      }),
+    ]);
   }
 
   async findWorkerSkillsWithDetails(workerId: string): Promise<Skill[]> {

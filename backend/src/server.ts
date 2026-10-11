@@ -45,6 +45,14 @@ try {
   // Expose dependencies via app.locals (Express's own per-app storage) instead of a
   // global — request handlers look this up per-request via `req.app.locals.deps`.
   app.locals.deps = dependencies;
+
+  // Resume matching for any instant request still OPEN from before this restart — otherwise
+  // its previous startMatching() loop is gone and nothing else ever resumes notifying workers
+  // for it, silently breaking the "stays open until cancelled" guarantee across a deploy.
+  dependencies.instantMatchingService.resumeAllOpenRequests().catch((err) => {
+    logger.error('Failed to resume open instant requests after startup', err);
+  });
+
   logger.info('New infrastructure initialized successfully');
 } catch (err) {
   logger.error('Failed to initialize new infrastructure', err);

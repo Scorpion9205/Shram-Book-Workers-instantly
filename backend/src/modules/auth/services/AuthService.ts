@@ -206,7 +206,9 @@ export class AuthService implements IAuthService {
       user = await this.prisma.transaction(async (tx) => {
         const newUser = await this.userRepo.create({
           name: signupData?.name || identifier.split('@')[0] || 'User',
-          phone: signupData?.phone || (channel === OTPChannel.SMS ? identifier : ''),
+          // null (not '') when this is an email-only sign-up with no phone on record — same
+          // reasoning as googleAuth() above, so this path doesn't collide on the unique index.
+          phone: signupData?.phone || (channel === OTPChannel.SMS ? identifier : null),
           email: signupData?.email || (channel === OTPChannel.EMAIL ? identifier : null),
           role: signupRole,
           isVerified: true,
@@ -288,7 +290,10 @@ export class AuthService implements IAuthService {
       user = await this.prisma.transaction(async (tx) => {
         const newUser = await this.userRepo.create({
           name,
-          phone: '',
+          // Google OAuth users never provide a phone — null (not '') so Postgres's unique
+          // constraint on phone correctly allows multiple accounts with no phone, instead of
+          // every account after the first colliding on the same empty-string value.
+          phone: null,
           email,
           role,
           googleId,

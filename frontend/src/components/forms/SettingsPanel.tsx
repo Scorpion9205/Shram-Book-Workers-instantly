@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { LogOut, Trash2, Lock, Moon, Bell, Shield } from "lucide-react";
+import { LogOut, Trash2, Lock, Moon, Shield } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -40,7 +40,6 @@ export function SettingsPanel() {
   const [deleteMe, { isLoading: isDeleting }] = useDeleteMeMutation();
   const [logout] = useLogoutMutation();
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [notifEnabled, setNotifEnabled] = useState(true);
 
   const { register, handleSubmit, reset } = useForm<PasswordForm>();
 
@@ -128,18 +127,6 @@ export function SettingsPanel() {
         <CardContent className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">Dark mode</p>
           <Switch checked={theme === "dark"} onCheckedChange={(v) => setTheme(v ? "dark" : "light")} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Bell className="size-4" /> Notifications
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">Push notifications</p>
-          <Switch checked={notifEnabled} onCheckedChange={setNotifEnabled} />
         </CardContent>
       </Card>
 

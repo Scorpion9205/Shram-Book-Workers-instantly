@@ -3,7 +3,8 @@ import { UserRole } from '../../../core/enums/Role.js';
 
 export interface CreateUserInput {
   name: string;
-  phone: string;
+  // Nullable: Google OAuth and email-only sign-up never collect a phone number.
+  phone: string | null;
   email?: string | null | undefined;
   role: UserRole;
   googleId?: string | null | undefined;

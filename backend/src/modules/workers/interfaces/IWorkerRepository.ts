@@ -21,7 +21,13 @@ export interface IWorkerRepository {
   /** Atomic conditional claim — returns the count of rows actually flipped (0 or 1), so the
    *  caller can tell whether it genuinely won the claim or the worker was already unavailable. */
   markUnavailableIfAvailable(workerId: string, tx?: Prisma.TransactionClient): Promise<number>;
-  getProfileWithSkillsAndUser(
+  /**
+   * Fetches a worker's profile with skills+user populated — creating an empty WorkerProfile
+   * first if one doesn't exist yet (named "getOrCreate", not "get", so this write side effect
+   * is obvious at every call site rather than being a surprise on something named like a
+   * plain getter).
+   */
+  getOrCreateProfileWithSkillsAndUser(
     userId: string,
     tx?: Prisma.TransactionClient,
   ): Promise<any>;

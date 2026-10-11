@@ -1,6 +1,7 @@
 import { getIO } from "../../../socket/socket.js";
 import type { ICacheService } from "../../../core/interfaces/ICacheService.js";
 import type { IPlatformSettingRepository } from "../../platform-settings/interfaces/IPlatformSettingRepository.js";
+import type { IMapsProvider } from "../../pricing/interfaces/IPricingStrategy.js";
 import type { IInstantRequestRepository } from "../interfaces/IInstantRequestRepository.js";
 import type { IInstantMatchingService } from "../interfaces/IInstantMatchingService.js";
 import { CacheKeys } from "../../../infrastructure/cache/cacheKeys.js";
@@ -28,6 +29,7 @@ export class InstantMatchingService implements IInstantMatchingService {
     private readonly requestRepo: IInstantRequestRepository,
     private readonly cache: ICacheService,
     private readonly platformSettingRepo: IPlatformSettingRepository,
+    private readonly mapsProvider: IMapsProvider,
   ) {}
 
   private async getRadiusTiers(): Promise<number[]> {
@@ -44,6 +46,18 @@ export class InstantMatchingService implements IInstantMatchingService {
 
     await this.cache.set(cacheKey, tiers, TIERS_CACHE_TTL_SECONDS);
     return tiers;
+  }
+
+  async resumeAllOpenRequests(): Promise<void> {
+    const openRequestIds = await this.requestRepo.findAllOpenRequestIds();
+    if (openRequestIds.length > 0) {
+      this.logger.info(`Resuming matching for ${openRequestIds.length} still-open instant request(s) after startup`);
+    }
+    for (const requestId of openRequestIds) {
+      this.startMatching(requestId).catch((err) => {
+        this.logger.error(`Failed to resume matching for request ${requestId}`, err);
+      });
+    }
   }
 
   async startMatching(requestId: string): Promise<void> {
@@ -96,6 +110,21 @@ export class InstantMatchingService implements IInstantMatchingService {
         notifiedWorkerIds.add(worker.userId);
 
         const io = getIO();
+
+        // Real road distance/ETA (not a placeholder) — falls back to a straight-line estimate
+        // inside getRoute() itself if Mapbox is unavailable, never throws. Shared by both modes
+        // below rather than computed twice.
+        let distanceKm = 0;
+        let estimatedMinutes = 0;
+        if (worker.latitude != null && worker.longitude != null) {
+          const route = await this.mapsProvider.getRoute(
+            { lat: Number(worker.latitude), lng: Number(worker.longitude) },
+            { lat: request.latitude, lng: request.longitude },
+          );
+          distanceKm = Number(route.distanceKm.toFixed(2));
+          estimatedMinutes = Math.round(route.durationMinutes);
+        }
+
         if (request.bookingMode === "DIRECT") {
           const itemId = request.items[0]?.id || "";
 
@@ -112,16 +141,22 @@ export class InstantMatchingService implements IInstantMatchingService {
               amount: request.amount,
               notes: request.description,
               status: request.status,
-              distanceKm: 0.1,
-              estimatedMinutes: 5,
+              distanceKm,
+              estimatedMinutes,
             },
           });
         } else {
           io.to(`user:${worker.userId}`).emit("instant-bidding:new", {
             requestId: request.id,
             title: request.title,
+            providerName: request.provider?.name || "A nearby Provider",
+            workerType: request.skill?.name || "Task",
+            address: request.address,
+            notes: request.description,
             amount: request.amount,
             expiresAt: request.expiresAt,
+            distanceKm,
+            estimatedMinutes,
           });
         }
       }

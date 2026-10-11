@@ -12,9 +12,12 @@ export class CacheInvalidationService {
         `dashboard:provider:${providerUserId}`
       ),
 
-      RedisService.deletePattern(
-        "jobs:nearby:*"
-      )
+      // JobService.getAllJobs actually caches under `jobs:worker:${userId}` /
+      // `jobs:agent:${userId}` (per-viewer, not a shared "nearby" key) — "jobs:nearby:*" never
+      // matched any real key, so this invalidation was a complete no-op: a newly-posted job
+      // stayed invisible in everyone's cached feed for the full 120s TTL.
+      RedisService.deletePattern("jobs:worker:*"),
+      RedisService.deletePattern("jobs:agent:*"),
 
     ]);
 
@@ -31,9 +34,9 @@ export class CacheInvalidationService {
         `dashboard:provider:${providerUserId}`
       ),
 
-      RedisService.deletePattern(
-        "jobs:nearby:*"
-      )
+      // See the identical comment in afterJobCreated — same dead-pattern bug.
+      RedisService.deletePattern("jobs:worker:*"),
+      RedisService.deletePattern("jobs:agent:*"),
     ];
 
     if (workerUserId) {

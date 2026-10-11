@@ -9,7 +9,6 @@ import {
   useGetMyWorkerProfileQuery,
   useUpdateAvailabilityMutation,
 } from "@/features/worker/workerApi";
-import { useWorkerLocation } from "../hooks/useWorkerLocation";
 import { useUpdateLocationMutation } from "@/features/location/locationApi";
 
 export function GoOnlineButton() {
@@ -18,9 +17,10 @@ export function GoOnlineButton() {
   const [updateLocation] = useUpdateLocationMutation();
   const { socket } = useSocket();
 
-  // Watch location in background when online
+  // Background location watching while online lives in WorkerLocationTracker (mounted once
+  // in the worker layout) — having it here too used to run two parallel geolocation watchers
+  // and double the location-update API traffic for every online worker.
   const isAvailable = profile?.isAvailable ?? false;
-  useWorkerLocation(isAvailable);
 
   const handleToggle = async (checked: boolean) => {
     if (checked) {

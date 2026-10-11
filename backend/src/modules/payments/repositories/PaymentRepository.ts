@@ -63,4 +63,13 @@ export class PaymentRepository extends BaseRepository<Payment> implements IPayme
     });
     return result.count;
   }
+
+  async markRefundedIfCompleted(id: string, tx?: Prisma.TransactionClient): Promise<number> {
+    const client = tx || this.prisma.client;
+    const result = await client.payment.updateMany({
+      where: { id, status: PaymentStatusEnum.COMPLETED },
+      data: { status: PaymentStatusEnum.REFUNDED },
+    });
+    return result.count;
+  }
 }

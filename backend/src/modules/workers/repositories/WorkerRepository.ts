@@ -108,7 +108,7 @@ export class WorkerRepository extends BaseRepository<WorkerProfile> implements I
     return result.count;
   }
 
-  async getProfileWithSkillsAndUser(userId: string, tx?: Prisma.TransactionClient): Promise<any> {
+  async getOrCreateProfileWithSkillsAndUser(userId: string, tx?: Prisma.TransactionClient): Promise<any> {
     const client = tx ?? this.prisma.client;
     try {
       return await client.workerProfile.upsert({

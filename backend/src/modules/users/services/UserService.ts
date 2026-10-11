@@ -6,6 +6,8 @@ import type { IUserRepository } from '../interfaces/IUserRepository.js';
 import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import type { IStorageProvider } from '../../../core/interfaces/IProviders.js';
 import { CacheKeys } from '../../../infrastructure/cache/cacheKeys.js';
+import { env } from '../../../config/env.js';
+import { parseDurationToSeconds } from '../../../shared/utils/duration.util.js';
 import {
   NotFoundException,
   AuthenticationException,
@@ -102,6 +104,11 @@ export class UserService extends BaseService implements IUserService {
     // Clear refresh tokens cached in Redis
     const cacheKey = CacheKeys.refreshToken(userId);
     await this.cache.del(cacheKey);
+
+    // Same reasoning as AdminService.suspendUser — without this, a just-deleted account's
+    // still-valid access token keeps working for up to its remaining 15-minute lifetime.
+    const revokeTtl = parseDurationToSeconds(env.JWT_ACCESS_EXPIRY, 15 * 60);
+    await this.cache.set(CacheKeys.revokedUser(userId), true, revokeTtl);
 
     return true;
   }

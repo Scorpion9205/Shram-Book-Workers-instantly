@@ -13,6 +13,7 @@ describe("InstantMatchingService", () => {
   let requestRepoMock: any;
   let cacheMock: any;
   let platformSettingRepoMock: any;
+  let mapsProviderMock: any;
   let service: InstantMatchingService;
 
   const baseRequest = {
@@ -36,6 +37,7 @@ describe("InstantMatchingService", () => {
     requestRepoMock = {
       findRequestWithItemsAndProvider: vi.fn(),
       findEligibleWorkersForMatching: vi.fn(),
+      findAllOpenRequestIds: vi.fn().mockResolvedValue([]),
     };
     cacheMock = {
       get: vi.fn().mockResolvedValue(null),
@@ -45,8 +47,12 @@ describe("InstantMatchingService", () => {
     platformSettingRepoMock = {
       get: vi.fn().mockResolvedValue(null), // no override -> defaults apply
     };
+    mapsProviderMock = {
+      getDistanceKm: vi.fn().mockResolvedValue(3),
+      getRoute: vi.fn().mockResolvedValue({ distanceKm: 3.2, durationMinutes: 8 }),
+    };
 
-    service = new InstantMatchingService(requestRepoMock, cacheMock, platformSettingRepoMock);
+    service = new InstantMatchingService(requestRepoMock, cacheMock, platformSettingRepoMock, mapsProviderMock);
   });
 
   afterEach(() => {
@@ -123,5 +129,76 @@ describe("InstantMatchingService", () => {
     await promise;
 
     expect(cacheMock.geoSearch).toHaveBeenNthCalledWith(1, "geo:instant-workers:skill_1", 12.9, 77.5, 1, "km");
+  });
+
+  it("notifies a worker with real road distance/ETA from the maps provider, not a placeholder", async () => {
+    requestRepoMock.findRequestWithItemsAndProvider
+      .mockResolvedValueOnce(baseRequest)
+      .mockResolvedValueOnce({ ...baseRequest, status: "CANCELLED" });
+    requestRepoMock.findEligibleWorkersForMatching.mockResolvedValue([
+      { id: "worker_1", userId: "worker_user_1", latitude: 12.91, longitude: 77.51 },
+    ]);
+
+    const promise = service.startMatching("req_1");
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(mapsProviderMock.getRoute).toHaveBeenCalledWith(
+      { lat: 12.91, lng: 77.51 },
+      { lat: 12.9, lng: 77.5 },
+    );
+    expect(emitMock).toHaveBeenCalledWith(
+      "newInstantRequest",
+      expect.objectContaining({
+        request: expect.objectContaining({ distanceKm: 3.2, estimatedMinutes: 8 }),
+      }),
+    );
+  });
+
+  it("skips the route lookup and reports zero distance/ETA when the worker has no known location", async () => {
+    requestRepoMock.findRequestWithItemsAndProvider
+      .mockResolvedValueOnce(baseRequest)
+      .mockResolvedValueOnce({ ...baseRequest, status: "CANCELLED" });
+    requestRepoMock.findEligibleWorkersForMatching.mockResolvedValue([
+      { id: "worker_1", userId: "worker_user_1", latitude: null, longitude: null },
+    ]);
+
+    const promise = service.startMatching("req_1");
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(mapsProviderMock.getRoute).not.toHaveBeenCalled();
+    expect(emitMock).toHaveBeenCalledWith(
+      "newInstantRequest",
+      expect.objectContaining({
+        request: expect.objectContaining({ distanceKm: 0, estimatedMinutes: 0 }),
+      }),
+    );
+  });
+});
+
+describe("InstantMatchingService.resumeAllOpenRequests", () => {
+  it("re-launches startMatching for every still-open request found — restart recovery", async () => {
+    const requestRepoMock: any = {
+      findAllOpenRequestIds: vi.fn().mockResolvedValue(["req_1", "req_2"]),
+    };
+    const service = new InstantMatchingService(requestRepoMock, {} as any, {} as any, {} as any);
+    const startMatchingSpy = vi.spyOn(service, "startMatching").mockResolvedValue(undefined);
+
+    await service.resumeAllOpenRequests();
+
+    expect(startMatchingSpy).toHaveBeenCalledWith("req_1");
+    expect(startMatchingSpy).toHaveBeenCalledWith("req_2");
+    expect(startMatchingSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("does nothing when there are no open requests", async () => {
+    const requestRepoMock: any = { findAllOpenRequestIds: vi.fn().mockResolvedValue([]) };
+    const service = new InstantMatchingService(requestRepoMock, {} as any, {} as any, {} as any);
+    const startMatchingSpy = vi.spyOn(service, "startMatching").mockResolvedValue(undefined);
+
+    await service.resumeAllOpenRequests();
+
+    expect(startMatchingSpy).not.toHaveBeenCalled();
   });
 });

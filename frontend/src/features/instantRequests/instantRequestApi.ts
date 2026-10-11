@@ -156,6 +156,17 @@ export const instantRequestApi = apiSlice.injectEndpoints({
       },
       providesTags: ["InstantRequest"],
     }),
+    submitBid: builder.mutation<{ id: string; bidAmount: number }, { requestId: string; bidAmount: number }>({
+      query: ({ requestId, bidAmount }) => ({
+        url: `/instant-requests/${requestId}/bids`,
+        method: "POST",
+        body: { bidAmount },
+      }),
+      transformResponse: (response: any) => {
+        const data = response.data || response;
+        return data.bid || data;
+      },
+    }),
     selectBid: builder.mutation<{ bookingId?: string }, { requestId: string; bidId: string }>({
       query: ({ requestId, bidId }) => ({
         url: `/instant-requests/${requestId}/bids/${bidId}/select`,
@@ -183,6 +194,7 @@ export const {
   useCalculateFareMutation,
   useAcceptInstantRequestItemMutation,
   useGetMyInstantRequestsQuery,
+  useSubmitBidMutation,
   useSelectBidMutation,
   useCancelInstantRequestMutation,
 } = instantRequestApi;
