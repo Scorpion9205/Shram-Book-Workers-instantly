@@ -68,7 +68,7 @@ export default function WorkerBookingDetailPage({ params }: { params: Promise<{ 
 
   async function handleVerifyOtp() {
     if (!otp.trim()) {
-      toast.error("Please enter the 4-digit start OTP shared by the provider");
+      toast.error("Please enter the 6-digit start OTP shared by the provider");
       return;
     }
     try {
@@ -209,11 +209,11 @@ export default function WorkerBookingDetailPage({ params }: { params: Promise<{ 
             <Input
               id="start-otp"
               type="text"
-              placeholder="e.g. 1234"
+              placeholder="e.g. 123456"
               value={otp}
               onChange={(e) => setOtp(e.target.value)}
               className="text-center font-bold text-lg tracking-wider max-w-xs mx-auto"
-              maxLength={4}
+              maxLength={6}
             />
           </CardContent>
         </Card>
