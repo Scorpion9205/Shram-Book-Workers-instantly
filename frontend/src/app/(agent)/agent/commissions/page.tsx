@@ -1,22 +1,64 @@
 "use client";
 
-import { Wallet, Percent, Briefcase } from "lucide-react";
+import { useState } from "react";
+import { Wallet, Percent, Briefcase, IndianRupee } from "lucide-react";
+import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/cards/StatCard";
 import { EmptyState } from "@/components/cards/EmptyState";
 import { StatGridSkeleton, ListSkeleton } from "@/components/loaders/Skeletons";
-import { useGetAgentCommissionsQuery } from "@/features/agent/agentApi";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useGetAgentCommissionsQuery, useCheckoutCommissionMutation } from "@/features/agent/agentApi";
+
+type CommissionPeriod = "today" | "month" | "all";
+
+const PERIOD_LABELS: Record<CommissionPeriod, string> = {
+  today: "Today's Earnings",
+  month: "This Month's Earnings",
+  all: "Total Earnings",
+};
 
 export default function AgentCommissionsPage() {
   const { data, isLoading } = useGetAgentCommissionsQuery();
+  const [checkout, { isLoading: isCheckingOut }] = useCheckoutCommissionMutation();
+  const [period, setPeriod] = useState<CommissionPeriod>("all");
+
+  const periodValue =
+    period === "today" ? data?.todayEarnings : period === "month" ? data?.monthEarnings : data?.totalEarnings;
+
+  const pending = data?.pendingCheckoutAmount ?? 0;
+  const minimum = data?.minimumCheckoutAmount ?? 2000;
+  const canCheckout = pending >= minimum;
+
+  async function handleCheckout() {
+    try {
+      const result = await checkout().unwrap();
+      toast.success(`₹${result.checkedOutAmount} commission checked out.`);
+    } catch (err: any) {
+      toast.error(err?.data?.message || "Couldn't checkout commission.");
+    }
+  }
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Commissions</h1>
-        <p className="text-sm text-muted-foreground">
-          Earnings from completed, paid bookings sourced through your agency.
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight">Commissions</h1>
+          <p className="text-sm text-muted-foreground">
+            Earnings from completed, paid bookings sourced through your agency.
+          </p>
+        </div>
+        <Select value={period} onValueChange={(v) => setPeriod(v as CommissionPeriod)}>
+          <SelectTrigger className="w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="today">Today</SelectItem>
+            <SelectItem value="month">This Month</SelectItem>
+            <SelectItem value="all">All Time</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {isLoading ? (
@@ -24,8 +66,8 @@ export default function AgentCommissionsPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <StatCard
-            label="Total Earnings"
-            value={`₹${data?.totalEarnings ?? 0}`}
+            label={PERIOD_LABELS[period]}
+            value={`₹${periodValue ?? 0}`}
             icon={Wallet}
             accent="success"
           />
@@ -46,6 +88,26 @@ export default function AgentCommissionsPage() {
           />
         </div>
       )}
+
+      <Card className="p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm text-muted-foreground">Available to Checkout</p>
+            <p className="mt-1 flex items-center gap-1 text-2xl font-bold">
+              <IndianRupee className="size-5" />
+              {pending}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {canCheckout
+                ? "Ready to checkout."
+                : `Minimum ₹${minimum} required — ₹${Math.max(minimum - pending, 0)} more to go.`}
+            </p>
+          </div>
+          <Button onClick={handleCheckout} disabled={!canCheckout} loading={isCheckingOut}>
+            <Wallet className="size-4" /> Checkout Commission
+          </Button>
+        </div>
+      </Card>
 
       <div>
         <h2 className="mb-3 text-sm font-semibold text-muted-foreground">Recent Commissions</h2>

@@ -1,14 +1,24 @@
 "use client";
 
-import { Briefcase, CheckCircle2, Clock, Star, Users } from "lucide-react";
+import { useState } from "react";
+import Link from "next/link";
+import { Briefcase, CheckCircle2, Clock, IndianRupee, Star, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/cards/EmptyState";
 import { StatCard } from "@/components/cards/StatCard";
 import { StatGridSkeleton } from "@/components/loaders/Skeletons";
-import { useGetAgentDashboardQuery } from "@/features/agent/agentApi";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useGetAgentDashboardQuery, useGetAgentCommissionsQuery } from "@/features/agent/agentApi";
+
+type CommissionPeriod = "today" | "month" | "all";
 
 export default function AgentDashboardPage() {
   const { data, isLoading, isError } = useGetAgentDashboardQuery();
+  const { data: commissions } = useGetAgentCommissionsQuery();
+  const [period, setPeriod] = useState<CommissionPeriod>("today");
+
+  const periodValue =
+    period === "today" ? commissions?.todayEarnings : period === "month" ? commissions?.monthEarnings : commissions?.totalEarnings;
 
   if (isLoading) {
     return (
@@ -56,6 +66,43 @@ export default function AgentDashboardPage() {
             <CheckCircle2 className="mb-2 size-5 text-success" />
             <p className="text-2xl font-semibold">{data?.completedBookings ?? 0}</p>
             <p className="text-sm text-muted-foreground">Completed bookings</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle>Commission Earnings</CardTitle>
+          <Select value={period} onValueChange={(v) => setPeriod(v as CommissionPeriod)}>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="today">Today</SelectItem>
+              <SelectItem value="month">This Month</SelectItem>
+              <SelectItem value="all">All Time</SelectItem>
+            </SelectContent>
+          </Select>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-end justify-between">
+            <div>
+              <p className="flex items-center gap-1 text-3xl font-bold">
+                <IndianRupee className="size-6" />
+                {periodValue ?? 0}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                At {commissions?.commissionPercent ?? 0}% on bookings sourced through your agency
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground">
+                ₹{commissions?.pendingCheckoutAmount ?? 0} available to checkout
+              </p>
+              <Link href="/agent/commissions" className="text-sm font-medium text-primary hover:underline">
+                View details
+              </Link>
+            </div>
           </div>
         </CardContent>
       </Card>

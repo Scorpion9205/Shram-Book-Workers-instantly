@@ -11,10 +11,10 @@ interface BookingConfirmedProps {
 export function BookingConfirmed({ providerName, bookingShortId, workerName, frontendUrl }: BookingConfirmedProps) {
   return (
     <Layout>
-      <Header />
+      <Header frontendUrl={frontendUrl} />
       <Card>
-        <h2 style={{ color: "#111827", marginBottom: "20px" }}>
-          ✅ Booking Confirmed!
+        <h2 style={{ color: "#18181b", marginBottom: "20px", fontSize: "22px" }}>
+          Booking Confirmed!
         </h2>
         <Text>
           Hello <strong>{providerName}</strong>,
@@ -40,7 +40,7 @@ export function BookingConfirmed({ providerName, bookingShortId, workerName, fro
           </Button>
         </div>
       </Card>
-      <Footer />
+      <Footer frontendUrl={frontendUrl} />
     </Layout>
   );
 }

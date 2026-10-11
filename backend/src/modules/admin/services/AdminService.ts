@@ -306,14 +306,16 @@ export class AdminService extends BaseService implements IAdminService {
     return template;
   }
 
-  async verifyWorker(workerId: string): Promise<User> {
-    this.log('Verifying worker profile', { workerId });
-    const worker = await this.workerRepo.findById(workerId);
+  async verifyWorker(userId: string, isVerified: boolean): Promise<User> {
+    this.log('Verifying worker profile', { userId, isVerified });
+    // The admin Users list only ever has User.id (not WorkerProfile.id) to work with, so this
+    // looks up by userId — findById(WorkerProfile.id) here would 404 on every call since the
+    // two ids are never the same value.
+    const worker = await this.workerRepo.findByUserId(userId);
     if (!worker) {
-      throw new NotFoundException('WorkerProfile', workerId);
+      throw new NotFoundException('WorkerProfile', userId);
     }
 
-    // Update isVerified to true on the User record
-    return await this.userRepo.update(worker.userId, { isVerified: true });
+    return await this.userRepo.update(worker.userId, { isVerified });
   }
 }

@@ -11,10 +11,10 @@ interface WorkCompletedProps {
 export function WorkCompleted({ providerName, workerName, bookingShortId, frontendUrl }: WorkCompletedProps) {
   return (
     <Layout>
-      <Header />
+      <Header frontendUrl={frontendUrl} />
       <Card>
-        <h2 style={{ color: "#111827", marginBottom: "20px" }}>
-          🛠️ Work Completed Alert
+        <h2 style={{ color: "#18181b", marginBottom: "20px", fontSize: "22px" }}>
+          Work Completed Alert
         </h2>
         <Text>
           Hello <strong>{providerName}</strong>,
@@ -32,7 +32,7 @@ export function WorkCompleted({ providerName, workerName, bookingShortId, fronte
           </Button>
         </div>
       </Card>
-      <Footer />
+      <Footer frontendUrl={frontendUrl} />
     </Layout>
   );
 }

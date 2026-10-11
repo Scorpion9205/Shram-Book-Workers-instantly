@@ -1,26 +1,27 @@
 import React from "react";
 
-export function Header() {
-  return (
-    <div
-      style={{
-        textAlign: "center",
-        marginBottom: "32px",
-      }}
-    >
-      <h1
-        style={{
-          color: "#2563eb",
-          margin: 0,
-        }}
-      >
-        SHRAM
-      </h1>
+interface HeaderProps {
+  frontendUrl: string;
+}
 
+export function Header({ frontendUrl }: HeaderProps) {
+  return (
+    <div style={{ textAlign: "center", marginBottom: "32px" }}>
+      <img
+        src={`${frontendUrl}/logo.png`}
+        alt="SHRAM"
+        width={40}
+        height={40}
+        style={{ display: "block", margin: "0 auto 12px", borderRadius: "8px" }}
+      />
       <p
         style={{
-          color: "#6b7280",
-          marginTop: "8px",
+          color: "#9ca3af",
+          fontSize: "13px",
+          fontWeight: 600,
+          letterSpacing: "1.5px",
+          textTransform: "uppercase",
+          margin: 0,
         }}
       >
         Book Workers Instantly

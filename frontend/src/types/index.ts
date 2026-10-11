@@ -379,6 +379,10 @@ export interface AgentCommissionSummary {
   bookingCount: number;
   totalGrossBookingValue: number;
   totalEarnings: number;
+  todayEarnings: number;
+  monthEarnings: number;
+  pendingCheckoutAmount: number;
+  minimumCheckoutAmount: number;
   recentCommissions: AgentCommission[];
 }
 

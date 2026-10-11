@@ -10,10 +10,10 @@ interface BookingCreatedProps {
 export function BookingCreated({ name, bookingId, frontendUrl }: BookingCreatedProps) {
   return (
     <Layout>
-      <Header />
+      <Header frontendUrl={frontendUrl} />
       <Card>
-        <h2 style={{ color: "#111827", marginBottom: "20px" }}>
-          📝 Booking Created Successfully
+        <h2 style={{ color: "#18181b", marginBottom: "20px", fontSize: "22px" }}>
+          Booking Created Successfully
         </h2>
         <Text>
           Hello <strong>{name}</strong>,
@@ -39,7 +39,7 @@ export function BookingCreated({ name, bookingId, frontendUrl }: BookingCreatedP
           We will send you another notification once a worker accepts your booking.
         </Text>
       </Card>
-      <Footer />
+      <Footer frontendUrl={frontendUrl} />
     </Layout>
   );
 }

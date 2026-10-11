@@ -1,14 +1,18 @@
 "use client";
 
-import { ClipboardList } from "lucide-react";
+import { useState } from "react";
+import { ClipboardList, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/cards/EmptyState";
 import { ListSkeleton } from "@/components/loaders/Skeletons";
 import { useGetAgentApplicationsQuery } from "@/features/agent/agentApi";
+import AssignWorkerDialog from "@/components/dialogs/AssignWorkerDialog";
 
 export default function AgentApplicationsPage() {
   const { data = [], isLoading } = useGetAgentApplicationsQuery();
+  const [assigningApp, setAssigningApp] = useState<{ id: string; skillId?: string; title?: string } | null>(null);
 
   if (isLoading) return <ListSkeleton count={4} />;
 
@@ -29,14 +33,43 @@ export default function AgentApplicationsPage() {
                 <div>
                   <p className="font-medium">{application.job?.title ?? "Job application"}</p>
                   <p className="text-sm text-muted-foreground">{application.job?.address}</p>
+                  {application.workerCount != null && (
+                    <p className="text-xs text-muted-foreground mt-0.5">{application.workerCount} worker(s) needed</p>
+                  )}
                 </div>
-                <Badge variant="outline" className="capitalize">
-                  {application.status}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="capitalize">
+                    {application.status}
+                  </Badge>
+                  {application.status === "ACCEPTED" && (
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        setAssigningApp({
+                          id: application.id,
+                          skillId: application.job?.skill?.id,
+                          title: application.job?.title,
+                        })
+                      }
+                    >
+                      <UserPlus className="size-3.5" /> Assign Workers
+                    </Button>
+                  )}
+                </div>
               </div>
             </Card>
           ))}
         </div>
+      )}
+
+      {assigningApp && (
+        <AssignWorkerDialog
+          open={!!assigningApp}
+          onOpenChange={(open) => !open && setAssigningApp(null)}
+          applicationId={assigningApp.id}
+          jobSkillId={assigningApp.skillId}
+          jobTitle={assigningApp.title}
+        />
       )}
     </div>
   );

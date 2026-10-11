@@ -3,7 +3,7 @@ import type { User, Booking } from "@/types";
 
 export interface PlatformSetting {
   key: string;
-  value: string;
+  value: unknown;
   description?: string;
 }
 
@@ -51,6 +51,14 @@ export const adminApi = apiSlice.injectEndpoints({
         if (role) url += `&role=${encodeURIComponent(role)}`;
         return { url };
       },
+      // UserMapper.toDto (backend) returns the raw Prisma enum role ("WORKER", not "worker"),
+      // but every other part of the app (usersApi, authApi) normalizes to lowercase to match
+      // the frontend's User["role"] type — without this, `user.role === "worker"` comparisons
+      // here (worker-verification badge/button) silently never matched anything.
+      transformResponse: (response: { success: boolean; data: (Omit<User, "role"> & { role: string })[]; meta: PaginationMeta }) => ({
+        ...response,
+        data: response.data.map((u) => ({ ...u, role: u.role.toLowerCase() as User["role"] })),
+      }),
       providesTags: ["User"],
     }),
     suspendUser: builder.mutation<{ success: boolean; message: string }, { id: string; isActive: boolean }>({
@@ -90,7 +98,7 @@ export const adminApi = apiSlice.injectEndpoints({
       query: () => ({ url: "/admin/settings" }),
       providesTags: ["Settings" as any],
     }),
-    updateSetting: builder.mutation<{ success: boolean; message: string }, { key: string; value: string }>({
+    updateSetting: builder.mutation<{ success: boolean; message: string }, { key: string; value: unknown }>({
       query: ({ key, value }) => ({
         url: `/admin/settings/${key}`,
         method: "PUT",

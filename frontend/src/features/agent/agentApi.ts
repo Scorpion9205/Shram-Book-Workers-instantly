@@ -11,6 +11,26 @@ export interface AgentProfilePayload {
   description?: string;
 }
 
+export interface AgentOpenInstantRequestItem {
+  id: string;
+  requiredWorkers: number;
+  acceptedWorkers: number;
+  skill: { id: string; name: string };
+}
+
+export interface AgentOpenInstantRequest {
+  id: string;
+  title: string;
+  description?: string | null;
+  amount: number;
+  address?: string | null;
+  latitude: number;
+  longitude: number;
+  createdAt: string;
+  provider: { name: string };
+  items: AgentOpenInstantRequestItem[];
+}
+
 export const agentApi = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
     createAgentProfile: builder.mutation<AgentProfile, AgentProfilePayload>({
@@ -48,6 +68,40 @@ export const agentApi = apiSlice.injectEndpoints({
       transformResponse: (response: AgentDataResponse<AgentCommissionSummary>) => response.data,
       providesTags: ["AgentBooking"],
     }),
+    checkoutCommission: builder.mutation<{ checkedOutAmount: number }, void>({
+      query: () => ({ url: "/agents/commissions/checkout", method: "POST" }),
+      transformResponse: (response: AgentDataResponse<{ checkedOutAmount: number }>) => response.data,
+      invalidatesTags: ["AgentBooking"],
+    }),
+    assignWorkerToApplication: builder.mutation<
+      { success: boolean; bookingId?: string },
+      { applicationId: string; workerId: string }
+    >({
+      query: ({ applicationId, workerId }) => ({
+        url: `/agents/applications/${applicationId}/assign-worker`,
+        method: "POST",
+        body: { workerId },
+      }),
+      transformResponse: (response: AgentDataResponse<{ success: boolean; bookingId?: string }>) => response.data,
+      invalidatesTags: ["AgentApplication", "AgentBooking", "AgentDashboard", "AgentWorker" as any],
+    }),
+    getOpenInstantRequests: builder.query<AgentOpenInstantRequest[], void>({
+      query: () => "/agents/instant-requests/open",
+      transformResponse: (response: AgentDataResponse<AgentOpenInstantRequest[]>) => response.data,
+      providesTags: ["InstantRequest"],
+    }),
+    assignWorkerToInstantItem: builder.mutation<
+      { bookingId?: string; status?: string },
+      { itemId: string; workerId: string }
+    >({
+      query: ({ itemId, workerId }) => ({
+        url: `/agents/instant-requests/items/${itemId}/assign`,
+        method: "POST",
+        body: { workerId },
+      }),
+      transformResponse: (response: AgentDataResponse<{ bookingId?: string; status?: string }>) => response.data,
+      invalidatesTags: ["InstantRequest", "AgentBooking", "AgentDashboard", "AgentWorker" as any],
+    }),
   }),
 });
 
@@ -59,4 +113,8 @@ export const {
   useGetAgentApplicationsQuery,
   useGetAgentBookingsQuery,
   useGetAgentCommissionsQuery,
+  useCheckoutCommissionMutation,
+  useAssignWorkerToApplicationMutation,
+  useGetOpenInstantRequestsQuery,
+  useAssignWorkerToInstantItemMutation,
 } = agentApi;

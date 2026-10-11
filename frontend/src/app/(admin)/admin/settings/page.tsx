@@ -20,21 +20,54 @@ export default function AdminSettingsPage() {
     if (settings.length > 0) {
       const initial: Record<string, string> = {};
       settings.forEach((s) => {
-        initial[s.key] = s.value;
+        initial[s.key] = Array.isArray(s.value) ? s.value.join(",") : String(s.value);
       });
       setEditValues(initial);
     }
   }, [settings]);
 
+  // Settings are stored as real JSON (number, array of numbers, etc) — the <Input> only ever
+  // gives back a string, so we convert back to the original value's shape before sending.
+  // Sending the raw string (the previous behavior) always failed backend validation, since
+  // e.g. "14" (string) !== 14 (number) even though 14 is perfectly in range.
+  function parseEditedValue(key: string, raw: string): { ok: true; value: unknown } | { ok: false; error: string } {
+    const original = settings.find((s) => s.key === key)?.value;
+
+    if (Array.isArray(original)) {
+      const parts = raw.split(",").map((p) => p.trim()).filter(Boolean);
+      const numbers = parts.map(Number);
+      if (numbers.length === 0 || numbers.some((n) => !Number.isFinite(n))) {
+        return { ok: false, error: `"${key}" must be a comma-separated list of numbers (e.g. 2,5,10).` };
+      }
+      return { ok: true, value: numbers };
+    }
+
+    if (typeof original === "number") {
+      const num = Number(raw);
+      if (!Number.isFinite(num)) {
+        return { ok: false, error: `"${key}" must be a number.` };
+      }
+      return { ok: true, value: num };
+    }
+
+    return { ok: true, value: raw };
+  }
+
   async function handleSaveSetting(key: string) {
-    const value = editValues[key];
-    if (value === undefined || value === "") {
+    const raw = editValues[key];
+    if (raw === undefined || raw === "") {
       toast.error("Value cannot be empty.");
       return;
     }
 
+    const parsed = parseEditedValue(key, raw);
+    if (!parsed.ok) {
+      toast.error(parsed.error);
+      return;
+    }
+
     try {
-      const res = await updateSetting({ key, value }).unwrap();
+      const res = await updateSetting({ key, value: parsed.value }).unwrap();
       toast.success(res.message || `Setting "${key}" updated successfully.`);
       refetch();
     } catch (err: any) {
@@ -85,7 +118,11 @@ export default function AdminSettingsPage() {
                     <Button
                       size="sm"
                       onClick={() => handleSaveSetting(setting.key)}
-                      disabled={isUpdating || editValues[setting.key] === setting.value}
+                      disabled={
+                        isUpdating ||
+                        editValues[setting.key] ===
+                          (Array.isArray(setting.value) ? setting.value.join(",") : String(setting.value))
+                      }
                       className="shrink-0"
                     >
                       <Save className="size-3.5 mr-1" /> Save

@@ -8,6 +8,7 @@ import type { IJobRepository } from '../../jobs/interfaces/IJobRepository.js';
 import type { IEventPublisher } from '../../../core/interfaces/IEventPublisher.js';
 import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import type { IPaymentService } from '../../payments/interfaces/IPaymentService.js';
+import type { IAgentRepository } from '../../agents/interfaces/IAgentRepository.js';
 import type { PaginatedResult } from '../../../core/base/BaseRepository.js';
 import { RoutingKeys } from '../../../infrastructure/queue/queue.constants.js';
 import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
@@ -21,8 +22,22 @@ export class BookingService extends BaseService implements IBookingService {
     private readonly cache: ICacheService,
     private readonly jobRepo: IJobRepository,
     private readonly paymentService: IPaymentService,
+    private readonly agentRepo: IAgentRepository,
   ) {
     super('BookingService');
+  }
+
+  /**
+   * A phone-less, agent-managed worker can never call these actions themselves — the Agent
+   * who manages them (stamped as booking.agentId at assignment time) acts on their behalf.
+   * Self-managed workers are unaffected: the fast path below is checked first and is the only
+   * path that ever runs for them.
+   */
+  private async isAuthorizedForWorkerAction(booking: { worker?: { userId: string } | null; agentId?: string | null }, userId: string): Promise<boolean> {
+    if (booking.worker?.userId === userId) return true;
+    if (!booking.agentId) return false;
+    const agent = await this.agentRepo.findByUserId(userId);
+    return agent?.id === booking.agentId;
   }
 
   async getBookingById(id: string): Promise<Booking> {
@@ -105,8 +120,7 @@ export class BookingService extends BaseService implements IBookingService {
     const booking = await this.getBookingById(id) as any;
     this.log('Worker is en route for booking', { bookingId: id, workerUserId: userId });
 
-    // Validate that the user is the assigned worker
-    if (booking.worker?.userId !== userId) {
+    if (!(await this.isAuthorizedForWorkerAction(booking, userId))) {
       throw new BusinessException('UNAUTHORIZED_WORKER', 'You are not assigned to this booking');
     }
 
@@ -120,8 +134,7 @@ export class BookingService extends BaseService implements IBookingService {
     const booking = await this.getBookingById(id) as any;
     this.log('Verifying start OTP for booking', { bookingId: id, workerUserId: userId });
 
-    // Validate that the user is the assigned worker
-    if (booking.worker?.userId !== userId) {
+    if (!(await this.isAuthorizedForWorkerAction(booking, userId))) {
       throw new BusinessException('UNAUTHORIZED_WORKER', 'You are not assigned to this booking');
     }
 
@@ -156,8 +169,7 @@ export class BookingService extends BaseService implements IBookingService {
     const booking = await this.getBookingById(id) as any;
     this.log('Worker is completing booking', { bookingId: id, workerUserId: userId });
 
-    // Validate that the user is the assigned worker
-    if (booking.worker?.userId !== userId) {
+    if (!(await this.isAuthorizedForWorkerAction(booking, userId))) {
       throw new BusinessException('UNAUTHORIZED_WORKER', 'You are not assigned to this booking');
     }
 
@@ -197,8 +209,7 @@ export class BookingService extends BaseService implements IBookingService {
     const booking = await this.getBookingById(id) as any;
     this.log('Worker is confirming offline payment', { bookingId: id, workerUserId: userId });
 
-    // Validate that the caller is the assigned worker
-    if (booking.worker?.userId !== userId) {
+    if (!(await this.isAuthorizedForWorkerAction(booking, userId))) {
       throw new BusinessException('UNAUTHORIZED_WORKER', 'You are not assigned to this booking');
     }
 

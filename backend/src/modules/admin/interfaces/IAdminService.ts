@@ -22,5 +22,5 @@ export interface IAdminService {
     locale: string,
     data: { subject?: string | null | undefined; body: string; variables?: any },
   ): Promise<NotificationTemplate>;
-  verifyWorker(workerId: string): Promise<User>;
+  verifyWorker(userId: string, isVerified: boolean): Promise<User>;
 }

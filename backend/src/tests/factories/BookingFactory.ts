@@ -27,6 +27,9 @@ export class BookingFactory {
       address: overrides.address !== undefined ? overrides.address : null,
       notes: overrides.notes !== undefined ? overrides.notes : null,
       deletedAt: overrides.deletedAt !== undefined ? overrides.deletedAt : null,
+      payoutPaidAt: overrides.payoutPaidAt !== undefined ? overrides.payoutPaidAt : null,
+      payoutMethod: overrides.payoutMethod !== undefined ? overrides.payoutMethod : null,
+      commissionCheckedOutAt: overrides.commissionCheckedOutAt !== undefined ? overrides.commissionCheckedOutAt : null,
       createdAt: overrides.createdAt || new Date(),
       updatedAt: overrides.updatedAt || new Date(),
     };

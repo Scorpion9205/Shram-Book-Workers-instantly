@@ -185,40 +185,48 @@ export class ApplicationService extends BaseService implements IApplicationServi
 
       await this.applicationRepo.update(applicationId, { status: 'ACCEPTED' }, tx);
 
-      // Generate a cryptographically secure 6-digit start OTP — only the Argon2id hash is
-      // persisted; the plaintext is cached separately (short TTL) for the Provider to view.
-      const { code: startOtpPlain, hash: startOtp } = await generateHashedStartOtp();
+      // WORKER-type applications pin a specific person down immediately, so their booking is
+      // created right here, same as always. AGENT-type applications don't have a specific
+      // worker yet — booking creation is deferred to assignWorkerToApplication(), called once
+      // per roster worker the Agent assigns (see there for why this always ends up OFFLINE).
+      let booking: Awaited<ReturnType<typeof tx.booking.create>> | null = null;
 
-      const booking = await tx.booking.create({
-        data: {
-          jobId: application.jobId,
-          providerId: application.job.providerId,
-          workerId: application.workerId,
-          agentId: application.agentId,
-          amount: application.bidAmount ?? 0,
-          status: paymentMode === 'OFFLINE' ? BookingStatus.WORKER_ASSIGNED : BookingStatus.CREATED,
-          paymentMode: paymentMode === 'OFFLINE' ? 'OFFLINE' : 'ONLINE',
-          startOtp,
-        },
-      });
+      if (application.applicantType === 'WORKER') {
+        // Generate a cryptographically secure 6-digit start OTP — only the Argon2id hash is
+        // persisted; the plaintext is cached separately (short TTL) for the Provider to view.
+        const { code: startOtpPlain, hash: startOtp } = await generateHashedStartOtp();
 
-      await this.cache.set(bookingStartOtpCacheKey(booking.id), startOtpPlain, BOOKING_START_OTP_CACHE_TTL_SECONDS);
-
-      // Offline-payment bookings are created directly at WORKER_ASSIGNED, bypassing
-      // BookingStateService — without this they'd have zero audit history until (if ever)
-      // their next transition. Online bookings start at CREATED, which needs no genesis
-      // entry since that's already the FSM's natural starting point.
-      if (booking.status === BookingStatus.WORKER_ASSIGNED) {
-        await this.historyRepo.append(
-          {
-            bookingId: booking.id,
-            fromStatus: BookingStatus.CREATED,
-            toStatus: BookingStatus.WORKER_ASSIGNED,
-            changedBy: userId,
-            reason: 'Job application accepted with offline payment',
+        booking = await tx.booking.create({
+          data: {
+            jobId: application.jobId,
+            providerId: application.job.providerId,
+            workerId: application.workerId,
+            agentId: application.agentId,
+            amount: application.bidAmount ?? 0,
+            status: paymentMode === 'OFFLINE' ? BookingStatus.WORKER_ASSIGNED : BookingStatus.CREATED,
+            paymentMode: paymentMode === 'OFFLINE' ? 'OFFLINE' : 'ONLINE',
+            startOtp,
           },
-          tx,
-        );
+        });
+
+        await this.cache.set(bookingStartOtpCacheKey(booking.id), startOtpPlain, BOOKING_START_OTP_CACHE_TTL_SECONDS);
+
+        // Offline-payment bookings are created directly at WORKER_ASSIGNED, bypassing
+        // BookingStateService — without this they'd have zero audit history until (if ever)
+        // their next transition. Online bookings start at CREATED, which needs no genesis
+        // entry since that's already the FSM's natural starting point.
+        if (booking.status === BookingStatus.WORKER_ASSIGNED) {
+          await this.historyRepo.append(
+            {
+              bookingId: booking.id,
+              fromStatus: BookingStatus.CREATED,
+              toStatus: BookingStatus.WORKER_ASSIGNED,
+              changedBy: userId,
+              reason: 'Job application accepted with offline payment',
+            },
+            tx,
+          );
+        }
       }
 
       const updatedJob = await tx.job.findUniqueOrThrow({ where: { id: application.jobId } });
@@ -242,14 +250,28 @@ export class ApplicationService extends BaseService implements IApplicationServi
       };
     });
 
-    // Publish booking.created event
-    await this.eventPublisher.publish(RoutingKeys.BOOKING_CREATED, result.booking);
-
     await CacheInvalidationService.afterJobAccepted(
       userId,
       result.workerUserId,
       result.agentUserId,
     );
+
+    if (!result.booking) {
+      // AGENT application accepted, no specific worker chosen yet — still worth telling the
+      // Agent their application was accepted so they know to go assign roster workers.
+      try {
+        getIO().to(`user:${result.agentUserId}`).emit('applicationUpdated', {
+          applicationId,
+          status: 'ACCEPTED',
+        });
+      } catch (err) {
+        this.logger.error('Failed to emit application-accepted socket event', err);
+      }
+      return { success: true, applicationId, awaitingWorkerAssignment: true };
+    }
+
+    // Publish booking.created event
+    await this.eventPublisher.publish(RoutingKeys.BOOKING_CREATED, result.booking);
 
     // Emit real-time socket events for booking creation
     try {
@@ -266,6 +288,93 @@ export class ApplicationService extends BaseService implements IApplicationServi
     }
 
     return { success: true, bookingId: result.booking.id, paymentMode: result.booking.paymentMode };
+  }
+
+  async assignWorkerToApplication(agentId: string, applicationId: string, workerId: string): Promise<any> {
+    this.log('Agent assigning a roster worker to an accepted application', { agentId, applicationId, workerId });
+
+    const result = await this.prisma.client.$transaction(async (tx) => {
+      const application = await this.applicationRepo.findById(applicationId, tx);
+      if (!application) {
+        throw new NotFoundException('Application', applicationId);
+      }
+
+      if (application.applicantType !== 'AGENT' || application.agentId !== agentId) {
+        throw new BusinessException('UNAUTHORIZED', 'This application does not belong to your agency');
+      }
+
+      if (application.status !== 'ACCEPTED') {
+        throw new BusinessException('APPLICATION_NOT_ACCEPTED', 'This application has not been accepted by the Provider yet');
+      }
+
+      const workerCount = application.workerCount ?? 1;
+      const alreadyAssigned = await tx.booking.count({
+        where: { jobId: application.jobId, agentId },
+      });
+      if (alreadyAssigned >= workerCount) {
+        throw new BusinessException('ALL_SLOTS_FILLED', `All ${workerCount} worker slot(s) for this application have already been assigned`);
+      }
+
+      // Atomically claim the worker — same guard as the WORKER-applicant path, preventing one
+      // roster worker from being assigned to two bookings (by this agent or any other flow) at
+      // once.
+      const claimed = await tx.workerProfile.updateMany({
+        where: { id: workerId, isAvailable: true },
+        data: { isAvailable: false },
+      });
+      if (claimed.count === 0) {
+        throw new BusinessException('WORKER_UNAVAILABLE', 'This worker is not currently available');
+      }
+
+      // Agent-sourced multi-worker fulfillment has no clean "online payment per worker" story —
+      // the Provider already agreed to bidAmount as ONE upfront figure at accept time, so
+      // splitting that into N separate Razorpay charges as workers trickle in over time would
+      // be a confusing, error-prone UX. Instant requests hit this exact same problem and settled
+      // on always-OFFLINE (see InstantRequestRepository.createBooking) — this follows the same
+      // precedent rather than inventing a second payment story.
+      const perWorkerAmount = Number(application.bidAmount ?? 0) / workerCount;
+      const { code: startOtpPlain, hash: startOtp } = await generateHashedStartOtp();
+
+      const booking = await tx.booking.create({
+        data: {
+          jobId: application.jobId,
+          providerId: application.job.providerId,
+          workerId,
+          agentId,
+          amount: perWorkerAmount,
+          status: BookingStatus.WORKER_ASSIGNED,
+          paymentMode: 'OFFLINE',
+          startOtp,
+        },
+      });
+
+      await this.cache.set(bookingStartOtpCacheKey(booking.id), startOtpPlain, BOOKING_START_OTP_CACHE_TTL_SECONDS);
+
+      await this.historyRepo.append(
+        {
+          bookingId: booking.id,
+          fromStatus: BookingStatus.CREATED,
+          toStatus: BookingStatus.WORKER_ASSIGNED,
+          changedBy: agentId,
+          reason: 'Agent assigned a roster worker to the accepted application',
+        },
+        tx,
+      );
+
+      return booking;
+    });
+
+    await this.eventPublisher.publish(RoutingKeys.BOOKING_CREATED, result);
+
+    try {
+      const io = getIO();
+      const mappedBooking = BookingMapper.toResponse(result, {});
+      io.to(`user:${result.providerId}`).emit('bookingUpdated', mappedBooking);
+    } catch (err) {
+      this.logger.error('Failed to emit booking creation socket event', err);
+    }
+
+    return { success: true, bookingId: result.id };
   }
 
   async rejectApplication(userId: string, applicationId: string): Promise<any> {

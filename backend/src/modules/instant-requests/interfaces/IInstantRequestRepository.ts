@@ -27,6 +27,8 @@ export interface CreateInstantBookingData {
   amount: Prisma.Decimal | number;
   status: string;
   startOtp: string;
+  /** Set only when an Agent assigned the roster worker, so commission/payout tracking attributes it correctly. */
+  agentId?: string;
 }
 
 export interface IInstantRequestRepository {

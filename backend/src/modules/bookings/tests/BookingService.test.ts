@@ -9,6 +9,7 @@ describe("BookingService", () => {
   let cacheMock: any;
   let jobRepoMock: any;
   let paymentServiceMock: any;
+  let agentRepoMock: any;
   let service: BookingService;
 
   const onlineBooking = { id: "booking_1", providerId: "provider_1", worker: { userId: "worker_1" }, paymentMode: "ONLINE", amount: 500 };
@@ -21,8 +22,9 @@ describe("BookingService", () => {
     cacheMock = {};
     jobRepoMock = { findById: vi.fn() };
     paymentServiceMock = { refundForCancelledBooking: vi.fn() };
+    agentRepoMock = { findByUserId: vi.fn() };
 
-    service = new BookingService(bookingRepoMock, stateServiceMock, eventPublisherMock, cacheMock, jobRepoMock, paymentServiceMock);
+    service = new BookingService(bookingRepoMock, stateServiceMock, eventPublisherMock, cacheMock, jobRepoMock, paymentServiceMock, agentRepoMock);
   });
 
   describe("createBooking", () => {
@@ -110,6 +112,54 @@ describe("BookingService", () => {
       bookingRepoMock.findById.mockResolvedValue(offlineBooking);
 
       await expect(service.settleOfflinePayment("booking_2", "someone_else")).rejects.toThrow(BusinessException);
+    });
+  });
+
+  describe("agent-delegated worker actions", () => {
+    // A phone-less, agent-managed worker can never call these endpoints themselves — the
+    // managing Agent (booking.agentId) acts on their behalf instead.
+    const agentManagedBooking = {
+      id: "booking_3",
+      providerId: "provider_1",
+      worker: { userId: "managed_worker_user_1" },
+      agentId: "agent_1",
+      paymentMode: "OFFLINE",
+      amount: 500,
+    };
+
+    it("lets the managing Agent mark the booking en route on the worker's behalf", async () => {
+      bookingRepoMock.findById.mockResolvedValue(agentManagedBooking);
+      agentRepoMock.findByUserId.mockResolvedValue({ id: "agent_1" });
+
+      await service.workerEnRoute("booking_3", "agent_user_1");
+
+      expect(agentRepoMock.findByUserId).toHaveBeenCalledWith("agent_user_1");
+      expect(stateServiceMock.transition).toHaveBeenCalledWith("booking_3", "WORKER_EN_ROUTE", expect.any(Object));
+    });
+
+    it("rejects an agent who doesn't manage this booking", async () => {
+      bookingRepoMock.findById.mockResolvedValue(agentManagedBooking);
+      agentRepoMock.findByUserId.mockResolvedValue({ id: "some_other_agent" });
+
+      await expect(service.workerEnRoute("booking_3", "agent_user_2")).rejects.toThrow(BusinessException);
+      expect(stateServiceMock.transition).not.toHaveBeenCalled();
+    });
+
+    it("rejects a caller with no AgentProfile at all on a booking with no worker match", async () => {
+      bookingRepoMock.findById.mockResolvedValue(agentManagedBooking);
+      agentRepoMock.findByUserId.mockResolvedValue(null);
+
+      await expect(service.completeBooking("booking_3", "random_user")).rejects.toThrow(BusinessException);
+    });
+
+    it("still lets the worker's own account act directly when there's no managing agent (self-managed worker)", async () => {
+      bookingRepoMock.findById.mockResolvedValue(offlineBooking);
+      bookingRepoMock.update.mockResolvedValue({ ...offlineBooking, status: "PAYMENT_SETTLED" });
+
+      await service.settleOfflinePayment("booking_2", "worker_1");
+
+      expect(agentRepoMock.findByUserId).not.toHaveBeenCalled();
+      expect(stateServiceMock.transition).toHaveBeenCalledWith("booking_2", "PAYMENT_SETTLED", expect.any(Object));
     });
   });
 

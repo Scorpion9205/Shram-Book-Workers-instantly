@@ -28,7 +28,7 @@ export default function AdminBookingsPage() {
   const [assignWorker, { isLoading: isAssigning }] = useAssignWorkerMutation();
 
   const bookings = data?.data ?? [];
-  const meta = data?.meta ?? { page: 1, limit: 10, totalCount: 0, totalPages: 1 };
+  const meta = data?.meta ?? { page: 1, limit: 10, total: 0, totalPages: 1 };
 
   async function handleAssignWorker(e: React.FormEvent) {
     e.preventDefault();

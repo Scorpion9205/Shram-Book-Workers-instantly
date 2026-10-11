@@ -310,4 +310,84 @@ describe("InstantRequestService", () => {
       await expect(service.cancelRequest("provider_1", "req_1")).rejects.toThrow(BusinessException);
     });
   });
+
+  describe("getOpenRequestsForSkills", () => {
+    it("returns an empty array without querying when the roster has no skills", async () => {
+      const result = await service.getOpenRequestsForSkills([]);
+
+      expect(result).toEqual([]);
+      expect(requestRepoMock.findOpenNearbyRequestsForSkills).not.toHaveBeenCalled();
+    });
+
+    it("delegates straight to the repository — no location/radius filter, unlike a Worker's own nearby view", async () => {
+      requestRepoMock.findOpenNearbyRequestsForSkills.mockResolvedValue([{ id: "req_1" }]);
+
+      const result = await service.getOpenRequestsForSkills(["skill_1", "skill_2"]);
+
+      expect(requestRepoMock.findOpenNearbyRequestsForSkills).toHaveBeenCalledWith(["skill_1", "skill_2"]);
+      expect(result).toEqual([{ id: "req_1" }]);
+    });
+  });
+
+  describe("assignWorkerToItem", () => {
+    const openItem = {
+      id: "item_1",
+      requestId: "req_1",
+      skillId: "skill_1",
+      acceptedWorkers: 0,
+      requiredWorkers: 1,
+      request: { id: "req_1", bookingMode: "DIRECT", status: "OPEN", providerId: "provider_1", amount: 500 },
+    };
+
+    it("rejects when the roster worker doesn't have the item's required skill", async () => {
+      requestRepoMock.findRequestItemWithRequest.mockResolvedValue(openItem);
+      requestRepoMock.findWorkerSkillIds.mockResolvedValue(["some_other_skill"]);
+
+      await expect(
+        service.assignWorkerToItem("agent_1", "item_1", "worker_1", "worker_user_1"),
+      ).rejects.toThrow(BadRequestException);
+      expect(requestRepoMock.createBooking).not.toHaveBeenCalled();
+    });
+
+    it("creates an agent-attributed booking and marks the worker unavailable on success", async () => {
+      requestRepoMock.findRequestItemWithRequest.mockResolvedValue(openItem);
+      requestRepoMock.findWorkerSkillIds.mockResolvedValue(["skill_1"]);
+      requestRepoMock.findResponseByItemAndWorker.mockResolvedValue(null);
+      requestRepoMock.createResponse.mockResolvedValue({ id: "response_1" });
+      requestRepoMock.createBooking.mockResolvedValue({ id: "booking_1" });
+      requestRepoMock.incrementAcceptedWorkersIfSlotAvailable.mockResolvedValue(1);
+      requestRepoMock.findItemById.mockResolvedValue({
+        id: "item_1",
+        requestId: "req_1",
+        acceptedWorkers: 1,
+        requiredWorkers: 1,
+      });
+      requestRepoMock.countOpenItemsForRequest.mockResolvedValue(0);
+
+      const result = await service.assignWorkerToItem("agent_1", "item_1", "worker_1", "worker_user_1");
+
+      expect(result.bookingId).toBe("booking_1");
+      expect(requestRepoMock.createBooking).toHaveBeenCalledWith(
+        expect.objectContaining({ workerId: "worker_1", agentId: "agent_1" }),
+        prismaMock,
+      );
+      expect(requestRepoMock.markWorkerUnavailableIfAvailable).toHaveBeenCalledWith("worker_1", prismaMock);
+      expect(requestRepoMock.markItemFilled).toHaveBeenCalledWith("item_1", prismaMock);
+      expect(requestRepoMock.markRequestFilled).toHaveBeenCalledWith("req_1", prismaMock);
+    });
+
+    it("rejects when the worker was just claimed elsewhere, without incrementing the slot count", async () => {
+      requestRepoMock.findRequestItemWithRequest.mockResolvedValue(openItem);
+      requestRepoMock.findWorkerSkillIds.mockResolvedValue(["skill_1"]);
+      requestRepoMock.findResponseByItemAndWorker.mockResolvedValue(null);
+      requestRepoMock.createResponse.mockResolvedValue({ id: "response_1" });
+      requestRepoMock.createBooking.mockResolvedValue({ id: "booking_1" });
+      requestRepoMock.markWorkerUnavailableIfAvailable.mockResolvedValue(0);
+
+      await expect(
+        service.assignWorkerToItem("agent_1", "item_1", "worker_1", "worker_user_1"),
+      ).rejects.toThrow(BusinessException);
+      expect(requestRepoMock.incrementAcceptedWorkersIfSlotAvailable).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -4,15 +4,14 @@ interface TextProps {
   children: React.ReactNode;
 }
 
-export function Text({
-  children,
-}: TextProps) {
+export function Text({ children }: TextProps) {
   return (
     <p
       style={{
-        color: "#374151",
-        fontSize: "16px",
-        lineHeight: "26px",
+        color: "#3f3f46",
+        fontSize: "15px",
+        lineHeight: "24px",
+        margin: "0 0 16px",
       }}
     >
       {children}

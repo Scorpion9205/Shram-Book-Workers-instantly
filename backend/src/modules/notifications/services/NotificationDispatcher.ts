@@ -7,6 +7,7 @@ import type { IEmailProvider, ISmsProvider, IPushProvider } from '../../../core/
 import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import { NotificationType, NotificationChannel } from '../enums/NotificationType.js';
 import { BusinessException } from '../../../core/exceptions/index.js';
+import { env } from '../../../config/env.js';
 import React from 'react';
 import { renderEmail } from '../../../shared/email/utils/render-email.js';
 import {
@@ -18,6 +19,7 @@ import {
   PaymentReceipt,
   BookingCancelled,
 } from '../../../shared/email/templates/index.js';
+import { Layout, Header, Card, Footer } from '../../../shared/email/components/index.js';
 
 export class NotificationDispatcher extends BaseService implements INotificationDispatcher {
   constructor(
@@ -83,12 +85,13 @@ export class NotificationDispatcher extends BaseService implements INotification
 
     if (channel === NotificationChannel.EMAIL && user.email) {
       if (template) {
-        const body = this.interpolate(template.body, ctx.data);
+        const interpolatedBody = this.interpolate(template.body, ctx.data);
         const subject = template.subject
           ? this.interpolate(template.subject, ctx.data)
           : this.getEmailSubject(ctx.type, ctx.data);
-        await this.emailProvider.send(user.email, subject, body);
-        await this.notificationRepo.create(user.id, subject, body);
+        const html = await renderEmail(this.buildDbTemplateComponent(interpolatedBody));
+        await this.emailProvider.send(user.email, subject, html);
+        await this.notificationRepo.create(user.id, subject, html);
         return;
       }
 
@@ -151,19 +154,40 @@ export class NotificationDispatcher extends BaseService implements INotification
     }
   }
 
+  /** Wraps an Admin-edited DB template's plain-text body in the same branded Layout/Header/Card/Footer shell used by the built-in templates, so admin customization never degrades to raw unstyled text. */
+  private buildDbTemplateComponent(body: string): React.ReactElement {
+    const frontendUrl = env.FRONTEND_URL;
+    return React.createElement(
+      Layout,
+      null,
+      React.createElement(Header, { frontendUrl }),
+      React.createElement(
+        Card,
+        null,
+        body
+          .split('\n')
+          .filter(line => line.trim().length > 0)
+          .map((line, i) => React.createElement('p', { key: i, style: { color: '#3f3f46', fontSize: '15px', lineHeight: '24px', margin: '0 0 16px' } }, line)),
+      ),
+      React.createElement(Footer, { frontendUrl }),
+    );
+  }
+
   /** Built-in React-rendered email templates — used only when Admin hasn't configured a DB template for this (type, channel, locale). */
   private buildEmailComponent(ctx: DispatchContext, user: any): React.ReactElement | null {
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const frontendUrl = env.FRONTEND_URL;
 
     switch (ctx.type) {
       case NotificationType.OTP_LOGIN:
         return React.createElement(OtpEmail, {
           name: (ctx.data.name as string) || user.name || 'User',
           otp: (ctx.data.otp as string) || '',
+          frontendUrl,
         });
       case NotificationType.WELCOME:
         return React.createElement(WelcomeEmail, {
           name: (ctx.data.name as string) || user.name || 'User',
+          frontendUrl,
         });
       case NotificationType.BOOKING_CREATED:
         return React.createElement(BookingCreated, {

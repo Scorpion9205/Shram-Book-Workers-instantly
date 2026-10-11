@@ -25,7 +25,7 @@ export default function AdminUsersPage() {
   const [verifyWorker, { isLoading: isVerifying }] = useVerifyWorkerMutation();
 
   const users = data?.data ?? [];
-  const meta = data?.meta ?? { page: 1, limit: 10, totalCount: 0, totalPages: 1 };
+  const meta = data?.meta ?? { page: 1, limit: 10, total: 0, totalPages: 1 };
 
   async function handleToggleSuspend(userId: string, currentActive: boolean) {
     try {
@@ -82,9 +82,9 @@ export default function AdminUsersPage() {
               className="rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-hidden"
             >
               <option value="">All Roles</option>
-              <option value="worker">Worker</option>
-              <option value="provider">Provider</option>
-              <option value="agent">Agent</option>
+              <option value="WORKER">Worker</option>
+              <option value="PROVIDER">Provider</option>
+              <option value="AGENT">Agent</option>
             </select>
           </div>
         </CardContent>

@@ -4,16 +4,14 @@ interface CardProps {
   children: React.ReactNode;
 }
 
-export function Card({
-  children,
-}: CardProps) {
+export function Card({ children }: CardProps) {
   return (
     <div
       style={{
-        border: "1px solid #e5e7eb",
-        borderRadius: "10px",
-        padding: "24px",
-        background: "#fafafa",
+        border: "1px solid #e4e4e7",
+        borderRadius: "12px",
+        padding: "28px 24px",
+        background: "#ffffff",
       }}
     >
       {children}

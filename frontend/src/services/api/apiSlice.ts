@@ -12,6 +12,7 @@ export const apiSlice = createApi({
     "AgentDashboard",
     "AgentApplication",
     "AgentBooking",
+    "AgentWorker",
     "DashboardWorker",
     "DashboardProvider",
     "Skill",
