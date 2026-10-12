@@ -3,9 +3,12 @@ name: Keep Backend Alive
 # Render's free plan spins the backend down after ~15 min of inactivity, and the next
 # request then pays a 30-60s cold-start cost. Pinging the liveness probe (no DB/Redis/
 # RabbitMQ dependency — see backend/src/app.ts's /api/v1/live) every 5 minutes keeps the
-# instance warm. GitHub's schedule trigger isn't guaranteed to the minute (it can slip a
-# few minutes under platform load), which is fine here — a slightly late ping just means
-# the service naps a little longer that one time and warms back up on the next one.
+# instance warm. GitHub's schedule trigger isn't guaranteed to the minute — on a free/public
+# repo it routinely slips by tens of minutes to hours under platform load, so this alone
+# cannot be relied on to keep the instance warm; it's a supplementary ping alongside an
+# external scheduler (e.g. cron-job.org) that actually fires every 5 minutes. --max-time is
+# set well above a typical cold start so a slow-but-successful wake-up ping (the exact
+# request that re-warms the instance after a gap) doesn't get misreported as a failure.
 on:
   schedule:
     - cron: "*/5 * * * *"
@@ -16,4 +19,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping liveness endpoint
-        run: curl -sf --max-time 60 https://shram-backend-kfli.onrender.com/api/v1/live
+        run: curl -sf --max-time 120 https://shram-backend-kfli.onrender.com/api/v1/live

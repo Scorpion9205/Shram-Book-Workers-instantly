@@ -34,6 +34,19 @@ const app = express();
 // hop (the platform's own edge proxy), which is what Render's X-Forwarded-For actually reflects.
 app.set('trust proxy', 1);
 
+// Liveness Probe — registered before any other middleware (helmet, cors, etc.) on purpose.
+// External uptime pingers (Render's own health check, cron-job.org) hit this every few
+// minutes; the full security-header stack below adds >1KB of headers per response (CSP,
+// HSTS, Cross-Origin-*, ...) that some lightweight pingers' response-size limits reject
+// outright even though the 33-byte JSON body itself is trivial. No dependency checks here —
+// just confirms the process is up and responding.
+app.get("/api/v1/live", (_req, res) => {
+  res.status(200).json({
+    success: true,
+    status: "ALIVE",
+  });
+});
+
 mountSwagger(app);
 
 // Traceable unique request identifier
@@ -86,14 +99,6 @@ app.get("/api/v1/health", async (_req, res) => {
       error: error.message || String(error),
     });
   }
-});
-
-// Liveness Probe — process is up, no dependency checks
-app.get("/api/v1/live", (_req, res) => {
-  res.status(200).json({
-    success: true,
-    status: "ALIVE",
-  });
 });
 
 // Readiness Probe — dependencies must be reachable before traffic is routed
