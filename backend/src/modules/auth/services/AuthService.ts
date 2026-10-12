@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { randomInt } from 'crypto';
 import type { IAuthService, AuthResponse } from '../interfaces/IAuthService.js';
 import type { IAuthRepository } from '../interfaces/IAuthRepository.js';
+import type { IPasswordResetRepository } from '../interfaces/IPasswordResetRepository.js';
 import type { IOTPService } from '../interfaces/IOTPService.js';
 import type { ITokenService } from '../interfaces/ITokenService.js';
 import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
@@ -20,6 +21,9 @@ import type { IEmailProvider, ISmsProvider, IGoogleOAuthProvider } from '../../.
 import React from 'react';
 import { renderEmail } from '../../../shared/email/utils/render-email.js';
 import OtpEmail from '../../../shared/email/templates/OtpEmail.js';
+import ForgotPassword from '../../../shared/email/templates/ForgotPassword.js';
+import PasswordChanged from '../../../shared/email/templates/PasswordChanged.js';
+import { generateResetToken, hashResetToken, PASSWORD_RESET_TOKEN_EXPIRY_MINUTES } from '../utils/password-reset.util.js';
 import type { SignupInput } from '../validations/auth.validation.js';
 import { env } from '../../../config/env.js';
 
@@ -33,6 +37,7 @@ export class AuthService implements IAuthService {
     private readonly emailProvider: IEmailProvider,
     private readonly smsProvider: ISmsProvider,
     private readonly googleOAuthProvider: IGoogleOAuthProvider,
+    private readonly passwordResetRepo: IPasswordResetRepository,
   ) {}
 
   async signup(data: SignupInput): Promise<void> {
@@ -369,5 +374,64 @@ export class AuthService implements IAuthService {
 
     const newHash = await argon2.hash(newPass, { type: argon2.argon2id });
     await this.userRepo.update(userId, { passwordHash: newHash });
+  }
+
+  async forgotPassword(identifier: string): Promise<void> {
+    const user = identifier.includes('@')
+      ? await this.userRepo.findByEmail(identifier)
+      : await this.userRepo.findByPhone(identifier);
+
+    // Silently no-op for accounts that don't exist, aren't password-based (Provider/Worker
+    // are OTP-only), or have no email on file (the reset link can only be delivered by email)
+    // — the controller always reports success regardless, so this never discloses which
+    // identifiers are registered.
+    if (!user || !user.email || !user.passwordHash) {
+      return;
+    }
+    if (user.role !== UserRole.ADMIN && user.role !== UserRole.AGENT) {
+      return;
+    }
+
+    await this.passwordResetRepo.invalidateAllForUser(user.id);
+
+    const { token, tokenHash } = generateResetToken();
+    const expiresAt = new Date(Date.now() + PASSWORD_RESET_TOKEN_EXPIRY_MINUTES * 60 * 1000);
+    await this.passwordResetRepo.create({ userId: user.id, tokenHash, expiresAt });
+
+    const resetLink = `${env.FRONTEND_URL}/reset-password?token=${token}`;
+    const body = await renderEmail(React.createElement(ForgotPassword, {
+      name: user.name,
+      resetLink,
+      frontendUrl: env.FRONTEND_URL,
+    }));
+    await this.emailProvider.send(user.email, 'Reset your SHRAM password', body);
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    const tokenHash = hashResetToken(token);
+    const resetToken = await this.passwordResetRepo.findValidByTokenHash(tokenHash);
+    if (!resetToken) {
+      throw new BusinessException('RESET_TOKEN_INVALID', 'This reset link is invalid or has expired');
+    }
+
+    const user = await this.userRepo.findById(resetToken.userId);
+    if (!user) {
+      throw new NotFoundException('User', resetToken.userId);
+    }
+
+    const newHash = await argon2.hash(newPassword, { type: argon2.argon2id });
+    await this.userRepo.update(user.id, { passwordHash: newHash });
+    await this.passwordResetRepo.markUsed(resetToken.id);
+    // Revoke any existing session — a leaked/old device holding a refresh token shouldn't
+    // survive a password reset, which is usually done specifically because of a compromise.
+    await this.tokenService.revokeRefreshToken(user.id);
+
+    if (user.email) {
+      const body = await renderEmail(React.createElement(PasswordChanged, {
+        name: user.name,
+        frontendUrl: env.FRONTEND_URL,
+      }));
+      await this.emailProvider.send(user.email, 'Your SHRAM password has been changed', body);
+    }
   }
 }

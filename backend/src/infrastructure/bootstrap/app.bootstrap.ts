@@ -30,6 +30,7 @@ import type { IInstantMatchingService } from '../../modules/instant-requests/ind
 import {
   AuthRepository,
   OTPRepository,
+  PasswordResetRepository,
   AuthService,
   OTPService,
   TokenService,
@@ -149,6 +150,7 @@ export async function wireModules(
   const instantRequestRepo = new InstantRequestRepository(prismaService);
   const authRepo = new AuthRepository(prismaService);
   const otpRepo = new OTPRepository(prismaService);
+  const passwordResetRepo = new PasswordResetRepository(prismaService);
   const locationRepo = new LocationRepository(prismaService);
   const skillRepo = new SkillRepository(prismaService);
   const providerRepo = new ProviderRepository(prismaService);
@@ -273,7 +275,7 @@ export async function wireModules(
   );
   const tokenService = new TokenService(cacheService);
   const otpService = new OTPService(otpRepo, cacheService, emailProvider, smsProvider);
-  const authService = new AuthService(authRepo, otpService, tokenService, cacheService, prismaService, emailProvider, smsProvider, googleOAuthProvider);
+  const authService = new AuthService(authRepo, otpService, tokenService, cacheService, prismaService, emailProvider, smsProvider, googleOAuthProvider, passwordResetRepo);
   const skillService = new SkillService(skillRepo);
   const providerService = new ProviderService(providerRepo);
   const dashboardService = new DashboardService(dashboardRepo, cacheService);

@@ -29,7 +29,10 @@ export class CacheService implements ICacheService {
 
   async set(key: string, value: unknown, ttlSeconds?: number): Promise<void> {
     try {
-      const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+      // Always JSON-encode, strings included — get() always JSON.parse()s first, so a plain
+      // numeric-looking string (e.g. a 6-digit OTP like "319310") stored unquoted would come
+      // back as a number instead of a string, silently violating get<T>()'s declared type.
+      const serialized = JSON.stringify(value);
       if (ttlSeconds) {
         await this.redis.setex(key, ttlSeconds, serialized);
       } else {
