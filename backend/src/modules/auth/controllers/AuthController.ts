@@ -7,6 +7,8 @@ import { VerifyOTPSchema } from '../dto/VerifyOTP.dto.js';
 import { AdminLoginSchema } from '../dto/AdminLogin.dto.js';
 import { GoogleAuthSchema } from '../dto/GoogleAuth.dto.js';
 import { RefreshTokenSchema } from '../dto/RefreshToken.dto.js';
+import { ForgotPasswordSchema } from '../dto/ForgotPassword.dto.js';
+import { ResetPasswordSchema } from '../dto/ResetPassword.dto.js';
 import { signupSchema } from '../validations/auth.validation.js';
 import { z } from 'zod';
 
@@ -120,5 +122,19 @@ export class AuthController extends BaseController {
     const dto = this.validate(changeSchema, req.body);
     await this.authService.changePassword(userId, dto.currentPassword, dto.newPassword);
     this.ok(res, null, 'Password updated successfully');
+  };
+
+  forgotPassword = async (req: Request, res: Response): Promise<void> => {
+    const dto = this.validate(ForgotPasswordSchema, req.body);
+    await this.authService.forgotPassword(dto.identifier);
+    // Always reports success, regardless of whether the account exists or is eligible for a
+    // password reset — never confirm/deny a registered identifier to an unauthenticated caller.
+    this.ok(res, { success: true }, "If an account exists, you'll receive reset instructions shortly.");
+  };
+
+  resetPassword = async (req: Request, res: Response): Promise<void> => {
+    const dto = this.validate(ResetPasswordSchema, req.body);
+    await this.authService.resetPassword(dto.token, dto.password);
+    this.ok(res, { success: true }, 'Password reset successfully');
   };
 }

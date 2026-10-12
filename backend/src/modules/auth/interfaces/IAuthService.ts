@@ -18,4 +18,6 @@ export interface IAuthService {
   refreshToken(token: string): Promise<{ accessToken: string }>;
   logout(userId: string): Promise<void>;
   changePassword(userId: string, currentPass: string, newPass: string): Promise<void>;
+  forgotPassword(identifier: string): Promise<void>;
+  resetPassword(token: string, newPassword: string): Promise<void>;
 }

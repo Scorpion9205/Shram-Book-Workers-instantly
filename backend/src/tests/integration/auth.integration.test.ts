@@ -6,6 +6,7 @@ import { CacheService } from "../../infrastructure/cache/CacheService.js";
 import {
   AuthRepository,
   OTPRepository,
+  PasswordResetRepository,
   AuthService,
   OTPService,
   TokenService,
@@ -56,12 +57,13 @@ beforeAll(async () => {
   const cache = new CacheService(redis as any);
   const authRepo = new AuthRepository(prismaService);
   const otpRepo = new OTPRepository(prismaService);
+  const passwordResetRepo = new PasswordResetRepository(prismaService);
   const emailProvider = new ResendProvider(undefined, "noreply@shram.in");
   const smsProvider = new ExotelProvider(undefined, undefined, undefined, undefined);
   const otpService = new OTPService(otpRepo, cache, emailProvider, smsProvider);
   const tokenService = new TokenService(cache);
   const googleOAuthProvider = new GoogleOAuthProvider(undefined);
-  const authService = new AuthService(authRepo, otpService, tokenService, cache, prismaService, emailProvider, smsProvider, googleOAuthProvider);
+  const authService = new AuthService(authRepo, otpService, tokenService, cache, prismaService, emailProvider, smsProvider, googleOAuthProvider, passwordResetRepo);
   const authController = new AuthController(authService, cache);
   const authRouter = createAuthRouter(authController);
 

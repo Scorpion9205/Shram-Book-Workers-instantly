@@ -152,6 +152,27 @@ model User {
   providerReviews    Review[]         @relation("ProviderReviews")
   workerProfile      WorkerProfile?
   supportTickets     SupportTicket[]
+  passwordResetTokens PasswordResetToken[]
+}
+
+// Forgot-password flow for password-based accounts (Admin/Agent) — a clickable-link token,
+// not a user-typed code, so it can't reuse the Otp table's (identifier, code) access pattern:
+// the reset link only carries the token, and tokenHash (a deterministic SHA-256 digest, not
+// Argon2id) is looked up directly as the unique key. SHA-256 is intentionally used here instead
+// of Argon2id — the token is a 256-bit crypto.randomBytes value, so its security comes from
+// entropy, not from a slow verification hash, and a deterministic digest is what makes an
+// O(1) lookup-by-token possible at all.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model WorkerProfile {

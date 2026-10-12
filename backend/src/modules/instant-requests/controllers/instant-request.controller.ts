@@ -59,7 +59,7 @@ export class InstantRequestController extends BaseController {
     const ttlSeconds = 300; // 5 mins
     await this.cache.set(
       `quote:${quoteId}`,
-      JSON.stringify({ fare: fare.total, items: data.items }),
+      { fare: fare.total, items: data.items },
       ttlSeconds,
     );
 

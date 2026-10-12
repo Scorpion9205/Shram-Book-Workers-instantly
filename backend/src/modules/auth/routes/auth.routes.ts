@@ -166,6 +166,50 @@ export function createAuthRouter(controller: AuthController): Router {
 
   /**
    * @openapi
+   * /auth/forgot-password:
+   *   post:
+   *     tags: [Auth]
+   *     summary: Request a password reset link for an Admin/Agent account
+   *     security: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [identifier]
+   *             properties:
+   *               identifier: { type: string, description: "Registered phone or email" }
+   *     responses:
+   *       200: { description: Always returns success, regardless of whether the account exists, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+   */
+  router.post('/forgot-password', rateLimiter('auth:forgot-password', 5, 15 * 60, true), controller.forgotPassword);
+
+  /**
+   * @openapi
+   * /auth/reset-password:
+   *   post:
+   *     tags: [Auth]
+   *     summary: Complete a password reset using the token from the emailed link
+   *     security: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [token, password]
+   *             properties:
+   *               token: { type: string }
+   *               password: { type: string, minLength: 8 }
+   *     responses:
+   *       200: { description: Password reset successfully, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
+   *       400: { description: Token invalid or expired, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+   */
+  router.post('/reset-password', rateLimiter('auth:reset-password', 10, 15 * 60, true), controller.resetPassword);
+
+  /**
+   * @openapi
    * /auth/refresh-token:
    *   post:
    *     tags: [Auth]
