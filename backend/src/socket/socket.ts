@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { redis } from "../shared/config/redis.js";
 import { Logger } from "../core/logger/Logger.js";
-import { env } from "../config/env.js";
+import { env, allowedOrigins } from "../config/env.js";
 import { PrismaService } from "../database/prisma/PrismaService.js";
 
 const logger = new Logger("Socket");
@@ -78,7 +78,7 @@ export const initializeSocket = (
 
   io = new Server(server, {
     cors: {
-      origin: env.FRONTEND_URL,
+      origin: allowedOrigins,
       methods: ["GET", "POST"],
       credentials: true,
     },

@@ -6,6 +6,9 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(5000),
   FRONTEND_URL: z.string().url().default('http://localhost:3000'),
+  // Extra site addresses allowed to call the API and open websockets, comma separated
+  // (e.g. the same site without "www"). FRONTEND_URL itself is always allowed.
+  EXTRA_CORS_ORIGINS: z.string().optional(),
 
   // Database
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
@@ -75,4 +78,13 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data;
+
+// Every origin the browser is allowed to talk to us from: the main frontend plus any extras.
+export const allowedOrigins: string[] = [
+  env.FRONTEND_URL,
+  ...(env.EXTRA_CORS_ORIGINS ?? '')
+    .split(',')
+    .map((o) => o.trim().replace(/\/$/, ''))
+    .filter(Boolean),
+];
 export type Env = typeof env;

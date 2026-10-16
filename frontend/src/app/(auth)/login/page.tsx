@@ -35,23 +35,26 @@ export default function LoginPage() {
 
   async function handleSendOtp(e: React.FormEvent) {
     e.preventDefault();
-    if (!identifier) {
+    // Pasted values often carry a stray space; a trailing space would make an email look like
+    // a phone number and fail validation, so trim first.
+    const cleanIdentifier = identifier.trim();
+    if (!cleanIdentifier) {
       toast.error("Please enter a valid phone or email.");
       return;
     }
 
     // Determine channel based on format
-    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanIdentifier);
     const channel = isEmail ? "EMAIL" : "SMS";
 
     try {
       await sendOtp({
         channel,
-        identifier,
+        identifier: cleanIdentifier,
       }).unwrap();
 
       toast.success(`OTP successfully sent to your ${isEmail ? "email" : "phone number"}.`);
-      router.push(`/verify-otp?identifier=${encodeURIComponent(identifier)}&channel=${channel}`);
+      router.push(`/verify-otp?identifier=${encodeURIComponent(cleanIdentifier)}&channel=${channel}`);
     } catch (err: any) {
       const msg = err?.data?.message || "Failed to send OTP. Please try again.";
       toast.error(msg);
