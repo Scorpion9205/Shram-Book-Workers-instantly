@@ -21,6 +21,13 @@ import {
   BOOKING_START_OTP_CACHE_TTL_SECONDS,
 } from '../../../shared/utils/booking-otp.util.js';
 
+/**
+ * Everything around job applications: workers/agents applying, providers accepting or
+ * rejecting, and agents later assigning actual roster workers to an accepted application.
+ *
+ * Accepting is where most of the care is: it has to claim job slots and workers atomically
+ * so two simultaneous accepts can't over-fill a job or double-book a worker.
+ */
 export class ApplicationService extends BaseService implements IApplicationService {
   constructor(
     private readonly applicationRepo: IApplicationRepository,
@@ -35,6 +42,7 @@ export class ApplicationService extends BaseService implements IApplicationServi
     super('ApplicationService');
   }
 
+  // A worker applies for themselves; an agent applies on behalf of the whole agency.
   async applyForJob(userId: string, jobId: string, data: any, role: 'WORKER' | 'AGENT' = 'WORKER'): Promise<Application> {
     this.log('Applying for job', { userId, jobId, role });
 
@@ -51,11 +59,8 @@ export class ApplicationService extends BaseService implements IApplicationServi
       throw new BusinessException('JOB_CLOSED', 'Job is closed');
     }
 
-    // AGENT applications are made on behalf of the agency itself (agentId set, workerId null) —
-    // the route already authorizes both WORKER and AGENT, but this method used to assume every
-    // caller had a WorkerProfile, so an Agent applying always 404'd on a profile they could
-    // never have. acceptApplication/the Prisma schema (@@unique([jobId, agentId])) already fully
-    // support this applicantType; nothing before this ever actually created one.
+    // Agent applications belong to the agency itself: agentId is set and workerId stays null.
+    // The specific workers are picked later, after the provider accepts (assignWorkerToApplication).
     if (role === 'AGENT') {
       const agent = await this.agentRepo.findByUserId(userId);
       if (!agent) {
@@ -78,6 +83,7 @@ export class ApplicationService extends BaseService implements IApplicationServi
       });
     }
 
+    // Normal worker application from here on.
     const worker = await this.workerRepo.findByUserId(userId);
     if (!worker) {
       throw new NotFoundException('WorkerProfile', userId);
@@ -99,6 +105,7 @@ export class ApplicationService extends BaseService implements IApplicationServi
     });
   }
 
+  // Provider-only: list everyone who applied to one of their jobs.
   async getJobApplications(userId: string, jobId: string): Promise<any[]> {
     this.log('Retrieving applications for job', { providerId: userId, jobId });
 
@@ -114,6 +121,11 @@ export class ApplicationService extends BaseService implements IApplicationServi
     return this.applicationRepo.findManyByJobId(jobId);
   }
 
+  // Provider accepts an application.
+  //  - Worker application: a booking is created right away.
+  //  - Agent application: only the slots are reserved; the booking(s) get created one by one
+  //    when the agent assigns roster workers.
+  // Everything runs in one DB transaction, so a failure halfway leaves nothing behind.
   async acceptApplication(userId: string, applicationId: string, paymentMode: string = 'ONLINE'): Promise<any> {
     this.log('Accepting job application', { providerId: userId, applicationId, paymentMode });
 
@@ -145,14 +157,14 @@ export class ApplicationService extends BaseService implements IApplicationServi
         throw new BusinessException('JOB_CLOSED', 'Job is closed');
       }
 
+      // A worker takes one slot; an agent takes as many as the workers they promised.
       const decrementAmount =
         application.applicantType === 'AGENT' ? application.workerCount ?? 1 : 1;
 
-      // Atomic, conditional decrement: only succeeds if the job is still OPEN and has enough
-      // slots left as of THIS statement's execution (not our earlier read). Postgres serializes
-      // concurrent UPDATEs on the same row, so a second concurrent acceptApplication() call for
-      // the same job will see the post-decrement value and correctly fail here instead of both
-      // calls creating a booking and driving requiredWorkers negative.
+      // Reserve the slots with a single conditional UPDATE instead of read-then-write.
+      // If two providers' accepts race, Postgres runs the UPDATEs one after the other, so the
+      // second one sees the already-reduced count and fails here rather than pushing
+      // requiredWorkers below zero.
       const decrementResult = await tx.job.updateMany({
         where: {
           id: application.jobId,
@@ -168,11 +180,9 @@ export class ApplicationService extends BaseService implements IApplicationServi
         throw new BusinessException('JOB_FULL', 'Not enough worker slots remaining on this job');
       }
 
-      // Only WORKER-type applications pin down a specific worker at this point (AGENT
-      // applications resolve to a worker pool assignment elsewhere) — atomically claim that
-      // worker's availability so they can't be accepted onto two different jobs at once. The
-      // slot guard above only serializes concurrent accepts on the SAME job, so a worker who
-      // applied to two different jobs could otherwise be accepted onto both.
+      // For a worker application we now know exactly who is going, so mark them busy.
+      // The slot check above only protects one job; this stops the same worker from being
+      // accepted on two different jobs at the same moment.
       if (application.applicantType === 'WORKER' && application.workerId) {
         const workerClaimed = await tx.workerProfile.updateMany({
           where: { id: application.workerId, isAvailable: true },
@@ -185,15 +195,13 @@ export class ApplicationService extends BaseService implements IApplicationServi
 
       await this.applicationRepo.update(applicationId, { status: 'ACCEPTED' }, tx);
 
-      // WORKER-type applications pin a specific person down immediately, so their booking is
-      // created right here, same as always. AGENT-type applications don't have a specific
-      // worker yet — booking creation is deferred to assignWorkerToApplication(), called once
-      // per roster worker the Agent assigns (see there for why this always ends up OFFLINE).
+      // Worker applications get their booking now. Agent applications don't have a worker
+      // yet, so their bookings are created later in assignWorkerToApplication().
       let booking: Awaited<ReturnType<typeof tx.booking.create>> | null = null;
 
       if (application.applicantType === 'WORKER') {
-        // Generate a cryptographically secure 6-digit start OTP — only the Argon2id hash is
-        // persisted; the plaintext is cached separately (short TTL) for the Provider to view.
+        // Work-start OTP: the DB only keeps a hash. The plaintext goes into the cache so the
+        // provider can still read it out when the worker arrives.
         const { code: startOtpPlain, hash: startOtp } = await generateHashedStartOtp();
 
         booking = await tx.booking.create({
@@ -211,10 +219,9 @@ export class ApplicationService extends BaseService implements IApplicationServi
 
         await this.cache.set(bookingStartOtpCacheKey(booking.id), startOtpPlain, BOOKING_START_OTP_CACHE_TTL_SECONDS);
 
-        // Offline-payment bookings are created directly at WORKER_ASSIGNED, bypassing
-        // BookingStateService — without this they'd have zero audit history until (if ever)
-        // their next transition. Online bookings start at CREATED, which needs no genesis
-        // entry since that's already the FSM's natural starting point.
+        // Offline bookings skip straight to WORKER_ASSIGNED without going through
+        // BookingStateService, so write the first history row by hand. Online bookings start
+        // at CREATED, which is the normal starting point and needs no entry.
         if (booking.status === BookingStatus.WORKER_ASSIGNED) {
           await this.historyRepo.append(
             {
@@ -229,6 +236,7 @@ export class ApplicationService extends BaseService implements IApplicationServi
         }
       }
 
+      // Once every slot is taken the job is closed and the remaining pending applicants are rejected.
       const updatedJob = await tx.job.findUniqueOrThrow({ where: { id: application.jobId } });
 
       if (updatedJob.requiredWorkers <= 0) {
@@ -257,8 +265,7 @@ export class ApplicationService extends BaseService implements IApplicationServi
     );
 
     if (!result.booking) {
-      // AGENT application accepted, no specific worker chosen yet — still worth telling the
-      // Agent their application was accepted so they know to go assign roster workers.
+      // Agent application: no booking yet. Ping the agent so they know it's time to assign workers.
       try {
         getIO().to(`user:${result.agentUserId}`).emit('applicationUpdated', {
           applicationId,
@@ -270,10 +277,10 @@ export class ApplicationService extends BaseService implements IApplicationServi
       return { success: true, applicationId, awaitingWorkerAssignment: true };
     }
 
-    // Publish booking.created event
+    // Let the rest of the system know (emails etc. listen for this event).
     await this.eventPublisher.publish(RoutingKeys.BOOKING_CREATED, result.booking);
 
-    // Emit real-time socket events for booking creation
+    // Update both parties' screens live. A socket failure must not fail the accept itself.
     try {
       const io = getIO();
       const mappedBooking = BookingMapper.toResponse(result.booking, { userId });
@@ -290,6 +297,8 @@ export class ApplicationService extends BaseService implements IApplicationServi
     return { success: true, bookingId: result.booking.id, paymentMode: result.booking.paymentMode };
   }
 
+  // Agent picks one roster worker for an application the provider already accepted.
+  // Call it once per worker; each call creates its own booking until all promised slots are filled.
   async assignWorkerToApplication(agentId: string, applicationId: string, workerId: string): Promise<any> {
     this.log('Agent assigning a roster worker to an accepted application', { agentId, applicationId, workerId });
 
@@ -315,9 +324,8 @@ export class ApplicationService extends BaseService implements IApplicationServi
         throw new BusinessException('ALL_SLOTS_FILLED', `All ${workerCount} worker slot(s) for this application have already been assigned`);
       }
 
-      // Atomically claim the worker — same guard as the WORKER-applicant path, preventing one
-      // roster worker from being assigned to two bookings (by this agent or any other flow) at
-      // once.
+      // Mark the worker busy in one conditional UPDATE so the same roster worker can't be
+      // handed to two bookings at once.
       const claimed = await tx.workerProfile.updateMany({
         where: { id: workerId, isAvailable: true },
         data: { isAvailable: false },
@@ -326,12 +334,9 @@ export class ApplicationService extends BaseService implements IApplicationServi
         throw new BusinessException('WORKER_UNAVAILABLE', 'This worker is not currently available');
       }
 
-      // Agent-sourced multi-worker fulfillment has no clean "online payment per worker" story —
-      // the Provider already agreed to bidAmount as ONE upfront figure at accept time, so
-      // splitting that into N separate Razorpay charges as workers trickle in over time would
-      // be a confusing, error-prone UX. Instant requests hit this exact same problem and settled
-      // on always-OFFLINE (see InstantRequestRepository.createBooking) — this follows the same
-      // precedent rather than inventing a second payment story.
+      // Agent bookings are always OFFLINE (cash/UPI). The provider agreed to one total bid,
+      // and charging it online in separate pieces as workers get assigned would be confusing.
+      // Instant requests work the same way. Each booking gets an equal share of the bid.
       const perWorkerAmount = Number(application.bidAmount ?? 0) / workerCount;
       const { code: startOtpPlain, hash: startOtp } = await generateHashedStartOtp();
 
@@ -377,6 +382,7 @@ export class ApplicationService extends BaseService implements IApplicationServi
     return { success: true, bookingId: result.id };
   }
 
+  // Provider turns down a pending application; the applicant is told over websocket.
   async rejectApplication(userId: string, applicationId: string): Promise<any> {
     this.log('Rejecting job application', { providerId: userId, applicationId });
 
@@ -412,6 +418,7 @@ export class ApplicationService extends BaseService implements IApplicationServi
     return { success: true };
   }
 
+  // The logged-in worker's own applications.
   async getMyApplications(userId: string): Promise<any[]> {
     this.log('Retrieving my applications', { workerUserId: userId });
 

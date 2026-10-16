@@ -1,5 +1,6 @@
 import type { Booking } from '@prisma/client';
 
+// The shape of a booking as the API returns it (dates as ISO strings, Decimals as numbers).
 export interface BookingResponseDto {
   id: string;
   jobId: string | null;

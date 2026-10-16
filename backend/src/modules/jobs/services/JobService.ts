@@ -10,6 +10,10 @@ import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { CacheInvalidationService } from '../../../shared/services/cache/cache-invalidation.service.js';
 import { NotFoundException, AuthenticationException, BusinessException } from '../../../core/exceptions/index.js';
 
+/**
+ * Job postings: providers create them, workers and agents browse the ones that match
+ * their skills.
+ */
 export class JobService extends BaseService implements IJobService {
   constructor(
     private readonly jobRepo: IJobRepository,
@@ -22,9 +26,11 @@ export class JobService extends BaseService implements IJobService {
     super('JobService');
   }
 
+  // Provider posts a new job. Optional fields are stored as null when left out.
   async createJob(userId: string, data: any): Promise<Job> {
     this.log('Creating a new job posting', { providerId: userId, skillId: data.skillId });
 
+    // Make sure the provider has a profile row (e.g. Google sign-ups may not have one yet).
     await this.prisma.client.providerProfile.upsert({
       where: { userId },
       update: {},
@@ -54,10 +60,13 @@ export class JobService extends BaseService implements IJobService {
       providerId: userId,
     });
 
+    // Cached job feeds are now out of date, so drop them.
     await CacheInvalidationService.afterJobCreated(userId);
     return job;
   }
 
+  // The job feed for a worker or an agent: open jobs that match their skills.
+  // A worker's skills are their own; an agent's skills are the union of everyone on their roster.
   async getAllJobs(userId: string, filter?: JobListFilter): Promise<any> {
     this.log('Retrieving jobs for user', { userId, filter });
 
@@ -101,14 +110,14 @@ export class JobService extends BaseService implements IJobService {
       throw new AuthenticationException('Only workers and agents can access jobs.');
     }
 
+    // No skills means nothing can match, so skip the query.
     if (skillIds.length === 0) {
       return { jobs: [] };
     }
 
-    // Caching is keyed only by userId (the common "just open my job feed" case) — a specific
-    // search/category/sort combination would either serve another filter's stale results or
-    // need the whole filter object folded into the key for correctness. Simplest safe choice:
-    // bypass the cache entirely whenever any filter is actually active.
+    // The cache key only contains the user id, so it's only valid for the plain "open my feed"
+    // request. As soon as a search/category/salary/sort filter is used, skip the cache -
+    // otherwise one filter's results would be served for another.
     const hasFilter = Boolean(filter?.search || filter?.category || filter?.minSalary !== undefined || filter?.maxSalary !== undefined || filter?.sort);
 
     if (!hasFilter) {
@@ -129,6 +138,7 @@ export class JobService extends BaseService implements IJobService {
     return result;
   }
 
+  // One job's details, plus a `hasApplied` flag so the UI can show "Applied" instead of the apply button.
   async getJobById(jobId: string, userId?: string): Promise<any> {
     this.log('Retrieving job details by id', { jobId, userId });
     const job = await this.jobRepo.findById(jobId) as any;
@@ -136,6 +146,7 @@ export class JobService extends BaseService implements IJobService {
       throw new NotFoundException('Job', jobId);
     }
 
+    // The viewer is either a worker (applies as themselves) or an agent (applies as the agency).
     let hasApplied = false;
     if (userId) {
       const worker = await this.prisma.client.workerProfile.findUnique({
@@ -166,6 +177,7 @@ export class JobService extends BaseService implements IJobService {
     return { ...job, hasApplied };
   }
 
+  // All jobs the logged-in provider has posted.
   async getProviderJobs(userId: string): Promise<any[]> {
     this.log('Retrieving jobs posted by provider', { providerId: userId });
     return this.jobRepo.findManyByProviderId(userId);

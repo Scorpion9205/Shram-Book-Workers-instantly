@@ -7,6 +7,9 @@ export interface AuthResponse {
   user: Omit<User, 'passwordHash'>;
   accessToken: string;
   refreshToken: string;
+  // Optional page the frontend should open after login instead of the normal dashboard.
+  // Only the temporary reviewer login sets this.
+  redirectTo?: string;
 }
 
 export interface IAuthService {

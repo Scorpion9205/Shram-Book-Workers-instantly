@@ -37,6 +37,8 @@ export function createJobRouter(controller: JobController): Router {
     controller.getProviderJobs,
   );
 
+  // Keep dynamic "/:jobId" routes below the fixed ones ("/my-applications", "/provider/my-jobs"),
+  // otherwise Express would treat those words as a jobId.
   router.get(
     '/:jobId',
     authenticate,

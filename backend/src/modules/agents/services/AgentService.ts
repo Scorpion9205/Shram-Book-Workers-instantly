@@ -19,9 +19,19 @@ import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
 import { CacheKeys } from '../../../infrastructure/cache/cacheKeys.js';
 
+// Used when the admin hasn't set an "agentCommissionPercent" platform setting.
 const DEFAULT_AGENT_COMMISSION_PERCENT = 10;
+// An agent can only cash out their commission once at least this much (in rupees) has piled up.
 const MINIMUM_COMMISSION_CHECKOUT = 2000;
 
+/**
+ * Everything an agent (agency) does: manage a roster of phone-less workers, take jobs and
+ * instant requests on their behalf, pay them out manually, and cash out the agent's own
+ * commission.
+ *
+ * Almost every method starts by turning the logged-in user into an AgentProfile and, for
+ * worker actions, checking that the worker really belongs to this agent's roster.
+ */
 export class AgentService extends BaseService implements IAgentService {
   constructor(
     private readonly agentRepo: IAgentRepository,
@@ -38,6 +48,8 @@ export class AgentService extends BaseService implements IAgentService {
     super('AgentService');
   }
 
+  // Open instant requests the agency could actually serve, i.e. ones that need a skill that
+  // at least one roster worker has.
   async getOpenInstantRequests(agentUserId: string): Promise<any[]> {
     const agent = await this.getAgentByUserId(agentUserId);
     const roster = await this.agentWorkerRepo.findManyByAgentId(agent.id);
@@ -45,6 +57,7 @@ export class AgentService extends BaseService implements IAgentService {
     return this.instantRequestService.getOpenRequestsForSkills(skillIds);
   }
 
+  // Fill one slot of an instant request with a roster worker (the agent accepts for them).
   async assignWorkerToInstantItem(agentUserId: string, itemId: string, workerId: string): Promise<any> {
     this.log('Agent assigning worker to instant request item', { agentUserId, itemId, workerId });
     const agent = await this.getAgentByUserId(agentUserId);
@@ -53,12 +66,15 @@ export class AgentService extends BaseService implements IAgentService {
     return this.instantRequestService.assignWorkerToItem(agent.id, itemId, workerId, link.worker.userId);
   }
 
+  // How much a roster worker has earned, how much was already paid out, and how much is still owed.
   async getWorkerEarnings(agentUserId: string, workerId: string): Promise<any> {
     const agent = await this.getAgentByUserId(agentUserId);
     await this.getAgentWorkerLink(agent.id, workerId);
     return this.agentRepo.findWorkerEarnings(agent.id, workerId);
   }
 
+  // The app never moves money itself. The agent pays the worker (cash or bank transfer)
+  // and then clicks "Paid" - this records that for every settled booking not yet paid out.
   async payoutWorker(agentUserId: string, workerId: string, method: 'CASH' | 'BANK_TRANSFER'): Promise<void> {
     this.log('Agent marking worker payout as paid', { agentUserId, workerId, method });
     const agent = await this.getAgentByUserId(agentUserId);
@@ -69,6 +85,7 @@ export class AgentService extends BaseService implements IAgentService {
     }
   }
 
+  // Stores the worker's bank details so the agent knows where to send a bank-transfer payout.
   async setWorkerBankDetails(
     agentUserId: string,
     workerId: string,
@@ -79,6 +96,7 @@ export class AgentService extends BaseService implements IAgentService {
     return this.agentWorkerRepo.setWorkerBankDetails(workerId, data);
   }
 
+  // Assign a roster worker to a job application the provider has accepted.
   async assignWorkerToApplication(agentUserId: string, applicationId: string, workerId: string): Promise<any> {
     this.log('Agent assigning worker to application', { agentUserId, applicationId, workerId });
     const agent = await this.getAgentByUserId(agentUserId);
@@ -87,6 +105,8 @@ export class AgentService extends BaseService implements IAgentService {
     return this.applicationService.assignWorkerToApplication(agent.id, applicationId, workerId);
   }
 
+  // Ownership check: finds the agent<->worker link or throws. Without this an agent could
+  // act on another agency's workers just by guessing an id.
   private async getAgentWorkerLink(agentId: string, workerId: string) {
     const link = await this.agentWorkerRepo.findLinkByAgentAndWorker(agentId, workerId);
     if (!link) {
@@ -95,18 +115,23 @@ export class AgentService extends BaseService implements IAgentService {
     return link;
   }
 
+  // Adds a new worker to the roster. Creates a real worker account for them (no phone or
+  // login needed) because the agent will operate it on their behalf.
   async createManagedWorker(agentUserId: string, data: CreateManagedWorkerInput): Promise<AgentWorkerRosterEntry> {
     this.log('Creating agent-managed worker', { agentUserId, name: data.name });
     const agent = await this.getAgentByUserId(agentUserId);
     return this.agentWorkerRepo.createManagedWorker(agent.id, data);
   }
 
+  // The agent's whole roster with skills, availability and verified flag.
   async listMyWorkers(agentUserId: string): Promise<AgentWorkerRosterEntry[]> {
     this.log('Listing agent worker roster', { agentUserId });
     const agent = await this.getAgentByUserId(agentUserId);
     return this.agentWorkerRepo.findManyByAgentId(agent.id);
   }
 
+  // Marks a worker available/unavailable for the day. This is how a worker who is standing in
+  // front of the agent says "I can work today".
   async setWorkerAvailability(
     agentUserId: string,
     workerId: string,
@@ -117,16 +142,16 @@ export class AgentService extends BaseService implements IAgentService {
     const agent = await this.getAgentByUserId(agentUserId);
     const link = await this.getAgentWorkerLink(agent.id, workerId);
 
-    // A phone-less worker has no GPS of their own — the Agent supplies (or updates) their
-    // approximate work location before/while marking them available. Reuses the exact same
-    // geo-index sync WorkerService.updateAvailability already does, so this worker is matched
-    // by instant-request/job searches identically to a self-managed one.
+    // These workers have no phone GPS, so the agent gives an approximate location instead.
+    // We reuse the normal location/availability services, which also keep the Redis GEO index
+    // in sync - so these workers get matched exactly like self-managed ones.
     if (location) {
       await this.locationService.updateLocation(link.worker.userId, location);
     }
     await this.workerService.updateAvailability(link.worker.userId, isAvailable);
   }
 
+  // The agent's own "I vouch for this worker" flag. It is separate from the admin's platform-wide verification.
   async setWorkerVerified(agentUserId: string, workerId: string, verified: boolean): Promise<AgentWorkerRosterEntry> {
     this.log('Agent setting worker trust flag', { agentUserId, workerId, verified });
     const agent = await this.getAgentByUserId(agentUserId);
@@ -134,6 +159,7 @@ export class AgentService extends BaseService implements IAgentService {
     return this.agentWorkerRepo.setVerified(agent.id, workerId, verified);
   }
 
+  // Removes the worker from the roster and deactivates their account.
   async removeWorker(agentUserId: string, workerId: string): Promise<void> {
     this.log('Agent removing worker from roster', { agentUserId, workerId });
     const agent = await this.getAgentByUserId(agentUserId);
@@ -143,6 +169,8 @@ export class AgentService extends BaseService implements IAgentService {
     await this.agentWorkerRepo.deleteLink(agent.id, workerId);
   }
 
+  // Commission % comes from the admin-editable platform setting, cached for a minute so the
+  // dashboard doesn't hit the DB on every load. Falls back to the default if unset.
   private async getAgentCommissionPercent(): Promise<number> {
     const cacheKey = CacheKeys.platformSetting('agentCommissionPercent');
     const cached = await this.cache.get<number>(cacheKey);
@@ -155,6 +183,7 @@ export class AgentService extends BaseService implements IAgentService {
     return percent;
   }
 
+  // Maps the logged-in user to their AgentProfile (404 if they never created one).
   private async getAgentByUserId(userId: string): Promise<AgentProfile> {
     const agent = await this.agentRepo.findByUserId(userId);
     if (!agent) {
@@ -163,6 +192,7 @@ export class AgentService extends BaseService implements IAgentService {
     return agent;
   }
 
+  // One agency profile per user.
   async createProfile(userId: string, data: any): Promise<AgentProfile> {
     this.log('Creating agent profile', { userId });
 
@@ -209,12 +239,15 @@ export class AgentService extends BaseService implements IAgentService {
       throw new NotFoundException('AgentProfile', userId);
     }
 
+    // Only update the fields that were actually sent.
     return this.agentRepo.update(userId, {
       ...(data.agencyName !== undefined && { agencyName: data.agencyName }),
       ...(data.description !== undefined && { description: data.description }),
     });
   }
 
+  // The numbers on the agent's home screen. All counts are fetched in parallel.
+  // "Active" means anything between booking creation and work started.
   async getDashboard(userId: string): Promise<any> {
     this.log('Fetching agent dashboard counters', { userId });
     const agent = await this.getAgentByUserId(userId);
@@ -269,6 +302,7 @@ export class AgentService extends BaseService implements IAgentService {
     };
   }
 
+  // Every application the agency has sent, newest first, with job and provider info.
   async getMyApplications(userId: string): Promise<any[]> {
     this.log('Retrieving my applications', { agentUserId: userId });
     const agent = await this.getAgentByUserId(userId);
@@ -296,6 +330,7 @@ export class AgentService extends BaseService implements IAgentService {
     });
   }
 
+  // Every booking handled by this agency, newest first.
   async getMyBookings(userId: string): Promise<any[]> {
     this.log('Retrieving bookings for agent', { agentUserId: userId });
     const agent = await this.getAgentByUserId(userId);
@@ -323,6 +358,9 @@ export class AgentService extends BaseService implements IAgentService {
     });
   }
 
+  // The agent's commission: a percentage of every settled booking they brought in.
+  // Computed on the fly from bookings rather than stored, so changing the % in admin settings
+  // applies to the whole history immediately.
   async getCommissionSummary(userId: string): Promise<any> {
     this.log('Calculating agent commission summary', { agentUserId: userId });
     const agent = await this.getAgentByUserId(userId);
@@ -332,6 +370,7 @@ export class AgentService extends BaseService implements IAgentService {
       this.getAgentCommissionPercent(),
     ]);
 
+    // Use the final settled fare if there is one, otherwise the booked amount. Rounded to paise.
     const commissions = bookings.map((b) => {
       const grossAmount = b.finalFare ?? b.amount;
       return {
@@ -345,14 +384,14 @@ export class AgentService extends BaseService implements IAgentService {
 
     const totalGrossBookingValue = commissions.reduce((sum, c) => sum + c.grossAmount, 0);
     const totalEarnings = commissions.reduce((sum, c) => sum + c.commission, 0);
-    // What the Agent can actually checkout right now — commission already checked out on a
-    // past booking doesn't count again, even though it's still part of totalEarnings (lifetime).
+    // What can be cashed out right now. Bookings already checked out are skipped here, although
+    // they still count toward the lifetime totalEarnings above.
     const pendingCheckoutAmount =
       Math.round(commissions.filter((c) => !c.checkedOut).reduce((sum, c) => sum + c.commission, 0) * 100) / 100;
 
-    // No fixed salary is ever tracked here — that's paid externally by the company. This is
-    // purely the Agent's informational commission figure (on completed/settled work sourced
-    // through them), bucketed by period for the Dashboard/Commissions page dropdown.
+    // The agent's fixed salary is not tracked in the app at all (the company pays that
+    // outside). This is only the commission figure, split into today / this month / lifetime
+    // for the dashboard.
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -376,6 +415,8 @@ export class AgentService extends BaseService implements IAgentService {
     };
   }
 
+  // Agent cashes out their commission. Refused until the pending amount reaches the minimum;
+  // on success every currently pending booking is stamped as checked out.
   async checkoutCommission(userId: string): Promise<{ checkedOutAmount: number }> {
     this.log('Agent checking out commission', { agentUserId: userId });
     const summary = await this.getCommissionSummary(userId);

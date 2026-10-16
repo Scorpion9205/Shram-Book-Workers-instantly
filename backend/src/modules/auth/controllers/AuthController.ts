@@ -52,6 +52,7 @@ export class AuthController extends BaseController {
     this.ok(res, {
       user: result.user,
       accessToken: result.accessToken,
+      ...(result.redirectTo && { redirectTo: result.redirectTo }),
     }, 'OTP verified and login successful');
   };
 

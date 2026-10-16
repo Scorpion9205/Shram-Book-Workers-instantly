@@ -7,20 +7,25 @@ import type { IInstantMatchingService } from "../interfaces/IInstantMatchingServ
 import { CacheKeys } from "../../../infrastructure/cache/cacheKeys.js";
 import { Logger } from "../../../core/logger/Logger.js";
 
+// Search radii in km, tried from smallest to largest. Admins can change this in platform
+// settings; this is the fallback when nothing is configured.
 const DEFAULT_RADIUS_TIERS_KM = [2, 5, 10];
 const PLATFORM_SETTING_KEY = "instantRequestRadiusTiers";
 const TIERS_CACHE_TTL_SECONDS = 60;
-// How often to re-poll once every tier has been scanned at least once (or a tier already
-// found workers) — this is a "check again soon" cadence for join-in-progress workers and
-// cancellation detection, NOT a timeout: the loop never gives up on its own.
+// Once every radius has been tried (or workers were already found), wait this long before
+// looking again for newly available workers or a cancellation. It's a polling pause, not a
+// timeout - the loop never gives up by itself.
 const REPOLL_INTERVAL_MS = 10_000;
+// Statuses after which a request is finished and the loop should stop.
 const TERMINAL_STATUSES = new Set(["FILLED", "CANCELLED", "EXPIRED", "COMPLETED"]);
 
 /**
- * Per the architecture plan (§7/§14): no system-driven timeout — the request stays open,
- * broadcasting to an expanding radius, until a worker accepts or the Provider explicitly
- * cancels it (see InstantRequestService.cancelRequest). This loop therefore does not return
- * on its own; it only stops when the request's status leaves OPEN via some other code path.
+ * Finds workers for an instant request and notifies them over websockets.
+ *
+ * It starts with a small search radius and widens it (2km -> 5km -> 10km by default) while
+ * nobody is found. There is deliberately no timeout: the request stays open and keeps
+ * looking until a worker accepts or the provider cancels. So the loop below only ends when
+ * the request's status changes through some other code path.
  */
 export class InstantMatchingService implements IInstantMatchingService {
   private readonly logger = new Logger('InstantMatchingService');
@@ -32,6 +37,7 @@ export class InstantMatchingService implements IInstantMatchingService {
     private readonly mapsProvider: IMapsProvider,
   ) {}
 
+  // Radius steps from platform settings (cached for a minute), or the defaults if unset/invalid.
   private async getRadiusTiers(): Promise<number[]> {
     const cacheKey = CacheKeys.platformSetting(PLATFORM_SETTING_KEY);
     const cached = await this.cache.get<number[]>(cacheKey);
@@ -48,6 +54,8 @@ export class InstantMatchingService implements IInstantMatchingService {
     return tiers;
   }
 
+  // Called once at server startup. The matching loops live in memory, so a restart/deploy
+  // kills them; this restarts one for every request that is still OPEN.
   async resumeAllOpenRequests(): Promise<void> {
     const openRequestIds = await this.requestRepo.findAllOpenRequestIds();
     if (openRequestIds.length > 0) {
@@ -60,8 +68,11 @@ export class InstantMatchingService implements IInstantMatchingService {
     }
   }
 
+  // The matching loop for one request. Each round: re-read the request, search for workers
+  // at the current radius, notify the new ones, then widen the radius or wait and repeat.
   async startMatching(requestId: string): Promise<void> {
     const tiers = await this.getRadiusTiers();
+    // Workers already notified, so nobody gets the same request twice.
     const notifiedWorkerIds = new Set<string>();
     let tierIndex = 0;
 
@@ -73,14 +84,11 @@ export class InstantMatchingService implements IInstantMatchingService {
       }
 
       if (TERMINAL_STATUSES.has(request.status)) {
-        // Someone else ended this request — either a worker accepted it (FILLED) or the
-        // Provider cancelled it. Either way, every other worker who'd already been notified
-        // needs to be told it's closed, or their client would keep showing a stale request.
+        // The request ended (filled by a worker, or cancelled by the provider). Tell everyone
+        // we had notified, otherwise their app keeps showing a request that no longer exists.
         if ((request.status === "FILLED" || request.status === "CANCELLED") && notifiedWorkerIds.size > 0) {
           const io = getIO();
-          // Same room convention used to notify workers below: `user:${userId}`, not the
-          // WorkerProfile id — these two ids are different, and getting this wrong means the
-          // "closed" event silently reaches an empty room instead of the actual worker clients.
+          // Websocket rooms are named after the *user* id, not the worker-profile id.
           for (const workerUserId of notifiedWorkerIds) {
             io.to(`user:${workerUserId}`).emit(
               request.bookingMode === "DIRECT" ? "instant_request:closed" : "instant-bidding:closed",
@@ -94,6 +102,7 @@ export class InstantMatchingService implements IInstantMatchingService {
       const skillId = request.skillId;
       if (!skillId) return;
 
+      // Ask Redis "which available workers with this skill are within `radius` km of the job?"
       const radius = tiers[Math.min(tierIndex, tiers.length - 1)] ?? DEFAULT_RADIUS_TIERS_KM[DEFAULT_RADIUS_TIERS_KM.length - 1]!;
       const workerIds = await this.cache.geoSearch(
         `geo:instant-workers:${skillId}`,
@@ -103,6 +112,7 @@ export class InstantMatchingService implements IInstantMatchingService {
         'km',
       );
 
+      // Redis only gives ids; double-check against the DB (still available, account active, ...).
       const eligibleWorkers = await this.requestRepo.findEligibleWorkersForMatching(workerIds, skillId);
       const newWorkers = eligibleWorkers.filter((w) => !notifiedWorkerIds.has(w.userId));
 
@@ -111,9 +121,8 @@ export class InstantMatchingService implements IInstantMatchingService {
 
         const io = getIO();
 
-        // Real road distance/ETA (not a placeholder) — falls back to a straight-line estimate
-        // inside getRoute() itself if Mapbox is unavailable, never throws. Shared by both modes
-        // below rather than computed twice.
+        // Road distance and ETA from the worker to the job, shown on the worker's popup.
+        // getRoute() falls back to a straight-line estimate if Mapbox is down, so it won't throw.
         let distanceKm = 0;
         let estimatedMinutes = 0;
         if (worker.latitude != null && worker.longitude != null) {
@@ -125,6 +134,7 @@ export class InstantMatchingService implements IInstantMatchingService {
           estimatedMinutes = Math.round(route.durationMinutes);
         }
 
+        // DIRECT requests get an "accept" popup; BIDDING requests get a "place your bid" card.
         if (request.bookingMode === "DIRECT") {
           const itemId = request.items[0]?.id || "";
 
@@ -161,16 +171,14 @@ export class InstantMatchingService implements IInstantMatchingService {
         }
       }
 
-      // Escalate immediately (no wait) while a tier comes back empty and a wider tier is
-      // still available — this is the "progressive radius expansion" the spec calls for.
+      // Nobody at this radius and a wider one exists: widen right away, no waiting.
       if (eligibleWorkers.length === 0 && tierIndex < tiers.length - 1) {
         tierIndex++;
         continue;
       }
 
-      // Either we found workers, or we're already at the widest configured tier with none —
-      // either way, wait a short interval and re-check for join-in-progress workers and for
-      // a cancellation, rather than escalating further or giving up.
+      // Either workers were found, or we're already at the widest radius. Pause briefly, then
+      // check again for workers who just came online or for a cancellation.
       await new Promise((resolve) => setTimeout(resolve, REPOLL_INTERVAL_MS));
     }
   }

@@ -1,0 +1,41 @@
+config:
+  target: "http://localhost:5000/api/v1"
+  processor: "./processor.cjs"
+  phases:
+    - { duration: 15, arrivalRate: 5, name: "warm-up" }
+    - { duration: 30, arrivalRate: 5, rampTo: 40, name: "ramp-up" }
+    - { duration: 30, arrivalRate: 40, name: "sustained" }
+  ensure:
+    thresholds:
+      - http.response_time.p95: 1000
+    maxErrorRate: 1
+
+scenarios:
+  - name: "worker browses jobs"
+    weight: 5
+    beforeScenario: "setWorkerAuth"
+    flow:
+      - get:
+          url: "/jobs"
+          headers: { Authorization: "Bearer {{ workerToken }}" }
+  - name: "provider views bookings + jobs"
+    weight: 3
+    beforeScenario: "setProviderAuth"
+    flow:
+      - get:
+          url: "/bookings"
+          headers: { Authorization: "Bearer {{ providerToken }}" }
+      - get:
+          url: "/jobs/provider/my-jobs"
+          headers: { Authorization: "Bearer {{ providerToken }}" }
+  - name: "agent dashboard"
+    weight: 2
+    beforeScenario: "setAgentAuth"
+    flow:
+      - get:
+          url: "/agents/dashboard"
+          headers: { Authorization: "Bearer {{ agentToken }}" }
+  - name: "unauthenticated probes"
+    weight: 1
+    flow:
+      - get: { url: "/skills" }

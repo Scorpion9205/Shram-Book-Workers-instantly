@@ -12,6 +12,11 @@ import { Logger } from '../../../core/logger/Logger.js';
 import { getIO } from '../../../socket/socket.js';
 import { BookingMapper } from '../mappers/Booking.mapper.js';
 
+/**
+ * The only place allowed to change a booking's status. Each transition is checked against
+ * VALID_TRANSITIONS, written together with an audit-history row, then announced over
+ * websockets (for live UI updates) and the event queue (for emails, wallet, etc).
+ */
 export class BookingStateService implements IBookingStateService {
   private readonly logger = new Logger('BookingStateService');
 
@@ -65,7 +70,8 @@ export class BookingStateService implements IBookingStateService {
       return updatedBooking;
     });
 
-    // Emit real-time socket events for booking state transition
+    // Push the change to the browsers of both sides so their screens update without a refresh.
+    // Failures here are logged but never block the transition - the DB is already updated.
     try {
       const io = getIO();
       const mappedBooking = BookingMapper.toResponse(updated, { userId: updated.providerId });
@@ -75,7 +81,7 @@ export class BookingStateService implements IBookingStateService {
         status: toStatus,
       };
 
-      // Emit bookingStatusUpdated for page-level listener
+      // "bookingStatusUpdated" is the light event - just id + status - used by the booking detail page.
       io.to(`user:${updated.providerId}`).emit('bookingStatusUpdated', payload);
       if (updated.workerId) {
         const workerProfile = await this.prisma.client.workerProfile.findUnique({
@@ -87,7 +93,7 @@ export class BookingStateService implements IBookingStateService {
         }
       }
 
-      // Emit bookingUpdated for global timeline/toast listener
+      // "bookingUpdated" carries the whole booking and feeds the global timeline/toast listener.
       io.to(`user:${updated.providerId}`).emit('bookingUpdated', mappedBooking);
       if (updated.workerId) {
         const workerProfile = await this.prisma.client.workerProfile.findUnique({
@@ -114,6 +120,7 @@ export class BookingStateService implements IBookingStateService {
     return updated;
   }
 
+  // Throws if `to` isn't one of the states we're allowed to reach from `from`.
   private validateTransition(from: BookingStatus, to: BookingStatus, bookingId: string): void {
     const allowed = VALID_TRANSITIONS[from] ?? [];
     if (!allowed.includes(to)) {
@@ -124,6 +131,7 @@ export class BookingStateService implements IBookingStateService {
     }
   }
 
+  // Publishes "booking status changed" to RabbitMQ; consumers handle notifications and wallet updates.
   private async emitStatusChanged(
     bookingId: string,
     fromStatus: BookingStatus,

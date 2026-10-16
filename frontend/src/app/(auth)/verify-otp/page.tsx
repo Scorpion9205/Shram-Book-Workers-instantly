@@ -74,7 +74,8 @@ function VerifyOtpInner() {
         })
       );
       toast.success("Verification successful!");
-      router.push(dashboardPathForRole(result.user.role));
+      // Normally the role's dashboard; the server can send a specific page instead.
+      router.push(result.redirectTo ?? dashboardPathForRole(result.user.role));
     } catch (err: any) {
       const msg = err?.data?.message || "Invalid or expired code. Please try again.";
       toast.error(msg);

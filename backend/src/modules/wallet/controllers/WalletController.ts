@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { BaseController } from '../../../core/base/BaseController.js';
 import type { IWalletService } from '../interfaces/IWalletService.js';
 
+// Worker-facing wallet endpoints. Just reads the logged-in user and hands off to the service.
 export class WalletController extends BaseController {
   constructor(private readonly walletService: IWalletService) {
     super();

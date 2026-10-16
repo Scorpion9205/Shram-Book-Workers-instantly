@@ -3,6 +3,7 @@ import { BaseRepository } from '../../../core/base/BaseRepository.js';
 import type { ITransactionRepository } from '../interfaces/ITransactionRepository.js';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 
+// Read/write access to the wallet ledger (one row per credit or debit).
 export class TransactionRepository extends BaseRepository<Transaction> implements ITransactionRepository {
   constructor(private readonly prisma: PrismaService) {
     super();

@@ -3,6 +3,7 @@ import { BaseController } from "../../../core/base/BaseController.js";
 import type { ILocationService } from "../interfaces/ILocationService.js";
 import { updateLocationSchema } from "../validations/location.validation.js";
 
+// Endpoints a worker uses to report and read back their own location.
 export class LocationController extends BaseController {
   constructor(private readonly locationService: ILocationService) {
     super();

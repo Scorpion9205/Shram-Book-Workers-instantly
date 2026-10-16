@@ -3,11 +3,13 @@ import { BaseRepository } from '../../../core/base/BaseRepository.js';
 import type { IAdminRepository, DashboardCounts, PlatformAnalyticsRawData } from '../interfaces/IAdminRepository.js';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 
+// Cross-table counts and raw numbers for the admin dashboard and analytics.
 export class AdminRepository extends BaseRepository<any> implements IAdminRepository {
   constructor(private readonly prisma: PrismaService) {
     super();
   }
 
+  // Total rows in the main tables. The six counts run in parallel.
   async getDashboardCounts(): Promise<DashboardCounts> {
     const [
       totalUsers,
@@ -35,6 +37,9 @@ export class AdminRepository extends BaseRepository<any> implements IAdminReposi
     };
   }
 
+  // Raw data for the analytics charts. Returns the individual signup/booking/payment rows
+  // inside the date window; AdminService groups them into per-day buckets.
+  // Revenue only counts payments that actually completed.
   async getPlatformAnalyticsData(trendStart: Date, trendEnd: Date): Promise<PlatformAnalyticsRawData> {
     const [activeWorkers, activeProviders, revenueAgg, signups, bookings, revenueEntries] = await Promise.all([
       this.prisma.client.user.count({ where: { role: UserRole.WORKER, isActive: true } }),

@@ -4,19 +4,24 @@ import { BaseRepository } from '../../../core/base/BaseRepository.js';
 import type { IAgentRepository, CommissionableBooking, WorkerEarningsSummary } from '../interfaces/IAgentRepository.js';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 
+// A booking counts as "money has changed hands" once it reaches any of these statuses.
+// Commission and worker earnings are only calculated from such bookings.
 const SETTLED_STATUSES = [BookingStatus.PAYMENT_SETTLED, BookingStatus.REVIEWED, BookingStatus.CLOSED];
 
+// Prisma queries for agent profiles, plus the earnings/commission/payout bookkeeping.
 export class AgentRepository extends BaseRepository<AgentProfile> implements IAgentRepository {
   constructor(private readonly prisma: PrismaService) {
     super();
   }
 
+  // Find the agency profile belonging to a login user.
   async findByUserId(userId: string): Promise<AgentProfile | null> {
     return this.prisma.client.agentProfile.findUnique({
       where: { userId },
     });
   }
 
+  // Find an agency by its own profile id.
   async findById(id: string): Promise<AgentProfile | null> {
     return this.prisma.client.agentProfile.findUnique({
       where: { id },
@@ -68,12 +73,10 @@ export class AgentRepository extends BaseRepository<AgentProfile> implements IAg
     }) as any;
   }
 
+  // All settled bookings the agency brought in; commission is calculated from these.
   async findCommissionableBookings(agentId: string): Promise<CommissionableBooking[]> {
-    // OFFLINE-mode bookings never get a Payment row at all (settleOfflinePayment only
-    // transitions the booking's own status) — filtering on the `payment` relation silently
-    // excluded every offline-settled booking from an Agent's commission summary. The booking's
-    // own status is the correct signal: PAYMENT_SETTLED (and anything reached after it) means
-    // money has genuinely changed hands, for both ONLINE and OFFLINE bookings alike.
+    // Filter on the booking's own status, not on a Payment row: cash/UPI (OFFLINE) bookings
+    // never create a Payment record, so a payment-based filter would silently drop them.
     const bookings = await this.prisma.client.booking.findMany({
       where: {
         agentId,
@@ -92,6 +95,7 @@ export class AgentRepository extends BaseRepository<AgentProfile> implements IAg
     }));
   }
 
+  // Per-worker ledger: every settled booking, split into already-paid-out and still-pending money.
   async findWorkerEarnings(agentId: string, workerId: string): Promise<WorkerEarningsSummary> {
     const bookings = await this.prisma.client.booking.findMany({
       where: {
@@ -110,6 +114,7 @@ export class AgentRepository extends BaseRepository<AgentProfile> implements IAg
       orderBy: { completedAt: 'desc' },
     });
 
+    // A booking is "paid" once the agent has clicked Paid on it (payoutPaidAt is set).
     let totalEarned = 0;
     let totalPaid = 0;
 
@@ -136,6 +141,8 @@ export class AgentRepository extends BaseRepository<AgentProfile> implements IAg
     };
   }
 
+  // Stamps all of a worker's unpaid settled bookings as paid. Returns how many were updated
+  // (0 means nothing was pending). The payoutPaidAt: null condition makes a double-click harmless.
   async markWorkerBookingsPaid(agentId: string, workerId: string, method: 'CASH' | 'BANK_TRANSFER'): Promise<number> {
     const result = await this.prisma.client.booking.updateMany({
       where: {
@@ -152,6 +159,7 @@ export class AgentRepository extends BaseRepository<AgentProfile> implements IAg
     return result.count;
   }
 
+  // Same idea for the agent's own commission: stamps every not-yet-checked-out booking.
   async markCommissionCheckedOut(agentId: string): Promise<number> {
     const result = await this.prisma.client.booking.updateMany({
       where: {

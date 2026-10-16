@@ -5,6 +5,8 @@ interface AuthResponse {
   user: User;
   accessToken: string;
   refreshToken?: string;
+  // If the server wants the user to land somewhere other than their dashboard after login.
+  redirectTo?: string;
 }
 
 export interface SignupPayload {
@@ -74,6 +76,7 @@ const normalizeAuthResponse = (
     },
     accessToken: authData.accessToken,
     refreshToken: authData.refreshToken,
+    redirectTo: authData.redirectTo,
   };
 };
 

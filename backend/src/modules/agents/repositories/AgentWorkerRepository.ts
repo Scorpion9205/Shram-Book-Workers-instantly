@@ -9,6 +9,7 @@ import type {
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { ConflictException, DatabaseException, NotFoundException } from '../../../core/exceptions/index.js';
 
+// What we load for each roster entry: the worker, their basic user info and their skills.
 const rosterInclude = {
   worker: {
     include: {
@@ -18,6 +19,8 @@ const rosterInclude = {
   },
 } satisfies Prisma.AgentWorkerInclude;
 
+// Flattens the Prisma result into the clean shape the API returns (Decimals -> numbers,
+// bank columns grouped under bankDetails).
 function toRosterEntry(row: Prisma.AgentWorkerGetPayload<{ include: typeof rosterInclude }>): AgentWorkerRosterEntry {
   return {
     id: row.id,
@@ -43,17 +46,21 @@ function toRosterEntry(row: Prisma.AgentWorkerGetPayload<{ include: typeof roste
   };
 }
 
+// Prisma queries for the agent<->worker roster (the AgentWorker link table and the worker
+// accounts the agent creates).
 export class AgentWorkerRepository extends BaseRepository<any> implements IAgentWorkerRepository {
   constructor(private readonly prisma: PrismaService) {
     super();
   }
 
+  // Size of the roster (dashboard counter).
   async countByAgentId(agentId: string): Promise<number> {
     return this.prisma.client.agentWorker.count({
       where: { agentId },
     });
   }
 
+  // How many roster workers are currently marked available.
   async countAvailableByAgentId(agentId: string): Promise<number> {
     return this.prisma.client.agentWorker.count({
       where: {
@@ -74,6 +81,7 @@ export class AgentWorkerRepository extends BaseRepository<any> implements IAgent
     return rows.map(toRosterEntry);
   }
 
+  // Looks up one agent<->worker link. Used as the "does this worker belong to this agent?" check.
   async findLinkByAgentAndWorker(agentId: string, workerId: string): Promise<AgentWorkerLink | null> {
     const row = await this.prisma.client.agentWorker.findUnique({
       where: { agentId_workerId: { agentId, workerId } },
@@ -89,6 +97,8 @@ export class AgentWorkerRepository extends BaseRepository<any> implements IAgent
     };
   }
 
+  // Creates user + worker profile + skills + roster link in ONE transaction, so we never end
+  // up with a half-created worker. No password/OTP involved: the agent operates the account.
   async createManagedWorker(agentId: string, data: CreateManagedWorkerInput): Promise<AgentWorkerRosterEntry> {
     try {
       const link = await this.prisma.client.$transaction(async (tx) => {
@@ -108,10 +118,9 @@ export class AgentWorkerRepository extends BaseRepository<any> implements IAgent
             dailyRate: data.dailyRate ?? null,
             latitude: data.latitude ?? null,
             longitude: data.longitude ?? null,
-            // WorkerProfile.isAvailable defaults to true — misleading here since this worker
-            // isn't in the Redis geo-index yet (only AgentService.setWorkerAvailability adds
-            // them there). The Agent must explicitly mark them available once they've actually
-            // reported in for the day.
+            // The column defaults to true, but a brand-new worker isn't in the Redis GEO index
+            // yet, so "available" would be a lie. The agent switches them on when the worker
+            // actually reports in.
             isAvailable: false,
           },
         });
@@ -130,6 +139,7 @@ export class AgentWorkerRepository extends BaseRepository<any> implements IAgent
 
       return toRosterEntry(link);
     } catch (err) {
+      // P2002 = unique constraint hit, which here can only be the phone number.
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException('A worker with this phone number already exists');
       }
@@ -137,6 +147,7 @@ export class AgentWorkerRepository extends BaseRepository<any> implements IAgent
     }
   }
 
+  // Toggles the agent's own trust flag on a roster worker.
   async setVerified(agentId: string, workerId: string, verified: boolean): Promise<AgentWorkerRosterEntry> {
     try {
       const row = await this.prisma.client.agentWorker.update({
@@ -153,6 +164,8 @@ export class AgentWorkerRepository extends BaseRepository<any> implements IAgent
     }
   }
 
+  // Saves bank details on the worker profile, then re-reads the roster entry so the caller
+  // gets the fresh, complete record back.
   async setWorkerBankDetails(
     workerId: string,
     data: { accountHolderName: string; accountNumber: string; ifscCode: string; bankName: string },
@@ -185,6 +198,7 @@ export class AgentWorkerRepository extends BaseRepository<any> implements IAgent
     }
   }
 
+  // Removes only the roster link; the worker's user account is handled separately.
   async deleteLink(agentId: string, workerId: string): Promise<void> {
     try {
       await this.prisma.client.agentWorker.delete({

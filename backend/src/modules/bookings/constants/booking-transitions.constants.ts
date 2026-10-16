@@ -1,5 +1,9 @@
 import { BookingStatus } from '@prisma/client';
 
+// The booking state machine: for each status, the list of statuses it may move to next.
+// Happy path: CREATED -> (PAYMENT_PENDING -> PAYMENT_CONFIRMED) -> WORKER_ASSIGNED ->
+// WORKER_EN_ROUTE -> OTP_VERIFIED -> WORK_STARTED -> WORK_COMPLETED -> PAYMENT_SETTLED -> REVIEWED/CLOSED.
+// Empty arrays are terminal states: nothing can move out of them.
 export const VALID_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
   [BookingStatus.CREATED]: [
     BookingStatus.PAYMENT_PENDING,

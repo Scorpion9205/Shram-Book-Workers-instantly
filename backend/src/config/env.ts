@@ -55,6 +55,13 @@ const envSchema = z.object({
   FIREBASE_CLIENT_EMAIL: z.string().optional(),
   FIREBASE_PRIVATE_KEY: z.string().optional(),
 
+  // Temporary reviewer login (e.g. for a payment-gateway review). When BOTH are set, this one
+  // email can log in as a Provider with the fixed OTP below, and no real OTP is sent.
+  // Leave them unset (or blank) to disable. Remove them again once the review is done.
+  // Blank values are treated as "not set" so an empty Render field can't break startup.
+  REVIEW_TEST_EMAIL: z.preprocess((v) => (v === '' ? undefined : v), z.string().email().optional()),
+  REVIEW_TEST_OTP: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(6).optional()),
+
   // Logging
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
 });

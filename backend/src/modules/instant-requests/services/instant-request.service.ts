@@ -25,13 +25,16 @@ import {
   BusinessException,
 } from "../../../core/exceptions/index.js";
 
-// NOTE: this is a behavior-preserving conversion from the previous static-method,
-// raw-Prisma implementation into an OOP+DI class — see shram_audit.md / the final
-// implementation plan for the bugs found in this file (BOOK-02, BOOK-04, BOOK-05) that are
-// deliberately NOT fixed here. They land as separate follow-up PRs now that this class is
-// unit-testable. The one exception is the hardcoded `rating: 4.8` / `totalJobs: 12` mock
-// data in submitBid(), which is fixed here since it was explicitly scoped as part of this
-// same conversion.
+/**
+ * "Uber-style" instant hiring. A provider posts a request ("1 plumber + 2 helpers, now"),
+ * nearby workers are notified, and the slots get filled either by direct accept (first
+ * worker wins) or by bidding (provider picks a bid). Agents can also fill slots from
+ * their roster.
+ *
+ * The tricky part is concurrency: many workers can try to take the same slot at once, so
+ * accepting uses a Redis lock plus atomic DB updates to make sure each slot goes to
+ * exactly one worker and no worker is booked twice.
+ */
 export class InstantRequestService implements IInstantRequestService {
   private readonly logger = new Logger('InstantRequestService');
 
@@ -44,7 +47,10 @@ export class InstantRequestService implements IInstantRequestService {
     private readonly eventPublisher: IEventPublisher,
   ) {}
 
+  // Provider posts a new instant request. The request and its per-skill items are created in
+  // one transaction; matching (notifying nearby workers) then starts in the background.
   async createInstantRequest(userId: string, data: CreateInstantRequestInput) {
+    // Make sure the provider has a profile row before we reference them.
     await this.requestRepo.upsertProviderProfile(userId);
 
     const { title, description, latitude, longitude, address, amount, items, bookingMode } = data;
@@ -60,9 +66,12 @@ export class InstantRequestService implements IInstantRequestService {
           latitude,
           longitude,
           address: address ?? null,
+          // The controller already replaced `amount` with the price from the fare quote.
           amount: amount ?? fare.total,
           bookingMode,
+          // The request itself keeps the first item's skill as a "main" skill for display.
           skillId: items[0]?.skillId || null,
+          // Requests auto-expire after 30 minutes if nobody takes them.
           expiresAt: new Date(Date.now() + 30 * 60 * 1000),
         },
         tx,
@@ -84,7 +93,8 @@ export class InstantRequestService implements IInstantRequestService {
       return full;
     });
 
-    // Start asynchronous radius expansion matching
+    // Fire-and-forget: matching keeps running after we respond (it widens the search radius
+    // step by step). Errors are logged instead of failing the request creation.
     this.matchingService.startMatching(createdRequest.id).catch((err) => {
       this.logger.error('Async matching orchestrator error', err);
     });
@@ -92,6 +102,8 @@ export class InstantRequestService implements IInstantRequestService {
     return createdRequest;
   }
 
+  // Worker's "requests near me" list: open requests that need one of their skills and are
+  // within 10 km, nearest first. Cached for a minute per worker.
   async getNearbyRequests(userId: string) {
     const cacheKey = `requests:nearby:${userId}`;
 
@@ -105,6 +117,7 @@ export class InstantRequestService implements IInstantRequestService {
       throw new NotFoundException("WorkerProfile", userId);
     }
 
+    // A worker with no saved location is treated as being at (0, 0), so nothing will be "nearby".
     const workerLocation = {
       latitude: Number(worker.latitude ?? 0),
       longitude: Number(worker.longitude ?? 0),
@@ -142,6 +155,7 @@ export class InstantRequestService implements IInstantRequestService {
     return nearbyRequests;
   }
 
+  // A worker taps "accept" on one slot (item) of a DIRECT request. First valid accept wins.
   async acceptRequest(userId: string, itemId: string) {
     const worker = await this.requestRepo.findWorkerWithSkills(userId);
 
@@ -152,6 +166,9 @@ export class InstantRequestService implements IInstantRequestService {
       throw new BusinessException("WORKER_UNAVAILABLE", "Worker is not available for bookings");
     }
 
+    // Only one accept per item may run at a time. Everyone else who tries while the lock is
+    // held gets an immediate "someone else is accepting" error (the lock auto-expires in 15s
+    // in case the server crashes mid-way).
     const lockKey = `lock:instant-item:${itemId}`;
     const lockToken = await this.cache.acquireLock(lockKey, 15);
 
@@ -167,6 +184,7 @@ export class InstantRequestService implements IInstantRequestService {
           throw new NotFoundException("InstantRequestItem", itemId);
         }
 
+        // Bidding-mode requests are filled by the provider picking a bid, not by accepting.
         if (item.request.bookingMode !== "DIRECT") {
           throw new BadRequestException("This request does not support direct accept");
         }
@@ -191,6 +209,8 @@ export class InstantRequestService implements IInstantRequestService {
           throw new BusinessException("SLOTS_FILLED", "All slots are filled");
         }
 
+        // Record the accept, then create the booking with a fresh start OTP (hash in DB,
+        // plaintext cached for the provider to read out when the worker arrives).
         const response = await this.requestRepo.createResponse(itemId, worker.id, tx);
 
         const { code: startOtpPlain, hash: startOtp } = await generateHashedStartOtp();
@@ -210,13 +230,9 @@ export class InstantRequestService implements IInstantRequestService {
 
         await this.cache.set(bookingStartOtpCacheKey(booking.id), startOtpPlain, BOOKING_START_OTP_CACHE_TTL_SECONDS);
 
-        // Booking creation above writes the row directly, bypassing BookingStateService — so
-        // without this, the booking would have zero audit history until (if ever) its next
-        // transition. BookingStateService.transition() itself can't be used here: it requires
-        // an existing booking to read a current status from, and CREATED -> WORKER_ASSIGNED
-        // isn't even a valid edge in VALID_TRANSITIONS (only PAYMENT_CONFIRMED -> WORKER_ASSIGNED
-        // is) — instant-request bookings skip the payment leg entirely. CREATED is recorded as
-        // the conventional "genesis" fromStatus, matching the schema's own default status.
+        // The booking row was written directly (not via BookingStateService), so add its first
+        // audit-history entry by hand. We can't use BookingStateService here: instant bookings
+        // skip the payment steps, so CREATED -> WORKER_ASSIGNED isn't a legal transition there.
         await this.historyRepo.append(
           {
             bookingId: booking.id,
@@ -228,19 +244,21 @@ export class InstantRequestService implements IInstantRequestService {
           tx,
         );
 
-        // Atomically mark the worker unavailable — only if they're still available. This is
-        // what actually prevents the same worker from being double-booked by two concurrent
-        // accepts on different items/requests; the Redis lock above only guards this one item.
+        // Mark the worker busy, but only if they're still free (one conditional UPDATE).
+        // The Redis lock above only protects this one slot; this is what stops the same worker
+        // from being booked on two different requests at the same moment.
         const workerClaimed = await this.requestRepo.markWorkerUnavailableIfAvailable(worker.id, tx);
         if (workerClaimed === 0) {
           throw new BusinessException("WORKER_UNAVAILABLE", "You have just been booked on another job");
         }
 
-        // Remove from Redis GEO list
+        // A busy worker must not be found by matching, so take them out of every skill's GEO set.
         for (const s of worker.skills) {
           await this.cache.geoRemove(`geo:instant-workers:${s.skillId}`, worker.id);
         }
 
+        // Take one slot with a conditional UPDATE (only if acceptedWorkers < requiredWorkers),
+        // so the count can never go past the number of workers requested.
         const updateCount = await this.requestRepo.incrementAcceptedWorkersIfSlotAvailable(
           itemId,
           item.requiredWorkers,
@@ -257,6 +275,7 @@ export class InstantRequestService implements IInstantRequestService {
           throw new NotFoundException("InstantRequestItem", itemId);
         }
 
+        // Item full -> mark it FILLED. If that was the last open item, the whole request is FILLED.
         if (updatedItem.acceptedWorkers >= updatedItem.requiredWorkers) {
           await this.requestRepo.markItemFilled(itemId, tx);
         }
@@ -278,17 +297,14 @@ export class InstantRequestService implements IInstantRequestService {
         };
       });
 
+      // Cached lists for both people are stale now.
       await CacheInvalidationService.afterInstantRequestAccepted(result.providerUserId, result.workerUserId);
 
-      // Durable notification (email/SMS/push via RabbitMQ) — previously this flow only ever
-      // emitted a live Socket.IO event below, so a Provider/Worker with the app closed or
-      // offline at this exact instant got no notification at all, unlike the Job-application
-      // accept path which already published this same event.
+      // Queue the email/SMS/push notifications, which still reach people whose app is closed.
       await this.eventPublisher.publish(RoutingKeys.BOOKING_CREATED, result.booking);
 
-      // Best-effort real-time notification — the booking above is already committed, so a
-      // socket hiccup (or sockets simply not initialized, e.g. in a test process) must not
-      // fail this request after the DB work already succeeded.
+      // Live websocket update on top of that. Best effort only: the booking is already saved,
+      // so a socket problem must not make the whole request fail.
       try {
         const io = getIO();
         io.to(`user:${result.providerUserId}`).emit("bookingUpdated", {
@@ -308,15 +324,20 @@ export class InstantRequestService implements IInstantRequestService {
         bookingId: result.bookingId,
       };
     } finally {
+      // Always release the lock, whether the accept succeeded or threw.
       await this.cache.releaseLock(lockKey, lockToken);
     }
   }
 
+  // Open requests for a set of skills, with no distance filter. Agents use this to browse.
   async getOpenRequestsForSkills(skillIds: string[]): Promise<any[]> {
     if (skillIds.length === 0) return [];
     return this.requestRepo.findOpenNearbyRequestsForSkills(skillIds);
   }
 
+  // Same as acceptRequest, but an agent fills the slot with one of their roster workers.
+  // The worker is given explicitly (the roster worker has no login), and the booking is
+  // stamped with the agent's id so the agent can later operate it and earn commission.
   async assignWorkerToItem(agentId: string, itemId: string, workerId: string, workerUserId: string): Promise<any> {
     const lockKey = `lock:instant-item:${itemId}`;
     const lockToken = await this.cache.acquireLock(lockKey, 15);
@@ -375,8 +396,7 @@ export class InstantRequestService implements IInstantRequestService {
 
         await this.cache.set(bookingStartOtpCacheKey(booking.id), startOtpPlain, BOOKING_START_OTP_CACHE_TTL_SECONDS);
 
-        // See the identical comment in acceptRequest() — booking creation bypasses
-        // BookingStateService, so this writes the missing genesis audit-history row directly.
+        // Same as in acceptRequest: write the first audit-history row by hand.
         await this.historyRepo.append(
           {
             bookingId: booking.id,
@@ -388,17 +408,18 @@ export class InstantRequestService implements IInstantRequestService {
           tx,
         );
 
-        // Same double-booking guard as acceptRequest — the Redis lock above only guards this
-        // one item, not the same worker being claimed concurrently by a different item/request.
+        // Same double-booking guard as in acceptRequest.
         const workerClaimed = await this.requestRepo.markWorkerUnavailableIfAvailable(workerId, tx);
         if (workerClaimed === 0) {
           throw new BusinessException("WORKER_UNAVAILABLE", "This worker has just been booked elsewhere");
         }
 
+        // Busy workers are removed from the GEO index so matching stops offering them jobs.
         for (const skillId of workerSkillIds) {
           await this.cache.geoRemove(`geo:instant-workers:${skillId}`, workerId);
         }
 
+        // Take a slot, then close the item / request if that was the last one (see acceptRequest).
         const updateCount = await this.requestRepo.incrementAcceptedWorkersIfSlotAvailable(
           itemId,
           item.requiredWorkers,
@@ -458,6 +479,7 @@ export class InstantRequestService implements IInstantRequestService {
     }
   }
 
+  // The provider's own requests (their history / currently open ones).
   async getMyRequests(userId: string) {
     const provider = await this.requestRepo.findProviderProfileByUserId(userId);
     if (!provider) {
@@ -468,6 +490,7 @@ export class InstantRequestService implements IInstantRequestService {
     return requests;
   }
 
+  // Bidding mode: a worker offers a price for a request. Re-bidding replaces their earlier bid.
   async submitBid(userId: string, requestId: string, bidAmount: number) {
     const worker = await this.requestRepo.findWorkerWithSkillsAndUser(userId);
 
@@ -493,7 +516,7 @@ export class InstantRequestService implements IInstantRequestService {
       throw new BusinessException("REQUEST_EXPIRED", "Bidding for this request has expired");
     }
 
-    // Enforce 20% max discount rule
+    // A bid may undercut the provider's price by at most 20%, and can't go above it.
     const requestAmount = Number(request.amount);
     const minBid = 0.8 * requestAmount;
     const maxBid = requestAmount;
@@ -505,7 +528,7 @@ export class InstantRequestService implements IInstantRequestService {
       return this.requestRepo.upsertBid(requestId, worker.id, bidAmount, tx);
     });
 
-    // Notify provider of the live bid via Socket.IO — best-effort, the bid is already saved.
+    // Show the new bid on the provider's screen right away. Best effort - the bid is saved either way.
     try {
       const io = getIO();
       io.to(`user:${request.providerId}`).emit("instant-bidding:bid-submitted", {
@@ -524,6 +547,8 @@ export class InstantRequestService implements IInstantRequestService {
     return bid;
   }
 
+  // Provider picks the winning bid: a booking is created at the bid price, the other bids are
+  // rejected and the request is closed. A lock stops two selections running at once.
   async selectBid(userId: string, requestId: string, bidId: string) {
     const lockKey = `lock:instant-bid-select:${requestId}`;
     const lockToken = await this.cache.acquireLock(lockKey, 15);
@@ -554,7 +579,7 @@ export class InstantRequestService implements IInstantRequestService {
           throw new BusinessException("BID_INACTIVE", "This bid is no longer active");
         }
 
-        // Recheck worker availability
+        // The worker may have gone offline or taken another job since they bid - check again.
         if (!bid.worker.isAvailable || !bid.worker.user.isActive) {
           throw new BusinessException("WORKER_UNAVAILABLE", "This worker is no longer available");
         }
@@ -576,8 +601,7 @@ export class InstantRequestService implements IInstantRequestService {
 
         await this.cache.set(bookingStartOtpCacheKey(booking.id), startOtpPlain, BOOKING_START_OTP_CACHE_TTL_SECONDS);
 
-        // See the identical comment in acceptRequest() — booking creation bypasses
-        // BookingStateService, so this writes the missing genesis audit-history row directly.
+        // Same as in acceptRequest: write the first audit-history row by hand.
         await this.historyRepo.append(
           {
             bookingId: booking.id,
@@ -589,21 +613,19 @@ export class InstantRequestService implements IInstantRequestService {
           tx,
         );
 
-        // Set statuses
+        // Winner marked selected, everyone else rejected, request closed.
         await this.requestRepo.markBidSelected(bidId, tx);
         await this.requestRepo.rejectOtherBids(requestId, bidId, tx);
         await this.requestRepo.markRequestFilled(requestId, tx);
 
-        // Atomically mark the worker unavailable — only if still available. If a concurrent
-        // acceptRequest()/selectBid() already claimed this worker first, this rolls back the
-        // whole transaction (including the booking just created above) instead of silently
-        // double-booking them.
+        // Mark the worker busy if they're still free. If someone else got them first this
+        // throws, and the whole transaction (including the booking above) is rolled back.
         const workerClaimed = await this.requestRepo.markWorkerUnavailableIfAvailable(bid.workerId, tx);
         if (workerClaimed === 0) {
           throw new BusinessException("WORKER_UNAVAILABLE", "This worker has just been booked on another job");
         }
 
-        // Sync Redis availability removal
+        // Remove them from the GEO index too.
         const skillIds = await this.requestRepo.findWorkerSkillIds(bid.workerId, tx);
         for (const skillId of skillIds) {
           await this.cache.geoRemove(`geo:instant-workers:${skillId}`, bid.workerId);
@@ -617,11 +639,10 @@ export class InstantRequestService implements IInstantRequestService {
         };
       });
 
-      // Durable notification (email/SMS/push via RabbitMQ) — see the identical comment in
-      // acceptRequest() above; previously this flow only ever emitted a live socket event.
+      // Queue the durable notifications (email/SMS/push), same as in acceptRequest.
       await this.eventPublisher.publish(RoutingKeys.BOOKING_CREATED, result.booking);
 
-      // Socket notifies — best-effort, the booking above is already committed.
+      // Live websocket update; best effort, the booking is already committed.
       try {
         const io = getIO();
         io.to(`user:${result.providerUserId}`).emit("instant-bidding:closed");
@@ -636,6 +657,7 @@ export class InstantRequestService implements IInstantRequestService {
     }
   }
 
+  // Provider cancels their own request while it is still open.
   async cancelRequest(userId: string, requestId: string): Promise<void> {
     const request = await this.requestRepo.findRequestById(requestId);
 
@@ -646,14 +668,14 @@ export class InstantRequestService implements IInstantRequestService {
       throw new ForbiddenException("You are not authorized to cancel this request");
     }
 
-    // Conditional on still being OPEN — if a worker accepted in the same instant the
-    // Provider clicked Cancel, this is a no-op rather than clobbering a just-created booking.
+    // Only cancels if it's still OPEN. If a worker accepted at the very same moment, nothing
+    // is changed and the provider gets an error instead of wiping out a fresh booking.
     const cancelled = await this.requestRepo.updateStatusIfOpen(requestId, "CANCELLED");
     if (cancelled === 0) {
       throw new BusinessException("REQUEST_ALREADY_RESOLVED", "This request has already been accepted or is no longer open");
     }
 
-    // The running InstantMatchingService.startMatching() loop for this request will notice
-    // the status change on its next poll and notify already-broadcast workers itself.
+    // Nothing else to do here: the matching loop for this request checks the status on its
+    // next poll and tells the workers it already notified that the request is gone.
   }
 }

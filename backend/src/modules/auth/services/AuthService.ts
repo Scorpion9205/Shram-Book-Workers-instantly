@@ -143,7 +143,34 @@ export class AuthService implements IAuthService {
     }
   }
 
+  // True only for the temporary reviewer login: both env vars set, email channel, and the
+  // email matches. Used so a reviewer without access to a real inbox can still sign in.
+  private isReviewLogin(channel: OTPChannel, identifier: string): boolean {
+    if (!env.REVIEW_TEST_EMAIL || !env.REVIEW_TEST_OTP) return false;
+    return channel === OTPChannel.EMAIL && identifier.toLowerCase() === env.REVIEW_TEST_EMAIL.toLowerCase();
+  }
+
   async requestOTP(channel: OTPChannel, identifier: string, role?: UserRole): Promise<void> {
+    // Reviewer login: make sure the test Provider account exists and skip sending any OTP.
+    if (this.isReviewLogin(channel, identifier)) {
+      const reviewer = await this.userRepo.findByEmail(identifier);
+      if (!reviewer) {
+        await this.prisma.transaction(async (tx) => {
+          const created = await this.userRepo.create({
+            name: 'Review Tester',
+            phone: null,
+            email: identifier,
+            role: UserRole.PROVIDER,
+            isVerified: true,
+          }, tx);
+          await tx.providerProfile.create({ data: { userId: created.id } });
+        });
+        return;
+      }
+      // Only ever a Provider; if that email belongs to anyone else, fall back to the normal flow.
+      if (reviewer.role === UserRole.PROVIDER) return;
+    }
+
     const existing = channel === OTPChannel.EMAIL
       ? await this.userRepo.findByEmail(identifier)
       : await this.userRepo.findByPhone(identifier);
@@ -187,13 +214,27 @@ export class AuthService implements IAuthService {
   }
 
   async verifyOTP(channel: OTPChannel, identifier: string, code: string): Promise<AuthResponse> {
-    // 1. Verify code
-    await this.otpService.verify({
-      channel,
-      identifier,
-      purpose: OTPPurpose.LOGIN,
-      code,
-    });
+    // 1. Verify code. The reviewer login compares against the fixed env OTP instead, and only
+    // while the account is still a Provider; everyone else goes through the normal check.
+    let reviewLoginOk = false;
+    if (this.isReviewLogin(channel, identifier)) {
+      const reviewer = await this.userRepo.findByEmail(identifier);
+      if (reviewer?.role === UserRole.PROVIDER) {
+        if (code !== env.REVIEW_TEST_OTP) {
+          throw new BusinessException('OTP_INVALID', 'Invalid OTP code');
+        }
+        reviewLoginOk = true;
+      }
+    }
+
+    if (!reviewLoginOk) {
+      await this.otpService.verify({
+        channel,
+        identifier,
+        purpose: OTPPurpose.LOGIN,
+        code,
+      });
+    }
 
     // 2. Fetch or create user + profile atomically in transaction
     const existing = channel === OTPChannel.EMAIL
@@ -239,7 +280,65 @@ export class AuthService implements IAuthService {
     await this.tokenService.storeRefreshToken(user.id, refreshToken);
 
     const { passwordHash, ...safeUser } = user;
+
+    // Reviewer login: land them straight on a booking that shows the Pay button.
+    if (reviewLoginOk) {
+      const bookingId = await this.ensureReviewBooking(user.id);
+      if (bookingId) {
+        return { user: safeUser, accessToken, refreshToken, redirectTo: `/provider/booking/${bookingId}` };
+      }
+    }
+
     return { user: safeUser, accessToken, refreshToken };
+  }
+
+  // Makes sure the reviewer Provider has one unpaid ONLINE booking to pay for, so the review
+  // can reach the Razorpay checkout without posting jobs or finding a worker first.
+  // Reuses an existing unpaid one; creates a demo worker + job + booking only if none exists.
+  // Returns undefined (and the reviewer just lands on the dashboard) if no skill exists to attach.
+  private async ensureReviewBooking(providerUserId: string): Promise<string | undefined> {
+    const existing = await this.prisma.client.booking.findFirst({
+      where: {
+        providerId: providerUserId,
+        paymentMode: 'ONLINE',
+        status: { in: ['CREATED', 'PAYMENT_PENDING'] },
+      },
+      select: { id: true },
+    });
+    if (existing) return existing.id;
+
+    const skill = await this.prisma.client.skill.findFirst({ select: { id: true } });
+    if (!skill) return undefined;
+
+    return this.prisma.transaction(async (tx) => {
+      const workerUser = await tx.user.create({
+        data: { name: 'Demo Worker', role: UserRole.WORKER, isVerified: true },
+      });
+      const worker = await tx.workerProfile.create({
+        data: { userId: workerUser.id, isAvailable: false },
+      });
+      const job = await tx.job.create({
+        data: {
+          title: 'Demo job for payment review',
+          skillId: skill.id,
+          requiredWorkers: 1,
+          budget: 500,
+          providerId: providerUserId,
+        },
+      });
+      const booking = await tx.booking.create({
+        data: {
+          jobId: job.id,
+          providerId: providerUserId,
+          workerId: worker.id,
+          amount: 500,
+          estimatedFare: 500,
+          status: 'CREATED',
+          paymentMode: 'ONLINE',
+        },
+      });
+      return booking.id;
+    });
   }
 
   async adminLogin(email: string, password: string): Promise<AuthResponse> {
