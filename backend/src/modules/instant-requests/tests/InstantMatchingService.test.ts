@@ -36,7 +36,7 @@ describe("InstantMatchingService", () => {
 
     requestRepoMock = {
       findRequestWithItemsAndProvider: vi.fn(),
-      findEligibleWorkersForMatching: vi.fn(),
+      findEligibleWorkersBySkill: vi.fn(),
       findAllOpenRequestIds: vi.fn().mockResolvedValue([]),
     };
     cacheMock = {
@@ -59,25 +59,39 @@ describe("InstantMatchingService", () => {
     vi.useRealTimers();
   });
 
-  it("escalates through all default tiers (2/5/10km) immediately, with no wait, when every tier is empty", async () => {
-    // Stays OPEN forever in this test except we force-stop via a 4th call returning CANCELLED,
-    // since the real design never expires on its own.
+  it("notifies every eligible worker with the skill and never does a distance (GEO) search", async () => {
     requestRepoMock.findRequestWithItemsAndProvider
-      .mockResolvedValueOnce(baseRequest) // tier 2km
-      .mockResolvedValueOnce(baseRequest) // tier 5km
-      .mockResolvedValueOnce(baseRequest) // tier 10km (max)
-      .mockResolvedValueOnce({ ...baseRequest, status: "CANCELLED" }); // detected on next poll
-    requestRepoMock.findEligibleWorkersForMatching.mockResolvedValue([]);
+      .mockResolvedValueOnce(baseRequest)
+      .mockResolvedValueOnce({ ...baseRequest, status: "CANCELLED" });
+    requestRepoMock.findEligibleWorkersBySkill.mockResolvedValue([
+      { id: "worker_1", userId: "worker_user_1" },
+      { id: "worker_2", userId: "worker_user_2" },
+    ]);
 
     const promise = service.startMatching("req_1");
     await vi.runAllTimersAsync();
     await promise;
 
-    expect(cacheMock.geoSearch).toHaveBeenNthCalledWith(1, "geo:instant-workers:skill_1", 12.9, 77.5, 2, "km");
-    expect(cacheMock.geoSearch).toHaveBeenNthCalledWith(2, "geo:instant-workers:skill_1", 12.9, 77.5, 5, "km");
-    expect(cacheMock.geoSearch).toHaveBeenNthCalledWith(3, "geo:instant-workers:skill_1", 12.9, 77.5, 10, "km");
-    // Never a 4th geoSearch at some larger/invalid tier — stays pinned at the widest configured one.
-    expect(cacheMock.geoSearch).toHaveBeenCalledTimes(3);
+    expect(requestRepoMock.findEligibleWorkersBySkill).toHaveBeenCalledWith("skill_1");
+    expect(cacheMock.geoSearch).not.toHaveBeenCalled();
+    expect(toMock).toHaveBeenCalledWith("user:worker_user_1");
+    expect(toMock).toHaveBeenCalledWith("user:worker_user_2");
+    expect(emitMock).toHaveBeenCalledWith("newInstantRequest", expect.anything());
+  });
+
+  it("does not notify the same worker twice across polling rounds", async () => {
+    requestRepoMock.findRequestWithItemsAndProvider
+      .mockResolvedValueOnce(baseRequest)
+      .mockResolvedValueOnce(baseRequest)
+      .mockResolvedValueOnce({ ...baseRequest, status: "CANCELLED" });
+    requestRepoMock.findEligibleWorkersBySkill.mockResolvedValue([{ id: "worker_1", userId: "worker_user_1" }]);
+
+    const promise = service.startMatching("req_1");
+    await vi.runAllTimersAsync();
+    await promise;
+
+    const newRequestEmits = emitMock.mock.calls.filter(([event]) => event === "newInstantRequest");
+    expect(newRequestEmits).toHaveLength(1);
   });
 
   it("never force-expires — it keeps polling indefinitely until an external status change, not a timeout", async () => {
@@ -89,7 +103,7 @@ describe("InstantMatchingService", () => {
       if (call > 20) return { ...baseRequest, status: "FILLED" };
       return baseRequest;
     });
-    requestRepoMock.findEligibleWorkersForMatching.mockResolvedValue([{ id: "worker_1", userId: "worker_user_1" }]);
+    requestRepoMock.findEligibleWorkersBySkill.mockResolvedValue([{ id: "worker_1", userId: "worker_user_1" }]);
 
     const promise = service.startMatching("req_1");
     await vi.runAllTimersAsync();
@@ -105,7 +119,7 @@ describe("InstantMatchingService", () => {
     requestRepoMock.findRequestWithItemsAndProvider
       .mockResolvedValueOnce(baseRequest)
       .mockResolvedValueOnce({ ...baseRequest, status: "CANCELLED" });
-    requestRepoMock.findEligibleWorkersForMatching.mockResolvedValue([{ id: "worker_1", userId: "worker_user_1" }]);
+    requestRepoMock.findEligibleWorkersBySkill.mockResolvedValue([{ id: "worker_1", userId: "worker_user_1" }]);
 
     const promise = service.startMatching("req_1");
     await vi.runAllTimersAsync();
@@ -117,25 +131,11 @@ describe("InstantMatchingService", () => {
     expect(emitMock).toHaveBeenCalledWith("instant_request:closed", { requestId: "req_1" });
   });
 
-  it("reads radius tiers from PlatformSetting when configured, instead of the hardcoded default", async () => {
-    platformSettingRepoMock.get.mockResolvedValue({ value: [1, 3] });
-    requestRepoMock.findRequestWithItemsAndProvider
-      .mockResolvedValueOnce(baseRequest)
-      .mockResolvedValueOnce({ ...baseRequest, status: "CANCELLED" });
-    requestRepoMock.findEligibleWorkersForMatching.mockResolvedValue([]);
-
-    const promise = service.startMatching("req_1");
-    await vi.runAllTimersAsync();
-    await promise;
-
-    expect(cacheMock.geoSearch).toHaveBeenNthCalledWith(1, "geo:instant-workers:skill_1", 12.9, 77.5, 1, "km");
-  });
-
   it("notifies a worker with real road distance/ETA from the maps provider, not a placeholder", async () => {
     requestRepoMock.findRequestWithItemsAndProvider
       .mockResolvedValueOnce(baseRequest)
       .mockResolvedValueOnce({ ...baseRequest, status: "CANCELLED" });
-    requestRepoMock.findEligibleWorkersForMatching.mockResolvedValue([
+    requestRepoMock.findEligibleWorkersBySkill.mockResolvedValue([
       { id: "worker_1", userId: "worker_user_1", latitude: 12.91, longitude: 77.51 },
     ]);
 
@@ -159,7 +159,7 @@ describe("InstantMatchingService", () => {
     requestRepoMock.findRequestWithItemsAndProvider
       .mockResolvedValueOnce(baseRequest)
       .mockResolvedValueOnce({ ...baseRequest, status: "CANCELLED" });
-    requestRepoMock.findEligibleWorkersForMatching.mockResolvedValue([
+    requestRepoMock.findEligibleWorkersBySkill.mockResolvedValue([
       { id: "worker_1", userId: "worker_user_1", latitude: null, longitude: null },
     ]);
 

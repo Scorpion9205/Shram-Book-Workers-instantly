@@ -160,18 +160,15 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
     });
   }
 
-  // From the worker ids Redis found nearby, keep only those who are truly eligible.
-  async findEligibleWorkersForMatching(workerIds: string[], skillId: string): Promise<any[]> {
+  // Every worker who can be offered a request for this skill: available, account active, and
+  // having the skill. No distance filter for now. Includes the user (for the websocket room id)
+  // and the worker's last known coordinates (used to show distance/ETA on the popup).
+  async findEligibleWorkersBySkill(skillId: string): Promise<any[]> {
     return this.prisma.client.workerProfile.findMany({
       where: {
-        id: { in: workerIds },
         isAvailable: true,
-        // Suspended workers are already removed from Redis, but checking isActive here too
-        // means a stale GEO entry can never put a suspended worker in front of a provider.
         user: { role: 'WORKER', isActive: true },
-        skills: {
-          some: { skillId },
-        },
+        skills: { some: { skillId } },
       },
       include: { user: true },
     });

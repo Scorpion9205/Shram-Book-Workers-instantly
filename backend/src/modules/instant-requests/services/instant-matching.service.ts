@@ -4,17 +4,10 @@ import type { IPlatformSettingRepository } from "../../platform-settings/interfa
 import type { IMapsProvider } from "../../pricing/interfaces/IPricingStrategy.js";
 import type { IInstantRequestRepository } from "../interfaces/IInstantRequestRepository.js";
 import type { IInstantMatchingService } from "../interfaces/IInstantMatchingService.js";
-import { CacheKeys } from "../../../infrastructure/cache/cacheKeys.js";
 import { Logger } from "../../../core/logger/Logger.js";
 
-// Search radii in km, tried from smallest to largest. Admins can change this in platform
-// settings; this is the fallback when nothing is configured.
-const DEFAULT_RADIUS_TIERS_KM = [2, 5, 10];
-const PLATFORM_SETTING_KEY = "instantRequestRadiusTiers";
-const TIERS_CACHE_TTL_SECONDS = 60;
-// Once every radius has been tried (or workers were already found), wait this long before
-// looking again for newly available workers or a cancellation. It's a polling pause, not a
-// timeout - the loop never gives up by itself.
+// How long to wait between rounds before looking again for newly available workers or a
+// cancellation. It's a polling pause, not a timeout - the loop never gives up by itself.
 const REPOLL_INTERVAL_MS = 10_000;
 // Statuses after which a request is finished and the loop should stop.
 const TERMINAL_STATUSES = new Set(["FILLED", "CANCELLED", "EXPIRED", "COMPLETED"]);
@@ -22,37 +15,23 @@ const TERMINAL_STATUSES = new Set(["FILLED", "CANCELLED", "EXPIRED", "COMPLETED"
 /**
  * Finds workers for an instant request and notifies them over websockets.
  *
- * It starts with a small search radius and widens it (2km -> 5km -> 10km by default) while
- * nobody is found. There is deliberately no timeout: the request stays open and keeps
- * looking until a worker accepts or the provider cancels. So the loop below only ends when
- * the request's status changes through some other code path.
+ * For now there is NO distance filter: every available, active worker who has the requested
+ * skill is notified. (Radius-based matching - search 2km, then 5km, then 10km around the job -
+ * is planned for the next version.) There is deliberately no timeout: the request stays open
+ * and keeps looking until a worker accepts or the provider cancels, so the loop below only
+ * ends when the request's status changes through some other code path.
  */
 export class InstantMatchingService implements IInstantMatchingService {
   private readonly logger = new Logger('InstantMatchingService');
 
+  // cache and platformSettingRepo are not used while matching ignores distance; they stay in
+  // the constructor so the radius search can come back without changing how this is wired up.
   constructor(
     private readonly requestRepo: IInstantRequestRepository,
     private readonly cache: ICacheService,
     private readonly platformSettingRepo: IPlatformSettingRepository,
     private readonly mapsProvider: IMapsProvider,
   ) {}
-
-  // Radius steps from platform settings (cached for a minute), or the defaults if unset/invalid.
-  private async getRadiusTiers(): Promise<number[]> {
-    const cacheKey = CacheKeys.platformSetting(PLATFORM_SETTING_KEY);
-    const cached = await this.cache.get<number[]>(cacheKey);
-    if (cached && Array.isArray(cached) && cached.length > 0) {
-      return cached;
-    }
-
-    const setting = await this.platformSettingRepo.get(PLATFORM_SETTING_KEY);
-    const tiers = Array.isArray(setting?.value) && setting.value.length > 0
-      ? (setting.value as number[])
-      : DEFAULT_RADIUS_TIERS_KM;
-
-    await this.cache.set(cacheKey, tiers, TIERS_CACHE_TTL_SECONDS);
-    return tiers;
-  }
 
   // Called once at server startup. The matching loops live in memory, so a restart/deploy
   // kills them; this restarts one for every request that is still OPEN.
@@ -68,13 +47,11 @@ export class InstantMatchingService implements IInstantMatchingService {
     }
   }
 
-  // The matching loop for one request. Each round: re-read the request, search for workers
-  // at the current radius, notify the new ones, then widen the radius or wait and repeat.
+  // The matching loop for one request. Each round: re-read the request, find available workers
+  // with the skill, notify the ones not yet told, then wait and repeat.
   async startMatching(requestId: string): Promise<void> {
-    const tiers = await this.getRadiusTiers();
     // Workers already notified, so nobody gets the same request twice.
     const notifiedWorkerIds = new Set<string>();
-    let tierIndex = 0;
 
     while (true) {
       const request = await this.requestRepo.findRequestWithItemsAndProvider(requestId);
@@ -102,19 +79,14 @@ export class InstantMatchingService implements IInstantMatchingService {
       const skillId = request.skillId;
       if (!skillId) return;
 
-      // Ask Redis "which available workers with this skill are within `radius` km of the job?"
-      const radius = tiers[Math.min(tierIndex, tiers.length - 1)] ?? DEFAULT_RADIUS_TIERS_KM[DEFAULT_RADIUS_TIERS_KM.length - 1]!;
-      const workerIds = await this.cache.geoSearch(
-        `geo:instant-workers:${skillId}`,
-        request.latitude,
-        request.longitude,
-        radius,
-        'km',
-      );
-
-      // Redis only gives ids; double-check against the DB (still available, account active, ...).
-      const eligibleWorkers = await this.requestRepo.findEligibleWorkersForMatching(workerIds, skillId);
+      // Every available, active worker with this skill (no distance filter for now).
+      const eligibleWorkers = await this.requestRepo.findEligibleWorkersBySkill(skillId);
       const newWorkers = eligibleWorkers.filter((w) => !notifiedWorkerIds.has(w.userId));
+
+      // One line per round so it's easy to see in the logs where matching stops finding people.
+      this.logger.info(
+        `Matching request ${requestId}: ${eligibleWorkers.length} eligible worker(s), ${newWorkers.length} newly notified`,
+      );
 
       for (const worker of newWorkers) {
         notifiedWorkerIds.add(worker.userId);
@@ -171,14 +143,7 @@ export class InstantMatchingService implements IInstantMatchingService {
         }
       }
 
-      // Nobody at this radius and a wider one exists: widen right away, no waiting.
-      if (eligibleWorkers.length === 0 && tierIndex < tiers.length - 1) {
-        tierIndex++;
-        continue;
-      }
-
-      // Either workers were found, or we're already at the widest radius. Pause briefly, then
-      // check again for workers who just came online or for a cancellation.
+      // Pause briefly, then check again for workers who just came online or for a cancellation.
       await new Promise((resolve) => setTimeout(resolve, REPOLL_INTERVAL_MS));
     }
   }

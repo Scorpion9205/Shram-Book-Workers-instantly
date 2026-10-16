@@ -50,7 +50,7 @@ export interface IInstantRequestRepository {
   findWorkerWithSkills(userId: string, tx?: Prisma.TransactionClient): Promise<any | null>;
   findWorkerWithSkillsAndUser(userId: string, tx?: Prisma.TransactionClient): Promise<any | null>;
   findOpenNearbyRequestsForSkills(skillIds: string[]): Promise<any[]>;
-  findEligibleWorkersForMatching(workerIds: string[], skillId: string): Promise<any[]>;
+  findEligibleWorkersBySkill(skillId: string): Promise<any[]>;
 
   findRequestItemWithRequest(itemId: string, tx?: Prisma.TransactionClient): Promise<any | null>;
   findResponseByItemAndWorker(itemId: string, workerId: string, tx?: Prisma.TransactionClient): Promise<any | null>;
