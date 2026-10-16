@@ -13,12 +13,16 @@ import {
   assignWorkerSchema,
 } from '../validations/agent.validation.js';
 
+// HTTP layer for agents. Every handler follows the same pattern: read the logged-in user,
+// validate the body, call AgentService, send the response. All the real rules live in the service.
 export class AgentController extends BaseController {
   constructor(private readonly agentService: IAgentService) {
     super();
   }
 
-  createProfile = async (req: Request, res: Response): Promise<void> => {
+  // ---- Agency profile & dashboard ----
+
+  createProfile =async (req: Request, res: Response): Promise<void> => {
     const user = (req as any).user;
     const dto = await this.validate(createAgentProfileSchema, req.body);
     const profile = await this.agentService.createProfile(user.userId, dto);
@@ -62,6 +66,8 @@ export class AgentController extends BaseController {
     this.ok(res, summary, 'Agent commission summary retrieved successfully.');
   };
 
+  // ---- Worker roster ----
+
   createWorker = async (req: Request, res: Response): Promise<void> => {
     const user = (req as any).user;
     const dto = await this.validate(createManagedWorkerSchema, req.body);
@@ -82,6 +88,7 @@ export class AgentController extends BaseController {
       throw new BusinessException('INVALID_WORKER_ID', 'Invalid worker id');
     }
     const dto = await this.validate(setWorkerAvailabilitySchema, req.body);
+    // Location is optional; the schema guarantees latitude and longitude come as a pair.
     const location = dto.latitude !== undefined && dto.longitude !== undefined
       ? { latitude: dto.latitude, longitude: dto.longitude }
       : undefined;
@@ -109,6 +116,8 @@ export class AgentController extends BaseController {
     await this.agentService.removeWorker(user.userId, workerId);
     this.noContent(res);
   };
+
+  // ---- Worker money: earnings view, manual payout, bank details ----
 
   getWorkerEarnings = async (req: Request, res: Response): Promise<void> => {
     const user = (req as any).user;
@@ -142,6 +151,9 @@ export class AgentController extends BaseController {
     this.ok(res, worker, 'Worker bank details updated successfully.');
   };
 
+  // ---- Assigning workers to work ----
+
+  // Job applications: one call per worker, until the promised head-count is reached.
   assignWorker = async (req: Request, res: Response): Promise<void> => {
     const user = (req as any).user;
     const applicationId = req.params.applicationId as string;
@@ -153,6 +165,7 @@ export class AgentController extends BaseController {
     this.created(res, result, 'Worker assigned to the application successfully.');
   };
 
+  // Instant requests: browse the open ones, then fill each skill slot with a roster worker.
   getOpenInstantRequests = async (req: Request, res: Response): Promise<void> => {
     const user = (req as any).user;
     const requests = await this.agentService.getOpenInstantRequests(user.userId);
@@ -170,6 +183,7 @@ export class AgentController extends BaseController {
     this.created(res, result, 'Worker assigned to the instant request successfully.');
   };
 
+  // The agent cashing out their own commission (separate from paying workers).
   checkoutCommission = async (req: Request, res: Response): Promise<void> => {
     const user = (req as any).user;
     const result = await this.agentService.checkoutCommission(user.userId);

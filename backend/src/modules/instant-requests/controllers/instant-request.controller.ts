@@ -7,6 +7,7 @@ import { FareService } from "../../../shared/services/pricing/fare.service.js";
 import { randomUUID } from "crypto";
 import { BadRequestException } from "../../../core/exceptions/index.js";
 
+// HTTP layer for instant requests (provider creates/cancels, workers accept or bid).
 export class InstantRequestController extends BaseController {
   constructor(
     private readonly instantRequestService: IInstantRequestService,
@@ -19,7 +20,9 @@ export class InstantRequestController extends BaseController {
     const user = (req as any).user;
     const data = this.validate(createInstantRequestSchema, req.body);
 
-    // Secure Quote Validation
+    // The price is never taken from the client. The provider first calls calculate-fare, which
+    // stores the quote (price + items) in the cache under a quoteId for 5 minutes; here we load
+    // that quote and refuse to continue if it expired or doesn't match what's being requested.
     const cachedQuote = await this.cache.get<{ fare: number; items: any[] }>(`quote:${data.quoteId}`);
     if (!cachedQuote) {
       throw new BadRequestException("Quote has expired or is invalid. Please request a new quote.");
@@ -36,7 +39,7 @@ export class InstantRequestController extends BaseController {
       throw new BadRequestException("Request parameters do not match the generated quote.");
     }
 
-    // Overwrite request amount with secure cached quote price
+    // Use the quoted price, ignoring any amount the client sent.
     const inputData = { ...data, amount: cachedQuote.fare };
 
     const request = await this.instantRequestService.createInstantRequest(user.userId, inputData);
@@ -44,12 +47,15 @@ export class InstantRequestController extends BaseController {
     this.created(res, { request }, "Instant request created successfully");
   };
 
+  // Worker: open requests near me that match my skills.
   getNearbyRequests = async (req: Request, res: Response): Promise<void> => {
     const user = (req as any).user;
     const requests = await this.instantRequestService.getNearbyRequests(user.userId);
     this.ok(res, { requests }, "Nearby requests retrieved successfully");
   };
 
+  // Step 1 of posting a request: price it. Returns the fare breakdown and a quoteId that
+  // createInstantRequest must send back within 5 minutes.
   calculateFare = async (req: Request, res: Response): Promise<void> => {
     const data = this.validate(calculateFareSchema, req.body);
 
@@ -75,6 +81,7 @@ export class InstantRequestController extends BaseController {
     );
   };
 
+  // Worker accepts one slot (item) of a direct request.
   acceptRequest = async (req: Request, res: Response): Promise<void> => {
     const user = (req as any).user;
     const itemId = req.params.itemId;
@@ -87,12 +94,14 @@ export class InstantRequestController extends BaseController {
     this.ok(res, result, "Instant request accepted successfully");
   };
 
+  // Provider: my requests and who accepted them.
   getMyRequests = async (req: Request, res: Response): Promise<void> => {
     const user = (req as any).user;
     const requests = await this.instantRequestService.getMyRequests(user.userId);
     this.ok(res, { requests }, "My requests retrieved successfully");
   };
 
+  // Worker places (or updates) a bid on a bidding-mode request.
   submitBid = async (req: Request, res: Response): Promise<void> => {
     const user = (req as any).user;
     const { id } = req.params;
@@ -104,6 +113,7 @@ export class InstantRequestController extends BaseController {
     this.ok(res, { bid }, "Bid submitted successfully");
   };
 
+  // Provider picks the winning bid.
   selectBid = async (req: Request, res: Response): Promise<void> => {
     const user = (req as any).user;
     const { id, bidId } = req.params;
@@ -114,6 +124,7 @@ export class InstantRequestController extends BaseController {
     this.ok(res, result, "Bid selected successfully");
   };
 
+  // Provider cancels their open request.
   cancelRequest = async (req: Request, res: Response): Promise<void> => {
     const user = (req as any).user;
     const { id } = req.params;

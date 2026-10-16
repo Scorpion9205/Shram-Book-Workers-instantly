@@ -3,11 +3,13 @@ import { BaseRepository } from '../../../core/base/BaseRepository.js';
 import type { IJobRepository, JobListFilter } from '../interfaces/IJobRepository.js';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 
+// Prisma queries for jobs. Each method picks only the columns its screen needs.
 export class JobRepository extends BaseRepository<Job> implements IJobRepository {
   constructor(private readonly prisma: PrismaService) {
     super();
   }
 
+  // Detail view: skill, provider contact and how many applications/bookings the job has.
   async findById(id: string, tx?: Prisma.TransactionClient): Promise<Job | null> {
     const client = tx || this.prisma.client;
     return client.job.findUnique({
@@ -53,13 +55,14 @@ export class JobRepository extends BaseRepository<Job> implements IJobRepository
     }) as any;
   }
 
+  // The job feed query: open jobs for the given skills, with optional search/salary/sort filters.
   async findManyOpenBySkillIds(skillIds: string[], filter?: JobListFilter, tx?: Prisma.TransactionClient): Promise<any[]> {
     const client = tx || this.prisma.client;
 
     const where: Prisma.JobWhereInput = {
       status: 'OPEN',
-      // A category filter narrows to one specific skill; otherwise fall back to every
-      // skill this worker/agent actually has, same as before this filter existed.
+      // Picking a category narrows the feed to that one skill; otherwise show every skill
+      // the worker/agent has.
       skillId: filter?.category ? filter.category : { in: skillIds },
     };
 
@@ -76,10 +79,9 @@ export class JobRepository extends BaseRepository<Job> implements IJobRepository
 
     const orderBy: Prisma.JobOrderByWithRelationInput =
       filter?.sort === 'highest_salary' ? { budget: 'desc' } : { createdAt: 'desc' };
-    // 'nearest' needs the requester's live coordinates and 'highest_rated' needs a join on
-    // the provider's aggregate rating — both real features, neither built yet. Falling back
-    // to 'latest' for those rather than silently accepting an option that does nothing was
-    // the whole bug being fixed here, so this is called out explicitly, not hidden.
+    // Only "latest" (default) and "highest salary" are real sort modes right now. "Nearest"
+    // would need the user's live location and "highest rated" a join on provider ratings,
+    // so both quietly fall back to latest until those are built.
 
     return client.job.findMany({
       where,
@@ -120,6 +122,7 @@ export class JobRepository extends BaseRepository<Job> implements IJobRepository
     });
   }
 
+  // "My jobs" list for a provider, newest first, with application/booking counts for the badges.
   async findManyByProviderId(providerId: string, tx?: Prisma.TransactionClient): Promise<any[]> {
     const client = tx || this.prisma.client;
     return client.job.findMany({

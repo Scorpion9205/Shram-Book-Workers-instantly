@@ -6,11 +6,13 @@ import { UserRole } from '../../../core/enums/Role.js';
  * Decouples controllers and services from hardcoded role permissions checks.
  */
 export class BookingPolicy {
+  // Admins see everything; otherwise only the people attached to the booking.
   static canView(booking: any, user: { id: string; role: string }): boolean {
     if (user.role === UserRole.ADMIN) return true;
     return booking.providerId === user.id || booking.worker?.userId === user.id || booking.agentId === user.id;
   }
 
+  // Provider or worker may cancel, but only while the job hasn't started.
   static canCancel(booking: any, user: { id: string; role: string }): boolean {
     if (user.role === UserRole.ADMIN) return true;
 
@@ -30,6 +32,7 @@ export class BookingPolicy {
     return booking.providerId === user.id || booking.worker?.userId === user.id;
   }
 
+  // Provider or worker may leave a review once the work is done.
   static canReview(booking: any, user: { id: string; role: string }): boolean {
     // Reviews can only be submitted after work completes
     if (booking.status !== BookingStatus.WORK_COMPLETED && booking.status !== BookingStatus.PAYMENT_SETTLED) {

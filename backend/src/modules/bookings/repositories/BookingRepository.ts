@@ -6,11 +6,13 @@ import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { DatabaseException } from '../../../core/exceptions/index.js';
 import type { IBookingRepository, BookingFilter, CreateBookingInput } from '../interfaces/IBookingRepository.js';
 
+// Prisma queries for bookings. Soft-deleted rows (deletedAt set) are always filtered out.
 export class BookingRepository extends BaseRepository<Booking> implements IBookingRepository {
   constructor(private readonly prisma: PrismaService) {
     super();
   }
 
+  // Full detail view: includes both parties, the job/instant request and the status history.
   async findById(id: string, tx?: Prisma.TransactionClient): Promise<Booking | null> {
     const client = tx ?? this.prisma.client;
     try {
@@ -43,6 +45,8 @@ export class BookingRepository extends BaseRepository<Booking> implements IBooki
     const skip = this.buildSkip(page, limit);
     const take = this.clampLimit(limit);
 
+    // Callers pass the worker's *user* id (that's what the JWT has), but bookings store the
+    // WorkerProfile id, so translate it first.
     let resolvedWorkerId = filter.workerId;
     if (filter.workerId) {
       try {
@@ -58,6 +62,7 @@ export class BookingRepository extends BaseRepository<Booking> implements IBooki
       }
     }
 
+    // Only add a condition for the filters that were actually provided.
     const whereClause: Prisma.BookingWhereInput = {
       deletedAt: null,
       ...(filter.providerId && { providerId: filter.providerId }),
@@ -105,6 +110,8 @@ export class BookingRepository extends BaseRepository<Booking> implements IBooki
     }
   }
 
+  // Compare-and-swap: only changes the status if it's still `fromStatus`. Returns null when
+  // someone else moved it first (Prisma's "record not found" error), so callers can detect the race.
   async updateStatusIfCurrent(
     id: string,
     fromStatus: BookingStatus,
@@ -141,6 +148,8 @@ export class BookingRepository extends BaseRepository<Booking> implements IBooki
     }
   }
 
+  // If no status is given, a booking that already has a worker starts as WORKER_ASSIGNED,
+  // otherwise it starts as CREATED.
   async create(data: CreateBookingInput, tx?: Prisma.TransactionClient): Promise<Booking> {
     const client = tx ?? this.prisma.client;
     try {

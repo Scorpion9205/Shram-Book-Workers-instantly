@@ -42,6 +42,7 @@ export const createManagedWorkerSchema = z.object({
 
 export type CreateManagedWorkerInput = z.infer<typeof createManagedWorkerSchema>;
 
+// Availability toggle. Location is optional, but if one coordinate is sent the other must be too.
 export const setWorkerAvailabilitySchema = z
   .object({
     isAvailable: z.boolean(),
@@ -57,6 +58,7 @@ export const setWorkerVerifiedSchema = z.object({
   verified: z.boolean(),
 });
 
+// Bank details for bank-transfer payouts. IFSC format: 4 letters, a zero, then 6 letters/digits.
 export const setWorkerBankDetailsSchema = z.object({
   accountHolderName: z.string().trim().min(2, "Account holder name is required.").max(100),
   accountNumber: z.string().trim().min(6, "Enter a valid account number.").max(30),
@@ -68,10 +70,12 @@ export const setWorkerBankDetailsSchema = z.object({
   bankName: z.string().trim().min(2, "Bank name is required.").max(100),
 });
 
+// How the agent actually paid the worker outside the app.
 export const payoutWorkerSchema = z.object({
   method: z.enum(["CASH", "BANK_TRANSFER"]),
 });
 
+// Body for assigning a roster worker (used for both job applications and instant-request items).
 export const assignWorkerSchema = z.object({
   workerId: z.string().uuid(),
 });

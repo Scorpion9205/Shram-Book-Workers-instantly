@@ -7,6 +7,7 @@ import { UserRole } from '../../../core/enums/Role.js';
 export function createWalletRouter(controller: WalletController): Router {
   const router = Router();
 
+  // Wallets only exist for workers, so both routes are locked to the WORKER role.
   router.get(
     '/balance',
     authenticate,

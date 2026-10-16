@@ -19,10 +19,9 @@ import { UserRole } from '../../../core/enums/Role.js';
 import { env } from '../../../config/env.js';
 import { parseDurationToSeconds } from '../../../shared/utils/duration.util.js';
 
-// Known numeric PlatformSetting keys get sanity-checked before being persisted — a bad value
-// here (e.g. commissionPercent > 100, making FareCalculator's (1 - pct/100) factor negative)
-// previously broke fare calculation platform-wide for every booking/job/instant-request until
-// the 60s Redis cache expired and someone noticed. Keys not listed here stay unchecked.
+// Settings that must be validated before saving. A silly value (say a commission of 150%)
+// would make fare calculation go negative for everyone, so these keys are range-checked.
+// Any key not listed here is saved as-is.
 const PERCENT_SETTING_KEYS = new Set(['commissionPercent', 'agentCommissionPercent']);
 const POSITIVE_NUMBER_SETTING_KEYS = new Set([
   'distanceRatePerKm',
@@ -32,7 +31,9 @@ const POSITIVE_NUMBER_SETTING_KEYS = new Set([
   'surgeFlatFee',
 ]);
 
+// Throws a BusinessException if `value` isn't acceptable for this setting key.
 function validatePlatformSettingValue(key: string, value: unknown): void {
+  // Percentages: a finite number from 0 to 100.
   if (PERCENT_SETTING_KEYS.has(key)) {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 100) {
       throw new BusinessException('INVALID_SETTING_VALUE', `"${key}" must be a number between 0 and 100`);
@@ -40,6 +41,7 @@ function validatePlatformSettingValue(key: string, value: unknown): void {
     return;
   }
 
+  // Rates and multipliers: any finite number that isn't negative.
   if (POSITIVE_NUMBER_SETTING_KEYS.has(key)) {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
       throw new BusinessException('INVALID_SETTING_VALUE', `"${key}" must be a non-negative number`);
@@ -47,6 +49,8 @@ function validatePlatformSettingValue(key: string, value: unknown): void {
     return;
   }
 
+  // The search-radius steps used when matching instant requests (e.g. [2, 5, 10] km).
+  // They must be positive and strictly increasing so the search always widens.
   if (key === 'instantRequestRadiusTiers') {
     const isAscendingPositiveArray =
       Array.isArray(value) &&
@@ -59,6 +63,10 @@ function validatePlatformSettingValue(key: string, value: unknown): void {
   }
 }
 
+/**
+ * Back-office operations for administrators: platform stats and analytics, user management,
+ * booking overview, and the editable configuration (settings, pricing rules, message templates).
+ */
 export class AdminService extends BaseService implements IAdminService {
   constructor(
     private readonly adminRepo: IAdminRepository,
@@ -74,11 +82,14 @@ export class AdminService extends BaseService implements IAdminService {
     super('AdminService');
   }
 
+  // Headline counters for the admin home page.
   async getDashboardStats(): Promise<any> {
     this.log('Fetching system-wide admin dashboard statistics');
     return await this.adminRepo.getDashboardCounts();
   }
 
+  // Analytics page: counters plus day-by-day signup/booking/revenue trends.
+  // `range` is '7days' (default), '1month' or 'custom' (needs start and end dates).
   async getPlatformAnalytics(range?: string, startDateStr?: string, endDateStr?: string): Promise<any> {
     this.log('Fetching platform-wide analytics', { range });
 
@@ -106,6 +117,7 @@ export class AdminService extends BaseService implements IAdminService {
       this.adminRepo.getPlatformAnalyticsData(trendStart, trendEnd),
     ]);
 
+    // Number of day-buckets for the charts, capped at 100 so a huge custom range can't blow up the response.
     const diffDays = Math.min(
       Math.ceil(Math.abs(trendEnd.getTime() - trendStart.getTime()) / (1000 * 60 * 60 * 24)),
       100,
@@ -115,6 +127,7 @@ export class AdminService extends BaseService implements IAdminService {
     const bookingTrend: { label: string; value: number }[] = [];
     const revenueTrend: { label: string; value: number }[] = [];
 
+    // One bucket per day: [current, next) is that day's midnight-to-midnight window.
     for (let i = 0; i < diffDays; i++) {
       const current = new Date(trendStart);
       current.setDate(trendStart.getDate() + i);
@@ -155,11 +168,14 @@ export class AdminService extends BaseService implements IAdminService {
     };
   }
 
+  // Paginated, filterable user list for the Users page.
   async getUsers(filter: UserFilter, page: number, limit: number): Promise<PaginatedResult<User>> {
     this.log('Listing users for administration overview', { filter, page, limit });
     return await this.userRepo.findManyByFilter(filter, page, limit);
   }
 
+  // Suspend (isActive=false) or re-activate a user. Suspension is meant to bite right away,
+  // which takes a few extra steps - see the comments below.
   async suspendUser(id: string, isActive: boolean): Promise<User> {
     this.log('Toggling user activation status', { id, isActive });
     const user = await this.userRepo.findById(id);
@@ -169,21 +185,20 @@ export class AdminService extends BaseService implements IAdminService {
 
     const updated = await this.userRepo.update(id, { isActive });
 
-    // Invalidate refresh sessions in cache
+    // Kill their refresh token so they can't get a new access token.
     const cacheKey = CacheKeys.refreshToken(id);
     await this.cache.del(cacheKey);
 
-    // Revoking the refresh token alone leaves an already-issued access token valid for up to
-    // its remaining 15-minute lifetime — `authenticate` checks this marker on every request so
-    // a suspension actually takes effect immediately instead of silently waiting out the token.
+    // An access token that's already been issued would keep working for up to 15 minutes.
+    // So we also set a "revoked" marker that the auth middleware checks on every request,
+    // which makes the suspension take effect immediately.
     if (!isActive) {
       const revokeTtl = parseDurationToSeconds(env.JWT_ACCESS_EXPIRY, 15 * 60);
       await this.cache.set(CacheKeys.revokedUser(id), true, revokeTtl);
     }
 
-    // Suspending a worker must also pull them out of the Redis geo-index — otherwise they
-    // stay eligible for (and can keep accepting) instant-request/bidding broadcasts after
-    // suspension, since the matching query alone doesn't check user.isActive.
+    // A suspended worker also has to leave the Redis GEO index, otherwise instant-request
+    // matching (which doesn't look at isActive) would keep offering them jobs.
     if (!isActive && user.role === UserRole.WORKER) {
       const workerWithSkills = await this.workerRepo.getOrCreateProfileWithSkillsAndUser(id);
       if (workerWithSkills) {
@@ -196,11 +211,13 @@ export class AdminService extends BaseService implements IAdminService {
     return updated;
   }
 
+  // All bookings on the platform, for the admin Bookings page.
   async getBookings(filter: BookingFilter, page: number, limit: number): Promise<PaginatedResult<Booking>> {
     this.log('Listing bookings for administration overview', { filter, page, limit });
     return await this.bookingRepo.findManyByFilter(filter, page, limit);
   }
 
+  // Admin override: put a specific worker on a booking by hand (e.g. when matching failed).
   async assignWorker(bookingId: string, workerId: string, adminId: string): Promise<Booking> {
     this.log('Admin manually assigning worker to booking', { bookingId, workerId, adminId });
     const booking = await this.bookingRepo.findById(bookingId);
@@ -213,9 +230,8 @@ export class AdminService extends BaseService implements IAdminService {
       throw new NotFoundException('WorkerProfile', workerId);
     }
 
-    // Validate the transition is legal BEFORE writing workerId — otherwise a booking that
-    // can't legally reach WORKER_ASSIGNED (e.g. already WORK_STARTED/CLOSED/CANCELLED) gets
-    // its workerId overwritten and left corrupted even though this call ultimately fails.
+    // Check the status change is legal first. If we wrote workerId before checking, a booking
+    // that's already started or closed would get its worker overwritten even though the call fails.
     const allowedFromCurrent = VALID_TRANSITIONS[booking.status] ?? [];
     if (!allowedFromCurrent.includes(BookingStatus.WORKER_ASSIGNED)) {
       throw new BusinessException(
@@ -224,28 +240,28 @@ export class AdminService extends BaseService implements IAdminService {
       );
     }
 
-    // Atomically claim the worker so Admin can't double-book one who was just assigned
-    // elsewhere (by this same endpoint or the normal accept-application/instant-request flows).
+    // Mark the worker busy in one step so they can't be double-booked, even if another
+    // flow (apply/accept, instant request) grabbed them a moment ago.
     const claimed = await this.workerRepo.markUnavailableIfAvailable(workerId);
     if (claimed === 0) {
       throw new BusinessException('WORKER_UNAVAILABLE', 'This worker is already assigned to another active booking');
     }
 
-    // Step 1: Update the booking workerId
+    // First attach the worker, then move the booking to WORKER_ASSIGNED through the state machine.
     await this.bookingRepo.update(bookingId, { workerId });
-
-    // Step 2: Transition state to WORKER_ASSIGNED
     return await this.bookingStateService.transition(bookingId, BookingStatus.WORKER_ASSIGNED, {
       changedBy: adminId,
       reason: 'Admin manually assigned worker',
     });
   }
 
+  // Every editable platform setting (commission %, surge multipliers, radius tiers, ...).
   async getAllSettings(): Promise<PlatformSetting[]> {
     this.log('Fetching all platform settings');
     return await this.settingRepo.listAll();
   }
 
+  // Validates and saves one setting, then clears its cache entry so the new value is used straight away.
   async updatePlatformSetting(key: string, value: any): Promise<PlatformSetting> {
     this.log('Updating platform setting', { key, value });
 
@@ -259,6 +275,7 @@ export class AdminService extends BaseService implements IAdminService {
     return setting;
   }
 
+  // Per-skill minimum/maximum fare limits.
   async getAllPricingRules(): Promise<PricingRuleWithSkill[]> {
     this.log('Fetching all pricing rules');
     return await this.pricingRuleRepo.findAll();
@@ -267,10 +284,9 @@ export class AdminService extends BaseService implements IAdminService {
   async upsertPricingRule(skillId: string, minFare?: number, maxFare?: number): Promise<PricingRule> {
     this.log('Upserting pricing rule', { skillId, minFare, maxFare });
 
-    // Validate against the FINAL combined state, not just this request's body — a request that
-    // only sets minFare above an already-stored maxFare (or vice versa) is just as invalid as
-    // setting both at once, since FareCalculator.applyPricingRules trusts minFare <= maxFare and
-    // silently clamps above the configured ceiling otherwise.
+    // Check min <= max using the combined result (new values merged with what's already stored).
+    // Sending only a new minFare that is above the existing maxFare is just as wrong as sending
+    // both values in the wrong order.
     const existing = await this.pricingRuleRepo.findBySkillId(skillId);
     const finalMinFare = minFare !== undefined ? minFare : existing?.minFare !== null ? Number(existing?.minFare) : undefined;
     const finalMaxFare = maxFare !== undefined ? maxFare : existing?.maxFare !== null ? Number(existing?.maxFare) : undefined;
@@ -284,6 +300,7 @@ export class AdminService extends BaseService implements IAdminService {
     });
   }
 
+  // The editable email/SMS/push message templates, paginated.
   async getNotificationTemplates(page: number, limit: number): Promise<PaginatedResult<NotificationTemplate>> {
     this.log('Listing notification templates', { page, limit });
     return await this.notificationTemplateRepo.findMany(page, limit);
@@ -299,18 +316,17 @@ export class AdminService extends BaseService implements IAdminService {
 
     const template = await this.notificationTemplateRepo.upsert(type, channel, locale, data);
 
-    // Invalidate Redis template cache
+    // Templates are cached for a few minutes; clear this one so the edit is used immediately.
     const cacheKey = `notification:template:${type}:${channel}:${locale}`;
     await this.cache.del(cacheKey);
 
     return template;
   }
 
+  // Admin's platform-wide "this worker is verified" stamp.
   async verifyWorker(userId: string, isVerified: boolean): Promise<User> {
     this.log('Verifying worker profile', { userId, isVerified });
-    // The admin Users list only ever has User.id (not WorkerProfile.id) to work with, so this
-    // looks up by userId — findById(WorkerProfile.id) here would 404 on every call since the
-    // two ids are never the same value.
+    // The Users page only knows the user id, not the worker-profile id, so look up by userId.
     const worker = await this.workerRepo.findByUserId(userId);
     if (!worker) {
       throw new NotFoundException('WorkerProfile', userId);

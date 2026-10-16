@@ -46,6 +46,8 @@ export class BookingController extends BaseController {
     this.ok(res, response, 'Booking details retrieved successfully');
   };
 
+  // List bookings. Providers, workers and agents are automatically scoped to their own;
+  // admins can pass filters in the query string.
   getBookings = async (req: Request, res: Response): Promise<void> => {
     const user = (req as any).user;
     const dto = this.validate(FilterBookingsSchema, {
@@ -68,6 +70,7 @@ export class BookingController extends BaseController {
     );
   };
 
+  // Provider books a worker/agent for one of their jobs.
   createBooking = async (req: Request, res: Response): Promise<void> => {
     const dto = this.validate(CreateBookingSchema, req.body);
     const user = (req as any).user;
@@ -83,6 +86,7 @@ export class BookingController extends BaseController {
     this.created(res, BookingMapper.toResponse(booking, user), 'Booking created successfully');
   };
 
+  // Cancel a booking (provider or worker side), if the policy says it's still allowed.
   cancelBooking = async (req: Request, res: Response): Promise<void> => {
     const bookingId = req.params.id as string;
     const user = (req as any).user;
@@ -100,6 +104,8 @@ export class BookingController extends BaseController {
     this.ok(res, BookingMapper.toResponse(updated), 'Booking successfully cancelled');
   };
 
+  // The next few handlers are the job lifecycle. They're thin on purpose - the service
+  // decides who is allowed to do each step.
   workerEnRoute = async (req: Request, res: Response): Promise<void> => {
     const bookingId = req.params.id as string;
     const user = (req as any).user;
@@ -132,6 +138,7 @@ export class BookingController extends BaseController {
     this.ok(res, BookingMapper.toResponse(booking, user), 'Payment settled successfully');
   };
 
+  // Cash/UPI jobs: confirms the money was received.
   settleOfflineBooking = async (req: Request, res: Response): Promise<void> => {
     const bookingId = req.params.id as string;
     const user = (req as any).user;

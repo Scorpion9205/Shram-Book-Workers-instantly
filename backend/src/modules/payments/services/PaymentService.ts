@@ -9,6 +9,13 @@ import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
 import { env } from '../../../config/env.js';
 
+/**
+ * Online (Razorpay) payments for bookings. The flow is:
+ *   1. provider asks for an order  -> createOrder()
+ *   2. provider pays in the Razorpay checkout popup
+ *   3. Razorpay calls our webhook   -> handleWebhook() confirms the booking
+ * Cancelled bookings that were already paid get refunded (refundForCancelledBooking).
+ */
 export class PaymentService extends BaseService implements IPaymentService {
   constructor(
     private readonly paymentRepo: IPaymentRepository,
@@ -20,6 +27,8 @@ export class PaymentService extends BaseService implements IPaymentService {
     super('PaymentService');
   }
 
+  // Creates a Razorpay order for a booking and returns what the checkout popup needs.
+  // Safe to call again if the first attempt was abandoned - it just creates a fresh order.
   async createOrder(bookingId: string, providerId: string): Promise<any> {
     this.log('Creating payment order', { bookingId, providerId });
 
@@ -32,24 +41,24 @@ export class PaymentService extends BaseService implements IPaymentService {
       throw new BusinessException('UNAUTHORIZED_PAYMENT', 'Unauthorized to pay for this booking');
     }
 
-    // PAYMENT_PENDING is allowed too — it just means a previous order was created but the
-    // Provider abandoned/closed the Razorpay checkout before paying (or it expired) and is
-    // now retrying. Without this, that first attempt permanently bricks the booking: every
-    // retry would hit this guard since createOrder() already moved it out of CREATED on
-    // attempt one, with no code path anywhere to move it back.
+    // PAYMENT_PENDING is allowed as well: it means an earlier order was created but never paid
+    // (checkout closed or expired), and the provider is trying again.
     if (booking.status !== BookingStatus.CREATED && booking.status !== BookingStatus.PAYMENT_PENDING) {
       throw new BusinessException('INVALID_BOOKING_STATUS', `Booking is not awaiting payment. Current: ${booking.status}`);
     }
 
+    // A booking has at most one Payment row. Never charge twice for one that's already paid.
     let payment = await this.paymentRepo.findByBookingId(bookingId);
     if (payment && payment.status === PaymentStatus.COMPLETED) {
       throw new BusinessException('PAYMENT_ALREADY_COMPLETED', 'Payment has already been completed.');
     }
 
+    // The amount comes from the booking in our DB, never from the client.
     const amount = Number(booking.amount);
 
     const order = await this.paymentProvider.createRazorpayOrder(amount, bookingId);
 
+    // First attempt creates the Payment row; a retry just points it at the new order.
     if (!payment) {
       payment = await this.paymentRepo.create({
         bookingId,
@@ -67,8 +76,8 @@ export class PaymentService extends BaseService implements IPaymentService {
       });
     }
 
-    // Only transition on the FIRST order attempt — CREATED -> PAYMENT_PENDING is a real FSM
-    // edge, but PAYMENT_PENDING -> PAYMENT_PENDING (a retry) isn't, and would throw.
+    // Only move the status on the first attempt. On a retry the booking is already
+    // PAYMENT_PENDING, and PAYMENT_PENDING -> PAYMENT_PENDING isn't a valid transition.
     if (booking.status === BookingStatus.CREATED) {
       await this.bookingStateService.transition(bookingId, BookingStatus.PAYMENT_PENDING, {
         changedBy: providerId,
@@ -84,6 +93,8 @@ export class PaymentService extends BaseService implements IPaymentService {
     };
   }
 
+  // Razorpay tells us a payment succeeded. We trust it only after verifying the signature
+  // (computed over the exact raw body), so nobody else can fake a "paid" call.
   async handleWebhook(rawBody: string, payload: any, signature: string): Promise<void> {
     this.log('Handling Razorpay webhook callback', { event: payload.event });
 
@@ -112,9 +123,8 @@ export class PaymentService extends BaseService implements IPaymentService {
       const paymentId = entity.id;
       const paySignature = signature;
 
-      // Atomic conditional update: only the delivery that actually flips PENDING -> COMPLETED
-      // proceeds to confirm the booking. Any concurrent/retried webhook delivery for the same
-      // payment sees affectedCount === 0 and is treated as a no-op duplicate.
+      // Razorpay may deliver the same webhook more than once. This UPDATE only succeeds for
+      // the first delivery (PENDING -> COMPLETED); duplicates change 0 rows and stop here.
       const affectedCount = await this.paymentRepo.markCompletedIfPending(payment.id, paymentId, paySignature);
 
       if (affectedCount === 0) {
@@ -131,11 +141,9 @@ export class PaymentService extends BaseService implements IPaymentService {
           reason: 'Payment captured via Razorpay webhook',
         });
 
-        // The worker was already pinned to this booking at creation time (ApplicationService
-        // sets workerId up front, status just stays CREATED until payment clears) — nothing
-        // else in the app ever advances PAYMENT_CONFIRMED -> WORKER_ASSIGNED automatically, so
-        // without this the booking would be stuck here forever: the worker could never go
-        // en-route, start, or complete it, since those all require WORKER_ASSIGNED first.
+        // The worker was attached when the booking was created, and nothing else moves it on
+        // after payment. Without this step the booking would sit at PAYMENT_CONFIRMED forever
+        // and the worker could never head out, start or finish the job.
         await this.bookingStateService.transition(payment.bookingId, BookingStatus.WORKER_ASSIGNED, {
           changedBy: 'RAZORPAY_WEBHOOK',
           reason: 'Worker auto-assigned after payment confirmation',
@@ -143,11 +151,9 @@ export class PaymentService extends BaseService implements IPaymentService {
 
         this.log('Payment completed and booking confirmed via webhook', { bookingId: payment.bookingId });
       } catch (err) {
-        // The booking was cancelled in the window between the Provider paying and this webhook
-        // arriving (a real, plausible race — Providers commonly cancel right after paying,
-        // before the async webhook lands). Razorpay has already captured real money at this
-        // point; refund it immediately rather than leaving Payment=COMPLETED with the booking
-        // CANCELLED and no recovery path, which previously happened silently forever.
+        // Most likely the provider cancelled right after paying, before this webhook arrived.
+        // The money is already captured, so refund it now instead of leaving a paid payment
+        // attached to a cancelled booking.
         this.logger.warn('Booking transition failed after payment capture (likely cancelled mid-flight) — issuing refund', {
           bookingId: payment.bookingId,
           err,
@@ -157,6 +163,8 @@ export class PaymentService extends BaseService implements IPaymentService {
     }
   }
 
+  // Refunds the booking's payment if one was actually captured; does nothing otherwise
+  // (never paid, offline booking, or already refunded).
   async refundForCancelledBooking(bookingId: string): Promise<void> {
     const payment = await this.paymentRepo.findByBookingId(bookingId);
     if (!payment || payment.status !== PaymentStatus.COMPLETED || !payment.razorpayPaymentId) {

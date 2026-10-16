@@ -7,10 +7,9 @@ import { UserRole } from '../../../core/enums/Role.js';
 import { BookingStatus, BookingType } from '@prisma/client';
 import { z } from 'zod';
 
-// A bare `parseInt` with no bounds let `?limit=5000000` run an effectively unbounded query
-// against the DB (real perf/DoS risk on admin list routes), and a non-positive page/limit
-// (e.g. `?page=0`) produced a negative `skip` that Prisma rejected with a raw 500 instead of
-// a clean validation error. Clamping here fixes both.
+// Pagination query params, made safe: page falls back to 1 for anything invalid, and limit
+// falls back to 10 and is capped at 100. This stops things like ?limit=5000000 from running a
+// huge query, and ?page=0 from producing a negative offset.
 const pageSchema = z.string().optional().transform(val => {
   const parsed = val ? parseInt(val, 10) : 1;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
@@ -21,6 +20,7 @@ const limitSchema = z.string().optional().transform(val => {
   return Math.min(parsed, 100);
 });
 
+// Query string for the Users list. Booleans arrive as the text "true"/"false", so convert them.
 const GetUsersQuerySchema = z.object({
   page: pageSchema,
   limit: limitSchema,

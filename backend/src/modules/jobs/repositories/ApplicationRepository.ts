@@ -5,11 +5,14 @@ import type { IApplicationRepository } from '../interfaces/IApplicationRepositor
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { ConflictException } from '../../../core/exceptions/index.js';
 
+// Prisma queries for job applications (both worker and agent applicants).
 export class ApplicationRepository extends BaseRepository<Application> implements IApplicationRepository {
   constructor(private readonly prisma: PrismaService) {
     super();
   }
 
+  // The DB has a unique (job, worker) and (job, agent) pair, so a duplicate apply comes back
+  // as error P2002 - turned into a friendly "already applied" conflict here.
   async create(data: Prisma.ApplicationUncheckedCreateInput, tx?: Prisma.TransactionClient): Promise<Application> {
     const client = tx || this.prisma.client;
     try {
@@ -42,6 +45,7 @@ export class ApplicationRepository extends BaseRepository<Application> implement
     });
   }
 
+  // What the provider sees when reviewing applicants: bid + applicant details, cheapest bid first.
   async findManyByJobId(jobId: string, tx?: Prisma.TransactionClient): Promise<any[]> {
     const client = tx || this.prisma.client;
     return client.application.findMany({
@@ -87,6 +91,7 @@ export class ApplicationRepository extends BaseRepository<Application> implement
     });
   }
 
+  // Full application with its job, worker and agent - used when accepting/rejecting.
   async findById(id: string, tx?: Prisma.TransactionClient): Promise<any | null> {
     const client = tx || this.prisma.client;
     return client.application.findUnique({
@@ -107,6 +112,7 @@ export class ApplicationRepository extends BaseRepository<Application> implement
     });
   }
 
+  // Used once a job is full: everyone still waiting gets rejected automatically.
   async updateManyPendingToRejected(jobId: string, tx?: Prisma.TransactionClient): Promise<void> {
     const client = tx || this.prisma.client;
     await client.application.updateMany({

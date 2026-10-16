@@ -8,6 +8,11 @@ import { Logger } from '../../../core/logger/Logger.js';
 
 const logger = new Logger('WalletRepository');
 
+/**
+ * All Prisma access for wallets. The *WithTransaction methods are the ones the app actually
+ * uses for money movement: balance change + ledger row happen together or not at all.
+ * Every method takes an optional `tx` so it can join a transaction the caller already opened.
+ */
 export class WalletRepository extends BaseRepository<Wallet> implements IWalletRepository {
   constructor(private readonly prisma: PrismaService) {
     super();
@@ -51,6 +56,8 @@ export class WalletRepository extends BaseRepository<Wallet> implements IWalletR
   async decrementBalance(id: string, amount: number, allowNegative: boolean = false, tx?: Prisma.TransactionClient): Promise<Wallet> {
     const client = tx || this.prisma.client;
     if (!allowNegative) {
+      // Check-and-subtract in a single UPDATE (balance >= amount). Doing a read first and then
+      // an update would let two parallel debits both pass the check and overdraw the wallet.
       const result = await client.wallet.updateMany({
         where: {
           id,
@@ -76,10 +83,13 @@ export class WalletRepository extends BaseRepository<Wallet> implements IWalletR
     });
   }
 
+  // Credit = bump the balance + insert a CREDIT ledger row, atomically.
   async creditWithTransaction(workerId: string, amount: number, purpose: string, referenceId?: string): Promise<void> {
+    // e.g. "BOOKING_PAYMENT:<bookingId>" - unique per event, which is what makes retries safe.
     const reference = `${purpose}:${referenceId || 'SYSTEM'}`;
     try {
       await this.prisma.transaction(async (tx) => {
+        // First-ever credit for this worker: create the wallet on the spot.
         let wallet = await this.findByWorkerId(workerId, tx);
         if (!wallet) {
           wallet = await this.create(workerId, tx);
@@ -113,6 +123,7 @@ export class WalletRepository extends BaseRepository<Wallet> implements IWalletR
     }
   }
 
+  // Debit = lower the balance + insert a DEBIT ledger row, atomically.
   async debitWithTransaction(workerId: string, amount: number, purpose: string, referenceId?: string, allowNegative: boolean = false): Promise<void> {
     const reference = `${purpose}:${referenceId || 'SYSTEM'}`;
     try {
@@ -123,6 +134,7 @@ export class WalletRepository extends BaseRepository<Wallet> implements IWalletR
         }
 
         if (!allowNegative) {
+          // Same guarded UPDATE as decrementBalance: refuses to overdraw even under parallel requests.
           const result = await tx.wallet.updateMany({
             where: {
               id: wallet.id,

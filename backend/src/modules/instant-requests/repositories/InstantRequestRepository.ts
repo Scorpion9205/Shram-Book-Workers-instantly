@@ -8,11 +8,15 @@ import type {
   CreateInstantBookingData,
 } from '../interfaces/IInstantRequestRepository.js';
 
+// Prisma queries for instant requests: the request, its per-skill items, worker responses,
+// bids, and the bookings created from them. Many methods are small "conditional update"
+// helpers (they return how many rows changed) because the service uses them to win races.
 export class InstantRequestRepository extends BaseRepository<InstantRequest> implements IInstantRequestRepository {
   constructor(private readonly prisma: PrismaService = PrismaService.getInstance()) {
     super();
   }
 
+  // Create the provider profile row if it doesn't exist yet.
   async upsertProviderProfile(userId: string, tx?: Prisma.TransactionClient): Promise<void> {
     const client = tx ?? this.prisma.client;
     await client.providerProfile.upsert({
@@ -32,6 +36,7 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
     await client.instantRequestItem.createMany({ data: items });
   }
 
+  // A request together with its items (and their skills) and the provider's name.
   async findRequestWithItemsAndProvider(requestId: string, tx?: Prisma.TransactionClient): Promise<any | null> {
     const client = tx ?? this.prisma.client;
     return client.instantRequest.findUnique({
@@ -49,6 +54,7 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
     return client.instantRequest.findUnique({ where: { id: requestId } });
   }
 
+  // The provider's request history, including who accepted each slot.
   async findRequestsByProvider(providerId: string): Promise<any[]> {
     return this.prisma.client.instantRequest.findMany({
       where: { providerId },
@@ -81,6 +87,7 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
     });
   }
 
+  // Ids of every OPEN request - used on server startup to restart matching loops.
   async findAllOpenRequestIds(): Promise<string[]> {
     const rows = await this.prisma.client.instantRequest.findMany({
       where: { status: 'OPEN' },
@@ -112,6 +119,8 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
     });
   }
 
+  // Open, not-yet-expired requests that still have an open slot for any of these skills.
+  // Only the matching items are returned. (Distance is filtered later in the service.)
   async findOpenNearbyRequestsForSkills(skillIds: string[]): Promise<any[]> {
     return this.prisma.client.instantRequest.findMany({
       where: {
@@ -151,15 +160,14 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
     });
   }
 
+  // From the worker ids Redis found nearby, keep only those who are truly eligible.
   async findEligibleWorkersForMatching(workerIds: string[], skillId: string): Promise<any[]> {
     return this.prisma.client.workerProfile.findMany({
       where: {
         id: { in: workerIds },
         isAvailable: true,
-        // Defense-in-depth: a suspended worker (user.isActive: false) should never be
-        // re-added to the geo index (AdminService.suspendUser already removes them), but
-        // checking it again here means a bug or race anywhere else can't put a suspended
-        // worker back in front of Providers.
+        // Suspended workers are already removed from Redis, but checking isActive here too
+        // means a stale GEO entry can never put a suspended worker in front of a provider.
         user: { role: 'WORKER', isActive: true },
         skills: {
           some: { skillId },
@@ -191,6 +199,8 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
     });
   }
 
+  // Adds one accepted worker to an item, but only while acceptedWorkers < requiredWorkers.
+  // Returns 1 if a slot was taken, 0 if the item was already full.
   async incrementAcceptedWorkersIfSlotAvailable(
     itemId: string,
     requiredWorkers: number,
@@ -237,6 +247,7 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
     });
   }
 
+  // Changes the status only if the request is still OPEN (used for cancel). Returns rows changed.
   async updateStatusIfOpen(requestId: string, toStatus: string, tx?: Prisma.TransactionClient): Promise<number> {
     const client = tx ?? this.prisma.client;
     const result = await client.instantRequest.updateMany({
@@ -258,12 +269,9 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
         status: data.status as any,
         startOtp: data.startOtp,
         agentId: data.agentId ?? null,
-        // Instant-request bookings never go through Razorpay — there is no payment-collection
-        // step anywhere in this flow. Leaving this at the schema default ("ONLINE") made
-        // WalletConsumer treat it as "the platform already holds this money" on completion and
-        // auto-credit the worker's wallet with real money that was never actually collected
-        // from anyone. OFFLINE correctly triggers the "Provider paid the Worker directly, the
-        // platform deducts its commission from the Worker's wallet" path instead.
+        // Instant bookings are always paid directly (cash/UPI); the app collects nothing online.
+        // This matters: with the default ONLINE mode the wallet consumer would assume the
+        // platform holds the money and credit the worker for cash it never received.
         paymentMode: 'OFFLINE',
       },
     });
@@ -277,6 +285,8 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
     });
   }
 
+  // "Claim" a worker: flips isAvailable to false only if it's currently true.
+  // Returns 1 if we got them, 0 if someone else did first - the key to preventing double-booking.
   async markWorkerUnavailableIfAvailable(workerId: string, tx?: Prisma.TransactionClient): Promise<number> {
     const client = tx ?? this.prisma.client;
     const result = await client.workerProfile.updateMany({
@@ -292,6 +302,7 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
     return skills.map((s) => s.skillId);
   }
 
+  // One bid per worker per request: bidding again updates the existing bid.
   async upsertBid(requestId: string, workerId: string, bidAmount: number, tx?: Prisma.TransactionClient): Promise<any> {
     const client = tx ?? this.prisma.client;
     return client.instantRequestBid.upsert({
@@ -333,6 +344,7 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
     });
   }
 
+  // After a winner is chosen, every other bid on the request is marked REJECTED.
   async rejectOtherBids(requestId: string, exceptBidId: string, tx?: Prisma.TransactionClient): Promise<void> {
     const client = tx ?? this.prisma.client;
     await client.instantRequestBid.updateMany({

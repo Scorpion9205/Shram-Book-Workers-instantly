@@ -14,6 +14,11 @@ import { RoutingKeys } from '../../../infrastructure/queue/queue.constants.js';
 import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
 import { verifyStartOtpHash, bookingStartOtpCacheKey } from '../../../shared/utils/booking-otp.util.js';
 
+/**
+ * Booking use-cases: create, cancel, and the worker-side steps of a job
+ * (en route -> verify OTP -> complete -> settle). Anything that changes a booking's status
+ * goes through BookingStateService so the rules and audit trail live in one place.
+ */
 export class BookingService extends BaseService implements IBookingService {
   constructor(
     private readonly bookingRepo: IBookingRepository,
@@ -40,6 +45,7 @@ export class BookingService extends BaseService implements IBookingService {
     return agent?.id === booking.agentId;
   }
 
+  // Fetch one booking (with provider/worker/job details) or throw a 404.
   async getBookingById(id: string): Promise<Booking> {
     const booking = await this.bookingRepo.findById(id);
     if (!booking) {
@@ -48,6 +54,7 @@ export class BookingService extends BaseService implements IBookingService {
     return booking;
   }
 
+  // Paginated list; the filter decides whose bookings (provider / worker / agent) come back.
   async getBookings(
     filter: BookingFilter,
     page: number,
@@ -73,6 +80,7 @@ export class BookingService extends BaseService implements IBookingService {
       throw new BusinessException('JOB_HAS_NO_BUDGET', 'This job has no budget set and cannot be booked directly');
     }
 
+    // Price comes from the job's budget, not from the request body.
     const booking = await this.bookingRepo.create({
       jobId: input.jobId,
       providerId,
@@ -87,6 +95,8 @@ export class BookingService extends BaseService implements IBookingService {
     return booking;
   }
 
+  // Either side can cancel; whoever the caller is decides which CANCELLED_BY_* state we land in.
+  // The state machine rejects it if the booking is already too far along.
   async cancelBooking(bookingId: string, userId: string, reason?: string): Promise<Booking> {
     const booking = await this.bookingRepo.findById(bookingId);
     if (!booking) {
@@ -116,6 +126,7 @@ export class BookingService extends BaseService implements IBookingService {
     return cancelled;
   }
 
+  // Worker (or their agent) taps "I'm on my way".
   async workerEnRoute(id: string, userId: string): Promise<Booking> {
     const booking = await this.getBookingById(id) as any;
     this.log('Worker is en route for booking', { bookingId: id, workerUserId: userId });
@@ -130,6 +141,8 @@ export class BookingService extends BaseService implements IBookingService {
     });
   }
 
+  // The provider reads a 6-digit code out loud when the worker shows up; entering it here
+  // proves the worker is physically there and starts the job.
   async verifyStartOtp(id: string, userId: string, code: string): Promise<Booking> {
     const booking = await this.getBookingById(id) as any;
     this.log('Verifying start OTP for booking', { bookingId: id, workerUserId: userId });
@@ -165,6 +178,7 @@ export class BookingService extends BaseService implements IBookingService {
     return updated;
   }
 
+  // Worker (or their agent) marks the work as done; payment settlement comes next.
   async completeBooking(id: string, userId: string): Promise<Booking> {
     const booking = await this.getBookingById(id) as any;
     this.log('Worker is completing booking', { bookingId: id, workerUserId: userId });
@@ -179,6 +193,7 @@ export class BookingService extends BaseService implements IBookingService {
     });
   }
 
+  // ONLINE bookings: the provider confirms the work and releases the payment.
   async settlePayment(id: string, userId: string): Promise<Booking> {
     const booking = await this.getBookingById(id);
     this.log('Provider is settling payment', { bookingId: id, providerUserId: userId });
@@ -205,6 +220,7 @@ export class BookingService extends BaseService implements IBookingService {
     return await this.bookingRepo.update(id, { finalFare: booking.amount });
   }
 
+  // OFFLINE (cash/UPI) bookings: the worker side confirms they actually received the money.
   async settleOfflinePayment(id: string, userId: string): Promise<Booking> {
     const booking = await this.getBookingById(id) as any;
     this.log('Worker is confirming offline payment', { bookingId: id, workerUserId: userId });

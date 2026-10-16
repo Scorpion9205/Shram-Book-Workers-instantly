@@ -5,6 +5,7 @@ import type { IApplicationService } from '../interfaces/IApplicationService.js';
 import { createJobSchema, applyJobSchema } from '../validations/job.validation.js';
 import { BusinessException } from '../../../core/exceptions/index.js';
 
+// HTTP layer for jobs and applications. Validates input, calls the services, formats the response.
 export class JobController extends BaseController {
   constructor(
     private readonly jobService: IJobService,
@@ -24,6 +25,7 @@ export class JobController extends BaseController {
     const user = (req as any).user;
     const { search, category, minSalary, maxSalary, sort } = req.query;
 
+    // Query params arrive as strings; only pass on the ones that were actually provided.
     const result = await this.jobService.getAllJobs(user.userId, {
       ...(typeof search === 'string' && search && { search }),
       ...(typeof category === 'string' && category && { category }),
@@ -50,6 +52,7 @@ export class JobController extends BaseController {
     if (!jobId) {
       throw new BusinessException('INVALID_JOB_ID', 'Invalid job id');
     }
+    // The caller's role decides whether this is a worker or an agent application.
     const dto = await this.validate(applyJobSchema, req.body);
     const application = await this.applicationService.applyForJob(user.userId, jobId, dto, user.role);
     this.created(res, application, 'Applied successfully');
@@ -71,6 +74,7 @@ export class JobController extends BaseController {
     if (!applicationId) {
       throw new BusinessException('INVALID_APPLICATION_ID', 'Invalid application id');
     }
+    // paymentMode is ONLINE or OFFLINE; the service defaults to ONLINE if it's missing.
     const { paymentMode } = req.body;
     const result = await this.applicationService.acceptApplication(user.userId, applicationId, paymentMode);
     this.ok(res, result, 'Application accepted successfully');
