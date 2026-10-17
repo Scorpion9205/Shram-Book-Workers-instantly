@@ -187,6 +187,15 @@ export const bookingApi = apiSlice.injectEndpoints({
       transformResponse: (response: any) =>
         response.data || response,
     }),
+    // After the work is done: a Razorpay payment link (shown as a QR) the provider can pay.
+    createCompletionPayment: builder.mutation<{ linkId: string; url: string; amount: number }, string>({
+      query: (bookingId) => ({
+        url: `/payments/completion-payment`,
+        method: "POST",
+        body: { bookingId },
+      }),
+      transformResponse: (response: any) => response.data || response,
+    }),
     submitReview: builder.mutation<any, { bookingId: string; rating: number; comment?: string }>({
       query: ({ bookingId, rating, comment }) => ({
         url: `/bookings/${bookingId}/review`,
@@ -214,5 +223,6 @@ export const {
   useSettleBookingMutation,
   useSettleOfflineBookingMutation,
   useCreatePaymentOrderMutation,
+  useCreateCompletionPaymentMutation,
   useSubmitReviewMutation,
 } = bookingApi;

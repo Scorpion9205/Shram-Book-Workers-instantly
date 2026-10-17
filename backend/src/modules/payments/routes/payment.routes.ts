@@ -32,6 +32,15 @@ export function createPaymentRouter(controller: PaymentController): Router {
    *       201: { description: Razorpay order created, content: { application/json: { schema: { $ref: '#/components/schemas/SuccessResponse' } } } }
    *       400: { description: Booking not in CREATED status, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
    */
+  // Worker/agent: get a Razorpay Payment Link for a finished job so the provider can pay by
+  // scanning its QR.
+  router.post(
+    '/completion-payment',
+    authenticate,
+    authorize(UserRole.WORKER, UserRole.AGENT),
+    controller.createCompletionPayment,
+  );
+
   router.post(
     '/orders',
     authenticate,

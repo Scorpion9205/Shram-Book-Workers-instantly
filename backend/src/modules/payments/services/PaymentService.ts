@@ -93,6 +93,61 @@ export class PaymentService extends BaseService implements IPaymentService {
     };
   }
 
+  // After the work is finished the worker (or their agent) shows a QR of a Razorpay Payment Link,
+  // and the provider pays by scanning it - like a cab or delivery app. The link is for the exact
+  // booking amount. Asking again while it is still unpaid shows the same link.
+  async createCompletionPayment(bookingId: string, userId: string): Promise<{ linkId: string; url: string; amount: number }> {
+    this.log('Creating completion payment link', { bookingId, userId });
+
+    const booking = await this.bookingRepo.findById(bookingId) as any;
+    if (!booking) {
+      throw new NotFoundException('Booking', bookingId);
+    }
+
+    // Only the worker on the booking, or the agent managing that worker, may ask for the QR.
+    let allowed = booking.worker?.userId === userId;
+    if (!allowed && booking.agentId) {
+      const agent = await this.prisma.client.agentProfile.findUnique({ where: { userId }, select: { id: true } });
+      allowed = agent?.id === booking.agentId;
+    }
+    if (!allowed) {
+      throw new BusinessException('UNAUTHORIZED_WORKER', 'You are not assigned to this booking');
+    }
+
+    if (booking.status !== BookingStatus.WORK_COMPLETED) {
+      throw new BusinessException('INVALID_BOOKING_STATUS', `Payment is available once the work is completed. Current: ${booking.status}`);
+    }
+
+    const amount = Number(booking.amount);
+    const payment = await this.paymentRepo.findByBookingId(bookingId);
+    if (payment && payment.status === PaymentStatus.COMPLETED) {
+      throw new BusinessException('PAYMENT_ALREADY_COMPLETED', 'Payment has already been completed.');
+    }
+
+    // Reuse a link we already made if the provider hasn't paid it yet and it's still open.
+    if (payment?.razorpayOrderId?.startsWith('plink_')) {
+      const existing = await this.paymentProvider.fetchPaymentLink(payment.razorpayOrderId);
+      if (existing.status === 'created') {
+        return { linkId: existing.id, url: existing.url, amount };
+      }
+    }
+
+    const link = await this.paymentProvider.createPaymentLink(amount, bookingId, `SHRAM booking ${bookingId.slice(0, 8).toUpperCase()}`);
+
+    // The link's id is stored in razorpayOrderId (link payments have no order of ours); the
+    // webhook finds the payment by it.
+    if (payment) {
+      await this.prisma.client.payment.update({
+        where: { id: payment.id },
+        data: { razorpayOrderId: link.id, status: PaymentStatus.PENDING },
+      });
+    } else {
+      await this.paymentRepo.create({ bookingId, amount, status: PaymentStatus.PENDING, razorpayOrderId: link.id });
+    }
+
+    return { linkId: link.id, url: link.url, amount };
+  }
+
   // Razorpay tells us a payment succeeded. We trust it only after verifying the signature
   // (computed over the exact raw body), so nobody else can fake a "paid" call.
   async handleWebhook(rawBody: string, payload: any, signature: string): Promise<void> {
@@ -105,6 +160,12 @@ export class PaymentService extends BaseService implements IPaymentService {
     }
 
     const event = payload.event;
+
+    // The provider paid the link (QR) shown after the work was done.
+    if (event === 'payment_link.paid') {
+      await this.settleFromPaymentLink(payload, signature);
+      return;
+    }
     if (event === 'payment.captured' || event === 'order.paid') {
       const entity = payload.payload.payment?.entity || payload.payload.order?.entity;
       const orderId = entity.order_id || entity.id;
@@ -160,6 +221,47 @@ export class PaymentService extends BaseService implements IPaymentService {
         });
         await this.refundForCancelledBooking(payment.bookingId);
       }
+    }
+  }
+
+  // A completion payment link got paid: mark the payment done and settle the booking. The money is now
+  // with the platform (Razorpay), so the booking is treated as an online payment - that is what
+  // makes the worker's wallet get credited the way it does for other online bookings.
+  private async settleFromPaymentLink(payload: any, signature: string): Promise<void> {
+    const linkId = payload.payload?.payment_link?.entity?.id;
+    const paymentEntityId = payload.payload?.payment?.entity?.id;
+    if (!linkId || !paymentEntityId) {
+      this.log('Payment link webhook payload missing link or payment id');
+      return;
+    }
+
+    const payment = await this.paymentRepo.findByOrderId(linkId);
+    if (!payment) {
+      this.log('Payment not found for payment link', { linkId });
+      return;
+    }
+
+    // Same duplicate-delivery guard as for order payments: only the first call proceeds.
+    const affectedCount = await this.paymentRepo.markCompletedIfPending(payment.id, paymentEntityId, signature);
+    if (affectedCount === 0) {
+      this.log('Link payment already processed (duplicate webhook delivery)', { paymentId: payment.id });
+      return;
+    }
+
+    try {
+      // Switch the mode first so the wallet consumer, reacting to the status change below,
+      // sees an online payment.
+      await this.bookingRepo.update(payment.bookingId, { paymentMode: 'ONLINE', finalFare: payment.amount } as any);
+      await this.bookingStateService.transition(payment.bookingId, BookingStatus.PAYMENT_SETTLED, {
+        changedBy: 'RAZORPAY_WEBHOOK',
+        reason: 'Provider paid the completion payment link',
+      });
+      this.log('Link payment completed and booking settled', { bookingId: payment.bookingId });
+    } catch (err) {
+      // E.g. the worker already marked it as cash-received at the same moment. The provider's
+      // money has been captured, so give it back rather than keep a double payment.
+      this.logger.warn('Booking could not be settled after payment-link payment - issuing refund', { bookingId: payment.bookingId, err });
+      await this.refundForCancelledBooking(payment.bookingId);
     }
   }
 

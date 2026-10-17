@@ -28,6 +28,30 @@ export class RazorpayProvider implements IPaymentProvider {
     }
   }
 
+  async createPaymentLink(amount: number, bookingId: string, description: string): Promise<{ id: string; url: string }> {
+    try {
+      const link = await this.razorpay.paymentLink.create({
+        amount: Math.round(amount * 100), // paise
+        currency: 'INR',
+        accept_partial: false,
+        description,
+        notes: { bookingId },
+      });
+      return { id: link.id, url: link.short_url };
+    } catch (err) {
+      throw this.toBusinessError(err, 'create payment link');
+    }
+  }
+
+  async fetchPaymentLink(linkId: string): Promise<{ id: string; url: string; status: string }> {
+    try {
+      const link = await this.razorpay.paymentLink.fetch(linkId);
+      return { id: link.id, url: link.short_url, status: link.status };
+    } catch (err) {
+      throw this.toBusinessError(err, 'fetch payment link');
+    }
+  }
+
   // The Razorpay SDK rejects with a plain object ({ statusCode, error: { code, description } }),
   // not an Error, which our error handler would report as an anonymous 500. Turn it into a
   // readable error and log the reason (typical causes: wrong/mismatched API keys).

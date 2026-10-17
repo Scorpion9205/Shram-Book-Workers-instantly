@@ -16,6 +16,14 @@ export class PaymentController extends BaseController {
     this.created(res, result, 'Payment order created successfully');
   };
 
+  // Worker (or agent) asks for the payment link to show the provider (as a QR) after finishing the work.
+  createCompletionPayment = async (req: Request, res: Response): Promise<void> => {
+    const user = (req as any).user;
+    const dto = await this.validate(CreateOrderSchema, req.body);
+    const result = await this.paymentService.createCompletionPayment(dto.bookingId, user.userId);
+    this.ok(res, result, 'Payment link ready');
+  };
+
   handleWebhook = async (req: Request, res: Response): Promise<void> => {
     const signature = req.headers['x-razorpay-signature'] as string;
     if (!signature) {

@@ -24,6 +24,7 @@ import {
   useSettleOfflineBookingMutation,
 } from "@/features/booking/bookingApi";
 import { useSocket } from "@/providers/SocketProvider";
+import { PaymentQr } from "@/components/cards/PaymentQr";
 import { useBookingLocationBroadcast } from "@/hooks/useBookingLocationBroadcast";
 
 export default function WorkerBookingDetailPage({ params }: { params: Promise<{ bookingId: string }> }) {
@@ -234,25 +235,20 @@ export default function WorkerBookingDetailPage({ params }: { params: Promise<{ 
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Please collect the payment from the provider. Show this UPI QR code for scanning, or collect cash directly.
+              Ask the provider to scan this QR with any UPI app (GPay / PhonePe / Paytm). The booking is
+              settled automatically as soon as the payment goes through.
             </p>
-            <div className="flex flex-col items-center justify-center p-4 bg-white rounded-2xl border border-emerald-100">
-              <img
-                src={`https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=${encodeURIComponent(
-                  `upi://pay?pa=shram@upi&pn=Shram&am=${booking.amount}&tr=${booking.id}&tn=Payment+for+Booking+${booking.id}`
-                )}`}
-                alt="Payment QR Code"
-                className="w-48 h-48"
-              />
-              <p className="text-xs text-muted-foreground mt-2 font-mono">Scan using any UPI App (GPay/PhonePe)</p>
-            </div>
+            <PaymentQr bookingId={bookingId} amount={booking.amount} />
+            <p className="text-center text-xs text-muted-foreground">
+              Paid in cash instead? Use the button below.
+            </p>
             <Button
               className="w-full text-white bg-emerald-600 hover:bg-emerald-700"
               size="lg"
               onClick={handleSettleOffline}
               loading={isSettlingOffline}
             >
-              Received Cash / UPI Payment
+              I received cash
             </Button>
           </CardContent>
         </Card>
