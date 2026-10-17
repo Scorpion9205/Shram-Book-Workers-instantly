@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { motion } from "framer-motion";
-import { Briefcase } from "lucide-react";
+import { Briefcase, CalendarClock, Zap } from "lucide-react";
 import { toast } from "sonner";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -26,6 +26,17 @@ export default function CreateJobPage() {
   const [latitude, setLatitude] = useState<number | undefined>(undefined);
   const [longitude, setLongitude] = useState<number | undefined>(undefined);
 
+  // "now" = as soon as possible; "later" = the provider picks a date and time.
+  const [when, setWhen] = useState<"now" | "later">("now");
+  const [scheduledAt, setScheduledAt] = useState("");
+  const [scheduleError, setScheduleError] = useState("");
+
+  // <input type="datetime-local"> wants "YYYY-MM-DDTHH:mm" in the user's own time zone.
+  function toLocalInputValue(date: Date) {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
   const {
     register,
     handleSubmit,
@@ -41,6 +52,22 @@ export default function CreateJobPage() {
   });
 
   async function onSubmit(values: CreateJobFormValues) {
+    // For a scheduled job, a date and time in the future is required.
+    let scheduledIso: string | undefined;
+    if (when === "later") {
+      const picked = scheduledAt ? new Date(scheduledAt) : null;
+      if (!picked || Number.isNaN(picked.getTime())) {
+        setScheduleError("Please choose a date and time.");
+        return;
+      }
+      if (picked.getTime() <= Date.now()) {
+        setScheduleError("The date and time must be in the future.");
+        return;
+      }
+      scheduledIso = picked.toISOString();
+    }
+    setScheduleError("");
+
     try {
       await createJob({
         title: values.title,
@@ -49,6 +76,7 @@ export default function CreateJobPage() {
         address: values.address,
         salary: values.salary,
         workersRequired: values.workersRequired,
+        scheduledAt: scheduledIso,
         latitude,
         longitude,
       }).unwrap();
@@ -141,6 +169,53 @@ export default function CreateJobPage() {
                   )}
                 />
                 {errors.address && <p className="text-xs text-destructive">{errors.address.message}</p>}
+              </div>
+
+              <div className="space-y-2">
+                <Label>When is the work?</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWhen("now");
+                      setScheduleError("");
+                    }}
+                    className={`flex items-center gap-2 rounded-xl border px-3.5 py-3 text-left text-sm transition-colors ${
+                      when === "now" ? "border-primary bg-primary/10 text-primary" : "border-input bg-card hover:bg-secondary"
+                    }`}
+                  >
+                    <Zap className="size-4" />
+                    <span>
+                      <span className="block font-medium">As soon as possible</span>
+                      <span className="block text-xs text-muted-foreground">Today / right away</span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWhen("later")}
+                    className={`flex items-center gap-2 rounded-xl border px-3.5 py-3 text-left text-sm transition-colors ${
+                      when === "later" ? "border-primary bg-primary/10 text-primary" : "border-input bg-card hover:bg-secondary"
+                    }`}
+                  >
+                    <CalendarClock className="size-4" />
+                    <span>
+                      <span className="block font-medium">Schedule for later</span>
+                      <span className="block text-xs text-muted-foreground">Pick a date and time</span>
+                    </span>
+                  </button>
+                </div>
+                {when === "later" && (
+                  <Input
+                    type="datetime-local"
+                    value={scheduledAt}
+                    min={toLocalInputValue(new Date())}
+                    onChange={(e) => {
+                      setScheduledAt(e.target.value);
+                      setScheduleError("");
+                    }}
+                  />
+                )}
+                {scheduleError && <p className="text-xs text-destructive">{scheduleError}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-4">

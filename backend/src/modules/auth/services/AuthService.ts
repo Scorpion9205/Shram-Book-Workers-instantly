@@ -7,6 +7,8 @@ import type { IPasswordResetRepository } from '../interfaces/IPasswordResetRepos
 import type { IOTPService } from '../interfaces/IOTPService.js';
 import type { ITokenService } from '../interfaces/ITokenService.js';
 import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
+import type { IEventPublisher } from '../../../core/interfaces/IEventPublisher.js';
+import { RoutingKeys } from '../../../infrastructure/queue/queue.constants.js';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { UserRole } from '../../../core/enums/Role.js';
 import { OTPChannel, OTPPurpose } from '../enums/index.js';
@@ -38,7 +40,18 @@ export class AuthService implements IAuthService {
     private readonly smsProvider: ISmsProvider,
     private readonly googleOAuthProvider: IGoogleOAuthProvider,
     private readonly passwordResetRepo: IPasswordResetRepository,
+    private readonly eventPublisher: IEventPublisher,
   ) {}
+
+  // Tells the notification consumer a brand-new account exists so it can send the welcome email.
+  // Never blocks or fails the login: if the broker is down, the user just doesn't get the email.
+  private async announceRegistration(user: User): Promise<void> {
+    try {
+      await this.eventPublisher.publish(RoutingKeys.USER_REGISTERED, { userId: user.id, name: user.name });
+    } catch (err) {
+      console.warn(`[Welcome email] Could not publish registration event for user ${user.id}:`, err);
+    }
+  }
 
   async signup(data: SignupInput): Promise<void> {
     // 1. Check existing phone
@@ -272,6 +285,8 @@ export class AuthService implements IAuthService {
 
         return newUser;
       });
+
+      await this.announceRegistration(user);
     }
 
     // 3. Issue Tokens
@@ -415,6 +430,8 @@ export class AuthService implements IAuthService {
 
         return newUser;
       });
+
+      await this.announceRegistration(user);
     }
 
     const accessToken = this.tokenService.generateAccessToken(user.id, user.role as UserRole);

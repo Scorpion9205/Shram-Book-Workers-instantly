@@ -1,5 +1,7 @@
 "use client";
 
+import { formatScheduledShort } from "@/lib/utils/schedule";
+
 import { useState } from "react";
 import { motion } from "framer-motion";
 import {
@@ -271,6 +273,7 @@ export default function WorkerDashboardPage() {
                       <p className="flex items-center gap-1 text-xs text-muted-foreground">
                         <MapPin className="size-3" /> {job.address}
                       </p>
+                      <p className="text-xs text-muted-foreground">{formatScheduledShort(job.scheduledAt)}</p>
                     </div>
                     <span className="text-sm font-semibold text-primary">₹{job.budget}</span>
                   </Link>

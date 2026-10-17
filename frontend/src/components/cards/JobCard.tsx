@@ -1,5 +1,7 @@
 "use client";
 
+import { formatScheduledShort } from "@/lib/utils/schedule";
+
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { MapPin, IndianRupee, Users, Calendar } from "lucide-react";
@@ -46,7 +48,7 @@ export function JobCard({ job, index = 0, href }: { job: Job; index?: number; hr
             </span>
             <span className="flex items-center gap-1">
               <Calendar className="size-3.5" />
-              {new Date(job.createdAt).toLocaleDateString("en-IN")}
+              {formatScheduledShort(job.scheduledAt)}
             </span>
             <span className="flex items-center gap-1">
               <Users className="size-3.5" />

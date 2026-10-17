@@ -5,10 +5,11 @@ interface BookingConfirmedProps {
   providerName: string;
   bookingShortId: string;
   workerName: string;
+  scheduledFor?: string;
   frontendUrl: string;
 }
 
-export function BookingConfirmed({ providerName, bookingShortId, workerName, frontendUrl }: BookingConfirmedProps) {
+export function BookingConfirmed({ providerName, bookingShortId, workerName, scheduledFor, frontendUrl }: BookingConfirmedProps) {
   return (
     <Layout>
       <Header frontendUrl={frontendUrl} />
@@ -26,6 +27,11 @@ export function BookingConfirmed({ providerName, bookingShortId, workerName, fro
           <Text>
             <strong>Assigned Worker:</strong> {workerName}
           </Text>
+          {scheduledFor && (
+            <Text>
+              <strong>Scheduled for:</strong> {scheduledFor}
+            </Text>
+          )}
           <Text>
             <strong>Booking ID:</strong> <span style={{ fontFamily: "monospace" }}>{bookingShortId}</span>
           </Text>

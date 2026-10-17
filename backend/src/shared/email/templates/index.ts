@@ -7,3 +7,4 @@ export { default as BookingConfirmed } from "./BookingConfirmed.js";
 export { default as WorkCompleted } from "./WorkCompleted.js";
 export { default as PaymentReceipt } from "./PaymentReceipt.js";
 export { default as BookingCancelled } from "./BookingCancelled.js";
+export { default as WorkStarted } from "./WorkStarted.js";

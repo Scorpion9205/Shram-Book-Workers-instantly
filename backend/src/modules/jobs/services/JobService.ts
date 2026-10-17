@@ -50,6 +50,7 @@ export class JobService extends BaseService implements IJobService {
       description: data.description ?? null,
       skillId: data.skillId,
       requiredWorkers: data.requiredWorkers,
+      scheduledAt: data.scheduledAt ?? null,
       budget: data.budget ?? null,
       latitude: data.latitude ?? null,
       longitude: data.longitude ?? null,

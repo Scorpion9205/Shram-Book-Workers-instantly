@@ -83,6 +83,9 @@ export interface Job {
 
   pincode?: string;
 
+  // When the work should happen (ISO date-time). Missing means "as soon as possible".
+  scheduledAt?: string | null;
+
   status: JobStatus;
 
   createdAt: string;
@@ -181,6 +184,9 @@ export interface Booking {
   status: BookingStatus;
 
   createdAt: string;
+
+  // When the work is scheduled for; missing means "as soon as possible".
+  scheduledAt?: string | null;
 
   startedAt?: string;
 

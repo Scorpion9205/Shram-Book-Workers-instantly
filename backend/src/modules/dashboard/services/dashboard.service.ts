@@ -126,6 +126,7 @@ export class DashboardService implements IDashboardService {
           description: b.job!.description ?? undefined,
           budget: b.job!.budget ?? undefined,
           requiredWorkers: b.job!.requiredWorkers,
+          scheduledAt: b.job!.scheduledAt,
           latitude: b.job!.latitude ?? 0,
           longitude: b.job!.longitude ?? 0,
           address: b.job!.address ?? undefined,

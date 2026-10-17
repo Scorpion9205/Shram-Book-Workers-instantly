@@ -1,5 +1,7 @@
 "use client";
 
+import { formatScheduledAt } from "@/lib/utils/schedule";
+
 import { use, useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { ArrowLeft, Phone, MapPin, Star, MessageCircle } from "lucide-react";
@@ -171,6 +173,9 @@ export default function ProviderBookingDetailPage({ params }: { params: Promise<
             <p className="text-muted-foreground">
               {booking.job?.skill?.name}
             </p>
+            {booking.scheduledAt && (
+              <p className="mt-1 text-sm font-medium">Scheduled for: {formatScheduledAt(booking.scheduledAt)}</p>
+            )}
           </div>
 
           <div className="flex items-center justify-between">

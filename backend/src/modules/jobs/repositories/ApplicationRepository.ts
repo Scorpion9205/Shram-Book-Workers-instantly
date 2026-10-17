@@ -143,6 +143,7 @@ export class ApplicationRepository extends BaseRepository<Application> implement
             address: true,
             city: true,
             requiredWorkers: true,
+            scheduledAt: true,
             status: true,
             provider: {
               select: {

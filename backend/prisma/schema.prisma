@@ -298,6 +298,8 @@ model Job {
   pincode         String?
   budget          Decimal?
   requiredWorkers Int
+  // When the work should happen. Empty means "as soon as possible".
+  scheduledAt     DateTime?
   status          JobStatus     @default(OPEN)
   providerId      String
   createdAt       DateTime      @default(now())

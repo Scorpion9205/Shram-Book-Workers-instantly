@@ -18,8 +18,8 @@ import {
   WorkCompleted,
   PaymentReceipt,
   BookingCancelled,
+  WorkStarted,
 } from '../../../shared/email/templates/index.js';
-import { Layout, Header, Card, Footer } from '../../../shared/email/components/index.js';
 
 export class NotificationDispatcher extends BaseService implements INotificationDispatcher {
   constructor(
@@ -76,43 +76,32 @@ export class NotificationDispatcher extends BaseService implements INotification
     channel: NotificationChannel,
     locale: string,
   ): Promise<void> {
-    // Admin-edited DB template is checked FIRST for every channel, including Email — this is
-    // the actual fix (NOTIF-01): previously the hardcoded React components below always won
-    // for Email, so Admin's template editor had zero effect on what actually got sent for any
-    // type with a React component. DB templates now govern Email too; the React components
-    // are a fallback ONLY for types that don't have a DB template configured yet.
-    const template = await this.resolveTemplate(ctx.type, channel, locale);
+    // Emails always use the built-in designed templates (shared/email/templates). They are filled
+    // with real data (names, booking id, amount), so there are no {{placeholders}} to leave
+    // unfilled. The admin-editable DB templates are only used for SMS and push.
+    if (channel === NotificationChannel.EMAIL) {
+      if (!user.email) return;
 
-    if (channel === NotificationChannel.EMAIL && user.email) {
-      if (template) {
-        const interpolatedBody = this.interpolate(template.body, ctx.data);
-        const subject = template.subject
-          ? this.interpolate(template.subject, ctx.data)
-          : this.getEmailSubject(ctx.type, ctx.data);
-        const html = await renderEmail(this.buildDbTemplateComponent(interpolatedBody));
-        await this.emailProvider.send(user.email, subject, html);
-        await this.notificationRepo.create(user.id, subject, html);
+      const component = this.buildEmailComponent(ctx, user);
+      if (!component) {
+        this.log('No built-in email template for this notification type', { type: ctx.type });
         return;
       }
 
       try {
-        const component = this.buildEmailComponent(ctx, user);
-        if (component) {
-          const body = await renderEmail(component);
-          const subject = this.getEmailSubject(ctx.type, ctx.data);
-          await this.emailProvider.send(user.email, subject, body);
-          await this.notificationRepo.create(user.id, subject, body);
-          return;
-        }
+        const body = await renderEmail(component);
+        const subject = this.getEmailSubject(ctx.type, ctx.data);
+        await this.emailProvider.send(user.email, subject, body);
+        await this.notificationRepo.create(user.id, subject, body);
       } catch (error) {
-        this.log('Built-in email template compilation failed', { type: ctx.type, userId: user.id, error });
+        this.log('Email dispatch failed', { type: ctx.type, userId: user.id, error });
         throw error;
       }
-
-      this.log('No template found (DB or built-in)', { type: ctx.type, channel, locale });
       return;
     }
 
+    // SMS and push still read the admin-editable DB template for this type/channel/locale.
+    const template = await this.resolveTemplate(ctx.type, channel, locale);
     if (!template) {
       this.log('No template found', { type: ctx.type, channel, locale });
       return;
@@ -154,26 +143,7 @@ export class NotificationDispatcher extends BaseService implements INotification
     }
   }
 
-  /** Wraps an Admin-edited DB template's plain-text body in the same branded Layout/Header/Card/Footer shell used by the built-in templates, so admin customization never degrades to raw unstyled text. */
-  private buildDbTemplateComponent(body: string): React.ReactElement {
-    const frontendUrl = env.FRONTEND_URL;
-    return React.createElement(
-      Layout,
-      null,
-      React.createElement(Header, { frontendUrl }),
-      React.createElement(
-        Card,
-        null,
-        body
-          .split('\n')
-          .filter(line => line.trim().length > 0)
-          .map((line, i) => React.createElement('p', { key: i, style: { color: '#3f3f46', fontSize: '15px', lineHeight: '24px', margin: '0 0 16px' } }, line)),
-      ),
-      React.createElement(Footer, { frontendUrl }),
-    );
-  }
-
-  /** Built-in React-rendered email templates — used only when Admin hasn't configured a DB template for this (type, channel, locale). */
+  /** Builds the designed email for a notification type from the real data in ctx.data. */
   private buildEmailComponent(ctx: DispatchContext, user: any): React.ReactElement | null {
     const frontendUrl = env.FRONTEND_URL;
 
@@ -193,6 +163,8 @@ export class NotificationDispatcher extends BaseService implements INotification
         return React.createElement(BookingCreated, {
           name: (ctx.data.name as string) || user.name || 'User',
           bookingId: (ctx.data.bookingId as string) || '',
+          workerName: (ctx.data.workerName as string) || '',
+          scheduledFor: (ctx.data.scheduledFor as string) || '',
           frontendUrl,
         });
       case NotificationType.BOOKING_CONFIRMED:
@@ -200,6 +172,14 @@ export class NotificationDispatcher extends BaseService implements INotification
           providerName: (ctx.data.providerName as string) || user.name || 'User',
           bookingShortId: (ctx.data.bookingShortId as string) || (ctx.data.bookingId as string) || '',
           workerName: (ctx.data.workerName as string) || '',
+          scheduledFor: (ctx.data.scheduledFor as string) || '',
+          frontendUrl,
+        });
+      case NotificationType.WORK_STARTED:
+        return React.createElement(WorkStarted, {
+          providerName: (ctx.data.providerName as string) || user.name || 'User',
+          workerName: (ctx.data.workerName as string) || '',
+          bookingShortId: (ctx.data.bookingShortId as string) || (ctx.data.bookingId as string) || '',
           frontendUrl,
         });
       case NotificationType.WORK_COMPLETED:
@@ -277,7 +257,7 @@ export class NotificationDispatcher extends BaseService implements INotification
       [NotificationType.WELCOME]: [NotificationChannel.EMAIL],
       [NotificationType.BOOKING_CREATED]: [NotificationChannel.EMAIL, NotificationChannel.PUSH],
       [NotificationType.BOOKING_CONFIRMED]: [NotificationChannel.EMAIL, NotificationChannel.SMS, NotificationChannel.PUSH],
-      [NotificationType.WORK_STARTED]: [NotificationChannel.PUSH],
+      [NotificationType.WORK_STARTED]: [NotificationChannel.EMAIL, NotificationChannel.PUSH],
       [NotificationType.WORK_COMPLETED]: [NotificationChannel.EMAIL, NotificationChannel.PUSH],
       [NotificationType.PAYMENT_RECEIPT]: [NotificationChannel.EMAIL],
       [NotificationType.BOOKING_CANCELLED]: [NotificationChannel.EMAIL, NotificationChannel.SMS, NotificationChannel.PUSH],

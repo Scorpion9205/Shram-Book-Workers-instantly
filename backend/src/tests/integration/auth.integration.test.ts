@@ -63,7 +63,7 @@ beforeAll(async () => {
   const otpService = new OTPService(otpRepo, cache, emailProvider, smsProvider);
   const tokenService = new TokenService(cache);
   const googleOAuthProvider = new GoogleOAuthProvider(undefined);
-  const authService = new AuthService(authRepo, otpService, tokenService, cache, prismaService, emailProvider, smsProvider, googleOAuthProvider, passwordResetRepo);
+  const authService = new AuthService(authRepo, otpService, tokenService, cache, prismaService, emailProvider, smsProvider, googleOAuthProvider, passwordResetRepo, { publish: async () => {} });
   const authController = new AuthController(authService, cache);
   const authRouter = createAuthRouter(authController);
 

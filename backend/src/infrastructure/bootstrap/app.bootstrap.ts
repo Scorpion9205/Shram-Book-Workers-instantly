@@ -275,7 +275,7 @@ export async function wireModules(
   );
   const tokenService = new TokenService(cacheService);
   const otpService = new OTPService(otpRepo, cacheService, emailProvider, smsProvider);
-  const authService = new AuthService(authRepo, otpService, tokenService, cacheService, prismaService, emailProvider, smsProvider, googleOAuthProvider, passwordResetRepo);
+  const authService = new AuthService(authRepo, otpService, tokenService, cacheService, prismaService, emailProvider, smsProvider, googleOAuthProvider, passwordResetRepo, eventPublisher);
   const skillService = new SkillService(skillRepo);
   const providerService = new ProviderService(providerRepo);
   const dashboardService = new DashboardService(dashboardRepo, cacheService);
@@ -347,7 +347,7 @@ export async function wireModules(
   try {
     const channel = await (rabbitConnection as any).createChannel();
     
-    const notificationConsumer = new NotificationConsumer(channel, notificationDispatcher);
+    const notificationConsumer = new NotificationConsumer(channel, notificationDispatcher, bookingRepo);
     await notificationConsumer.start();
     
     const walletConsumer = new WalletConsumer(channel, walletService, bookingRepo, bookingStateService, platformSettingRepo, cacheService);

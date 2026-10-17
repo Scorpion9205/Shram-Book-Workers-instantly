@@ -1,5 +1,7 @@
 "use client";
 
+import { formatScheduledAt } from "@/lib/utils/schedule";
+
 import { use, useState, useEffect } from "react";
 import { ArrowLeft, Phone, MapPin, MessageCircle } from "lucide-react";
 import Link from "next/link";
@@ -191,6 +193,9 @@ export default function WorkerBookingDetailPage({ params }: { params: Promise<{ 
               <p className="mt-2 text-sm text-muted-foreground">
                 {booking.job?.address || booking.instantRequest?.address}
               </p>
+              {booking.scheduledAt && (
+                <p className="mt-2 text-sm font-medium">Scheduled for: {formatScheduledAt(booking.scheduledAt)}</p>
+              )}
               {booking.job && (
                 <p className="text-xs text-muted-foreground mt-1">
                   {booking.job.city}

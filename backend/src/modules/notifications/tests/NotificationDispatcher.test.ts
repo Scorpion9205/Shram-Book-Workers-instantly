@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NotificationDispatcher } from "../services/NotificationDispatcher.js";
 import { NotificationType, NotificationChannel } from "../enums/NotificationType.js";
-import { Layout } from "../../../shared/email/components/index.js";
 
 const { renderEmailMock } = vi.hoisted(() => ({
   renderEmailMock: vi.fn().mockResolvedValue("<html>built-in template</html>"),
@@ -10,7 +9,7 @@ vi.mock("../../../shared/email/utils/render-email.js", () => ({
   renderEmail: renderEmailMock,
 }));
 
-describe("NotificationDispatcher — NOTIF-01 (DB templates must govern Email, not just SMS/Push)", () => {
+describe("NotificationDispatcher — emails use the built-in templates, DB templates only for SMS/Push", () => {
   let templateRepoMock: any;
   let userRepoMock: any;
   let notificationRepoMock: any;
@@ -43,10 +42,10 @@ describe("NotificationDispatcher — NOTIF-01 (DB templates must govern Email, n
     userRepoMock.findById.mockResolvedValue({ id: "user_1", email: "provider@example.com", name: "Test Provider" });
   });
 
-  it("sends the Admin-edited DB template for Email when one is configured — the actual fix", async () => {
+  it("always sends the built-in email template and ignores any admin DB template for Email", async () => {
     templateRepoMock.findByTypeChannelLocale.mockResolvedValue({
       subject: "Custom subject for {{name}}",
-      body: "Custom admin-edited body for {{name}}",
+      body: "Hi {{name}}, raw admin body with {{placeholders}}",
     });
 
     await dispatcher.dispatch({
@@ -56,22 +55,18 @@ describe("NotificationDispatcher — NOTIF-01 (DB templates must govern Email, n
       data: { name: "Test Provider" },
     });
 
-    // The DB template still wins outright over the built-in WelcomeEmail component — but its
-    // plain text is now wrapped in the same branded Layout/Header/Card/Footer shell so it
-    // never ships as unstyled raw text. renderEmail is called once, with that wrapper (not
-    // the WelcomeEmail component), and the admin's custom subject is preserved verbatim.
+    // The designed component is rendered, the DB template is never even looked up for Email,
+    // and the subject is the built-in one rather than the admin's.
     expect(renderEmailMock).toHaveBeenCalledTimes(1);
-    const renderedElement = renderEmailMock.mock.calls[0]?.[0];
-    expect(renderedElement.type).toBe(Layout);
-
+    expect(templateRepoMock.findByTypeChannelLocale).not.toHaveBeenCalled();
     expect(emailProviderMock.send).toHaveBeenCalledWith(
       "provider@example.com",
-      "Custom subject for Test Provider",
+      "Welcome to SHRAM 🎉",
       "<html>built-in template</html>",
     );
   });
 
-  it("falls back to the built-in React template only when no DB template is configured", async () => {
+  it("renders the built-in template when no DB template exists either", async () => {
     templateRepoMock.findByTypeChannelLocale.mockResolvedValue(null);
 
     await dispatcher.dispatch({

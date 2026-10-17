@@ -1,7 +1,9 @@
 "use client";
 
+import { formatScheduledShort } from "@/lib/utils/schedule";
+
 import Link from "next/link";
-import { Plus, Briefcase, Users, IndianRupee } from "lucide-react";
+import { Plus, Briefcase, Users, IndianRupee, CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -57,6 +59,9 @@ export default function MyJobsPage() {
                     </span>
                     <span className="flex items-center gap-1">
                       <IndianRupee className="size-3" /> {job.budget}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <CalendarClock className="size-3" /> {formatScheduledShort(job.scheduledAt)}
                     </span>
                   </p>
                 </div>

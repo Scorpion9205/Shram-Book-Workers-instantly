@@ -8,6 +8,8 @@ export interface CreateJobPayload {
   address: string;
   salary: number;
   workersRequired: number;
+  // ISO date-time; leave out for "as soon as possible".
+  scheduledAt?: string;
   latitude?: number;
   longitude?: number;
 }
@@ -78,6 +80,7 @@ export const jobsApi = apiSlice.injectEndpoints({
           latitude: body.latitude,
           longitude: body.longitude,
           address: body.address,
+          ...(body.scheduledAt && { scheduledAt: body.scheduledAt }),
         },
       }),
       transformResponse: (response: any) => {

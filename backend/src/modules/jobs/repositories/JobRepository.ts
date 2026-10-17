@@ -66,6 +66,9 @@ export class JobRepository extends BaseRepository<Job> implements IJobRepository
       skillId: filter?.category ? filter.category : { in: skillIds },
     };
 
+    // A scheduled job whose time has already passed is no longer worth showing in the feed.
+    where.AND = [{ OR: [{ scheduledAt: null }, { scheduledAt: { gte: new Date() } }] }];
+
     if (filter?.search) {
       where.title = { contains: filter.search, mode: 'insensitive' };
     }
@@ -91,6 +94,7 @@ export class JobRepository extends BaseRepository<Job> implements IJobRepository
         description: true,
         budget: true,
         requiredWorkers: true,
+        scheduledAt: true,
         latitude: true,
         longitude: true,
         address: true,
@@ -132,6 +136,7 @@ export class JobRepository extends BaseRepository<Job> implements IJobRepository
         title: true,
         budget: true,
         requiredWorkers: true,
+        scheduledAt: true,
         status: true,
         createdAt: true,
         skill: {

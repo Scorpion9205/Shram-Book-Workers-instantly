@@ -46,6 +46,17 @@ export const createJobSchema = z.object({
     .string()
     .max(20, "Pincode must be at most 20 characters")
     .optional(),
+
+  // When the work should happen (ISO date-time). Leave out for "as soon as possible".
+  // A few minutes of leeway so a time picked "now" isn't rejected by a slow request.
+  scheduledAt: z
+    .string()
+    .datetime({ offset: true })
+    .refine((v) => new Date(v).getTime() > Date.now() - 5 * 60 * 1000, {
+      message: "Scheduled time can't be in the past",
+    })
+    .transform((v) => new Date(v))
+    .optional(),
 });
 
 export type CreateJobInput =

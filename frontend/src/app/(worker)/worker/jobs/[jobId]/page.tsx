@@ -1,5 +1,7 @@
 "use client";
 
+import { formatScheduledShort } from "@/lib/utils/schedule";
+
 import { use, useState } from "react";
 import { motion } from "framer-motion";
 import { MapPin, Calendar, Users, IndianRupee, ArrowLeft, CheckCircle2 } from "lucide-react";
@@ -73,7 +75,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ jobId: str
               {[
                 { icon: IndianRupee, label: "Salary", value: `₹${job.budget ?? 0}` },
                 { icon: MapPin, label: "Location", value: job.address, truncate: true },
-                { icon: Calendar, label: "Date", value: new Date(job.createdAt).toLocaleDateString("en-IN") },
+                { icon: Calendar, label: "When", value: formatScheduledShort(job.scheduledAt) },
                 { icon: Users, label: "Workers", value: job.requiredWorkers },
               ].map((item) => (
                 <div key={item.label} className="rounded-2xl bg-secondary p-3 text-center">
