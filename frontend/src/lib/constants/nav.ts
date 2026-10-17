@@ -13,6 +13,7 @@ import {
   Mail,
   BarChart3,
   Wallet,
+  Wrench,
 } from "lucide-react";
 
 export interface NavItem {
@@ -26,6 +27,7 @@ export const workerNavItems: NavItem[] = [
   { label: "Job Feed", href: "/worker/jobs", icon: Briefcase },
   { label: "Applications", href: "/worker/applications", icon: ClipboardList },
   { label: "Bookings", href: "/worker/bookings", icon: CalendarCheck },
+  { label: "Wallet", href: "/worker/wallet", icon: Wallet },
   { label: "Reviews", href: "/worker/reviews", icon: Star },
   { label: "Profile", href: "/worker/profile", icon: User },
   { label: "Settings", href: "/worker/settings", icon: Settings },
@@ -80,6 +82,8 @@ export const adminNavItems: NavItem[] = [
   { label: "Analytics", href: "/admin/analytics", icon: BarChart3 },
   { label: "Users", href: "/admin/users", icon: Users },
   { label: "Bookings", href: "/admin/bookings", icon: CalendarCheck },
+  { label: "Payouts", href: "/admin/payouts", icon: Wallet },
+  { label: "Skill Rates", href: "/admin/skills", icon: Wrench },
   { label: "Settings", href: "/admin/settings", icon: Settings },
   { label: "Templates", href: "/admin/templates", icon: Mail },
   { label: "Profile", href: "/admin/profile", icon: User },

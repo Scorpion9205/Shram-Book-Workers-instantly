@@ -1,4 +1,4 @@
-import { BookingStatus } from '@prisma/client';
+import { BookingStatus, Prisma } from '@prisma/client';
 import type { Booking } from '@prisma/client';
 import { BaseService } from '../../../core/base/BaseService.js';
 import type { IBookingService, CreateBookingRequest } from '../interfaces/IBookingService.js';
@@ -9,6 +9,7 @@ import type { IEventPublisher } from '../../../core/interfaces/IEventPublisher.j
 import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import type { IPaymentService } from '../../payments/interfaces/IPaymentService.js';
 import type { IAgentRepository } from '../../agents/interfaces/IAgentRepository.js';
+import type { IPlatformRatesService } from '../../../shared/pricing/PlatformRatesService.js';
 import type { PaginatedResult } from '../../../core/base/BaseRepository.js';
 import { RoutingKeys } from '../../../infrastructure/queue/queue.constants.js';
 import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
@@ -28,6 +29,7 @@ export class BookingService extends BaseService implements IBookingService {
     private readonly jobRepo: IJobRepository,
     private readonly paymentService: IPaymentService,
     private readonly agentRepo: IAgentRepository,
+    private readonly ratesService: IPlatformRatesService,
   ) {
     super('BookingService');
   }
@@ -80,14 +82,18 @@ export class BookingService extends BaseService implements IBookingService {
       throw new BusinessException('JOB_HAS_NO_BUDGET', 'This job has no budget set and cannot be booked directly');
     }
 
-    // Price comes from the job's budget, not from the request body.
+    // Price comes from the job's budget, not from the request body. The budget is the worker's
+    // work charge; the provider pays that plus the platform fees, and the split is frozen now.
+    const price = await this.ratesService.price(Number(job.budget), !!input.agentId);
     const booking = await this.bookingRepo.create({
       jobId: input.jobId,
       providerId,
       workerId: input.workerId,
       agentId: input.agentId,
-      amount: job.budget,
-      estimatedFare: job.budget,
+      amount: new Prisma.Decimal(price.total),
+      estimatedFare: new Prisma.Decimal(price.total),
+      workAmount: new Prisma.Decimal(price.work),
+      agentAmount: new Prisma.Decimal(price.agent),
       type: input.type,
       address: input.address as any,
     });

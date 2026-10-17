@@ -23,7 +23,6 @@ describe("AgentService", () => {
       findCommissionableBookings: vi.fn(),
       findWorkerEarnings: vi.fn(),
       markWorkerBookingsPaid: vi.fn(),
-      markCommissionCheckedOut: vi.fn(),
     };
     agentWorkerRepoMock = {
       createManagedWorker: vi.fn(),
@@ -61,36 +60,37 @@ describe("AgentService", () => {
       await expect(service.getCommissionSummary("user_1")).rejects.toThrow(NotFoundException);
     });
 
-    it("computes commission per booking using finalFare over amount when present, at the platform-set rate", async () => {
+    it("uses the agent cut frozen on each booking, falling back to the old 3% rule for old bookings", async () => {
       agentRepoMock.findByUserId.mockResolvedValue(agent);
-      platformSettingRepoMock.get.mockResolvedValue({ value: 20 });
+      platformSettingRepoMock.get.mockResolvedValue({ value: 5 });
       agentRepoMock.findCommissionableBookings.mockResolvedValue([
-        { id: "booking_1", amount: 1000, finalFare: 800, completedAt: new Date("2026-01-01"), commissionCheckedOutAt: null },
-        { id: "booking_2", amount: 500, finalFare: null, completedAt: new Date("2026-01-02"), commissionCheckedOutAt: null },
+        // new pricing: the agent cut (24) was frozen when the booking was created
+        { id: "booking_1", amount: 1000, finalFare: 800, workAmount: 700, agentAmount: 24, completedAt: new Date("2026-01-01"), commissionCheckedOutAt: null },
+        // old booking with no stored split: 3% of 500 = 15
+        { id: "booking_2", amount: 500, finalFare: null, workAmount: null, agentAmount: null, completedAt: new Date("2026-01-02"), commissionCheckedOutAt: null },
       ]);
 
       const result = await service.getCommissionSummary("user_1");
 
-      expect(result.commissionPercent).toBe(20);
+      expect(result.commissionPercent).toBe(5); // the setting, for display
       expect(result.bookingCount).toBe(2);
-      // booking_1: finalFare 800 -> commission 160; booking_2: amount 500 -> commission 100
       expect(result.totalGrossBookingValue).toBe(1300);
-      expect(result.totalEarnings).toBe(260);
-      expect(result.recentCommissions).toHaveLength(2);
-      expect(result.recentCommissions[0]).toMatchObject({ bookingId: "booking_1", grossAmount: 800, commission: 160 });
+      expect(result.totalEarnings).toBe(39);
+      expect(result.recentCommissions[0]).toMatchObject({ bookingId: "booking_1", grossAmount: 800, commission: 24 });
+      expect(result.recentCommissions[1]).toMatchObject({ bookingId: "booking_2", commission: 15 });
     });
 
-    it("falls back to the default commission rate when no platform setting exists", async () => {
+    it("shows the default agent rate when no platform setting exists", async () => {
       agentRepoMock.findByUserId.mockResolvedValue(agent);
       platformSettingRepoMock.get.mockResolvedValue(null);
       agentRepoMock.findCommissionableBookings.mockResolvedValue([
-        { id: "booking_1", amount: 1000, finalFare: null, completedAt: null, commissionCheckedOutAt: null },
+        { id: "booking_1", amount: 1000, finalFare: null, workAmount: null, agentAmount: null, completedAt: null, commissionCheckedOutAt: null },
       ]);
 
       const result = await service.getCommissionSummary("user_1");
 
-      expect(result.commissionPercent).toBe(10); // DEFAULT_AGENT_COMMISSION_PERCENT
-      expect(result.totalEarnings).toBe(100);
+      expect(result.commissionPercent).toBe(3); // DEFAULT_AGENT_COMMISSION_PERCENT
+      expect(result.totalEarnings).toBe(30);
     });
 
     it("returns zeroed totals when the agent has no commissionable bookings", async () => {
@@ -115,9 +115,9 @@ describe("AgentService", () => {
       const lastYear = new Date(now.getFullYear() - 1, 0, 1);
 
       agentRepoMock.findCommissionableBookings.mockResolvedValue([
-        { id: "booking_today", amount: 100, finalFare: null, completedAt: earlierToday, commissionCheckedOutAt: null }, // commission 10
-        { id: "booking_this_month", amount: 200, finalFare: null, completedAt: earlierThisMonth, commissionCheckedOutAt: null }, // commission 20
-        { id: "booking_last_year", amount: 300, finalFare: null, completedAt: lastYear, commissionCheckedOutAt: null }, // commission 30
+        { id: "booking_today", amount: 100, finalFare: null, workAmount: 0, agentAmount: 10, completedAt: earlierToday, commissionCheckedOutAt: null }, // commission 10
+        { id: "booking_this_month", amount: 200, finalFare: null, workAmount: 0, agentAmount: 20, completedAt: earlierThisMonth, commissionCheckedOutAt: null }, // commission 20
+        { id: "booking_last_year", amount: 300, finalFare: null, workAmount: 0, agentAmount: 30, completedAt: lastYear, commissionCheckedOutAt: null }, // commission 30
       ]);
 
       const result = await service.getCommissionSummary("user_1");
@@ -133,39 +133,14 @@ describe("AgentService", () => {
       agentRepoMock.findByUserId.mockResolvedValue(agent);
       platformSettingRepoMock.get.mockResolvedValue({ value: 10 });
       agentRepoMock.findCommissionableBookings.mockResolvedValue([
-        { id: "booking_1", amount: 1000, finalFare: null, completedAt: new Date(), commissionCheckedOutAt: new Date() }, // already claimed, commission 100
-        { id: "booking_2", amount: 2000, finalFare: null, completedAt: new Date(), commissionCheckedOutAt: null }, // still pending, commission 200
+        { id: "booking_1", amount: 1000, finalFare: null, workAmount: 0, agentAmount: 100, completedAt: new Date(), commissionCheckedOutAt: new Date() }, // already claimed, commission 100
+        { id: "booking_2", amount: 2000, finalFare: null, workAmount: 0, agentAmount: 200, completedAt: new Date(), commissionCheckedOutAt: null }, // still pending, commission 200
       ]);
 
       const result = await service.getCommissionSummary("user_1");
 
       expect(result.totalEarnings).toBe(300); // lifetime total includes both
       expect(result.pendingCheckoutAmount).toBe(200); // only the unclaimed one
-      expect(result.minimumCheckoutAmount).toBe(2000);
-    });
-  });
-
-  describe("checkoutCommission", () => {
-    it("rejects when pending commission is below the ₹2000 minimum", async () => {
-      agentRepoMock.findCommissionableBookings.mockResolvedValue([
-        { id: "booking_1", amount: 1000, finalFare: null, completedAt: new Date(), commissionCheckedOutAt: null }, // commission 100 @ default 10%
-      ]);
-      platformSettingRepoMock.get.mockResolvedValue({ value: 10 });
-
-      await expect(service.checkoutCommission("user_1")).rejects.toThrow(BusinessException);
-      expect(agentRepoMock.markCommissionCheckedOut).not.toHaveBeenCalled();
-    });
-
-    it("checks out and returns the pending amount once the minimum is met", async () => {
-      agentRepoMock.findCommissionableBookings.mockResolvedValue([
-        { id: "booking_1", amount: 25000, finalFare: null, completedAt: new Date(), commissionCheckedOutAt: null }, // commission 2500 @ default 10%
-      ]);
-      platformSettingRepoMock.get.mockResolvedValue({ value: 10 });
-
-      const result = await service.checkoutCommission("user_1");
-
-      expect(agentRepoMock.markCommissionCheckedOut).toHaveBeenCalledWith("agent_1");
-      expect(result.checkedOutAmount).toBe(2500);
     });
   });
 
@@ -240,14 +215,24 @@ describe("AgentService", () => {
       await expect(service.getWorkerEarnings("user_1", "worker_1")).rejects.toThrow(NotFoundException);
     });
 
-    it("returns the earnings summary from the repository", async () => {
-      const summary = { totalEarned: 1000, totalPaid: 400, totalPending: 600, bookings: [] };
-      agentRepoMock.findWorkerEarnings.mockResolvedValue(summary);
+    it("shows the worker's share (after the 15% platform cut), and what the agent can pay out now", async () => {
+      agentRepoMock.findWorkerEarnings.mockResolvedValue({
+        totalEarned: 0, totalPaid: 0, totalPending: 0, payableNow: 0,
+        bookings: [
+          { id: "b1", amount: 1000, finalFare: null, completedAt: null, payoutPaidAt: new Date(), payoutMethod: "CASH", fundsReleased: true }, // paid: 850
+          { id: "b2", amount: 1000, finalFare: null, completedAt: null, payoutPaidAt: null, payoutMethod: null, fundsReleased: true },       // payable now: 850
+          { id: "b3", amount: 1000, finalFare: null, completedAt: null, payoutPaidAt: null, payoutMethod: null, fundsReleased: false },      // not released yet: 850
+        ],
+      });
 
       const result = await service.getWorkerEarnings("user_1", "worker_1");
 
       expect(agentRepoMock.findWorkerEarnings).toHaveBeenCalledWith("agent_1", "worker_1");
-      expect(result).toBe(summary);
+      expect(result.totalEarned).toBe(2550);
+      expect(result.totalPaid).toBe(850);
+      expect(result.totalPending).toBe(1700);
+      expect(result.payableNow).toBe(850);
+      expect(result.bookings[0].amount).toBe(850);
     });
   });
 

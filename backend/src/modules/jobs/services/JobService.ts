@@ -1,4 +1,6 @@
 import type { Job } from '@prisma/client';
+import type { IPlatformRatesService } from '../../../shared/pricing/PlatformRatesService.js';
+import { allowedBudgetRange } from '../../../shared/pricing/bookingPricing.js';
 import { BaseService } from '../../../core/base/BaseService.js';
 import type { IJobService } from '../interfaces/IJobService.js';
 import type { IJobRepository, JobListFilter } from '../interfaces/IJobRepository.js';
@@ -22,6 +24,7 @@ export class JobService extends BaseService implements IJobService {
     private readonly agentWorkerRepo: IAgentWorkerRepository,
     private readonly cache: ICacheService,
     private readonly prisma: PrismaService,
+    private readonly ratesService: IPlatformRatesService,
   ) {
     super('JobService');
   }
@@ -43,6 +46,18 @@ export class JobService extends BaseService implements IJobService {
 
     if (!skill) {
       throw new NotFoundException('Skill', data.skillId);
+    }
+
+    // The budget is the work charge per worker. Keep it within the admin's limits for this skill so
+    // nobody can post an absurdly low (or typo-high) amount.
+    if (data.budget !== undefined && data.budget !== null) {
+      const range = allowedBudgetRange(Number(skill.baseRate), await this.ratesService.getBidRules());
+      if (data.budget < range.min || data.budget > range.max) {
+        throw new BusinessException(
+          'BUDGET_OUT_OF_RANGE',
+          `Budget per worker for ${skill.name} must be between ₹${range.min} and ₹${range.max}.`,
+        );
+      }
     }
 
     const job = await this.jobRepo.create({

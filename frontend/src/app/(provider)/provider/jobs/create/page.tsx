@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { createJobSchema, type CreateJobFormValues } from "@/lib/utils/job-validation";
 import { useCreateJobMutation } from "@/features/jobs/jobsApi";
 import { useGetSkillsQuery } from "@/features/skills/skillsApi";
+import { useGetPriceLimitsQuery, useGetPriceQuoteQuery } from "@/features/pricing/pricingApi";
 import { AddressSearch } from "@/components/ui/AddressSearch";
 
 export default function CreateJobPage() {
@@ -41,6 +42,7 @@ export default function CreateJobPage() {
     register,
     handleSubmit,
     control,
+    watch,
     formState: { errors },
   } = useForm<CreateJobFormValues>({
     resolver: zodResolver(createJobSchema) as never,
@@ -51,7 +53,30 @@ export default function CreateJobPage() {
     }
   });
 
+  // Allowed budget for the chosen skill, and the total the provider would pay (never a breakdown).
+  const watchedSkill = watch("skillId");
+  const watchedSalary = Number(watch("salary"));
+  const watchedWorkers = Number(watch("workersRequired")) || 1;
+  const { data: limits } = useGetPriceLimitsQuery({ skillId: watchedSkill }, { skip: !watchedSkill });
+
+  const [debouncedSalary, setDebouncedSalary] = useState(0);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSalary(Number.isFinite(watchedSalary) ? watchedSalary : 0), 400);
+    return () => clearTimeout(timer);
+  }, [watchedSalary]);
+
+  const budgetInRange = !!limits && watchedSalary >= limits.budget.min && watchedSalary <= limits.budget.max;
+  const { data: quote } = useGetPriceQuoteQuery(
+    { amount: debouncedSalary },
+    { skip: !limits || !(debouncedSalary >= limits.budget.min && debouncedSalary <= limits.budget.max) },
+  );
+
   async function onSubmit(values: CreateJobFormValues) {
+    if (limits && (values.salary < limits.budget.min || values.salary > limits.budget.max)) {
+      toast.error(`Budget per worker for ${limits.skillName} must be between ₹${limits.budget.min} and ₹${limits.budget.max}.`);
+      return;
+    }
+
     // For a scheduled job, a date and time in the future is required.
     let scheduledIso: string | undefined;
     if (when === "later") {
@@ -220,9 +245,24 @@ export default function CreateJobPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="salary">Budget (₹)</Label>
+                  <Label htmlFor="salary">Budget per worker (₹)</Label>
                   <Input id="salary" type="number" placeholder="800" {...register("salary")} />
                   {errors.salary && <p className="text-xs text-destructive">{errors.salary.message}</p>}
+                  {limits && (
+                    <p className="text-xs text-muted-foreground">
+                      Allowed for {limits.skillName}: ₹{limits.budget.min} – ₹{limits.budget.max} (usually ₹{limits.baseRate}).
+                    </p>
+                  )}
+                  {limits && watchedSalary > 0 && !budgetInRange && (
+                    <p className="text-xs text-destructive">
+                      Budget must be between ₹{limits.budget.min} and ₹{limits.budget.max}.
+                    </p>
+                  )}
+                  {quote && budgetInRange && (
+                    <p className="text-sm font-semibold text-foreground">
+                      You will pay in total: ₹{Math.round(quote.total * watchedWorkers * 100) / 100}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="workersRequired">Workers</Label>

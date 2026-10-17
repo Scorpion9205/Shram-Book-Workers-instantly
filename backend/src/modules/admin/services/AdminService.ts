@@ -14,6 +14,7 @@ import type { IAdminRepository } from '../interfaces/IAdminRepository.js';
 import { CacheKeys } from '../../../infrastructure/cache/cacheKeys.js';
 import type { PaginatedResult } from '../../../core/base/BaseRepository.js';
 import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
+import type { SkillRateRow } from '../interfaces/IAdminRepository.js';
 import { VALID_TRANSITIONS } from '../../bookings/constants/booking-transitions.constants.js';
 import { UserRole } from '../../../core/enums/Role.js';
 import { env } from '../../../config/env.js';
@@ -22,8 +23,16 @@ import { parseDurationToSeconds } from '../../../shared/utils/duration.util.js';
 // Settings that must be validated before saving. A silly value (say a commission of 150%)
 // would make fare calculation go negative for everyone, so these keys are range-checked.
 // Any key not listed here is saved as-is.
-const PERCENT_SETTING_KEYS = new Set(['commissionPercent', 'agentCommissionPercent']);
+const PERCENT_SETTING_KEYS = new Set(['serviceChargePercent', 'agentCommissionPercent']);
+// Bid and budget limits are percentages too, but may go above 100 (a bid up to 110% of budget).
+const LIMIT_PERCENT_SETTING_KEYS = new Set([
+  'bidMinPercent',
+  'bidMaxPercent',
+  'budgetMinPercentOfBase',
+  'budgetMaxPercentOfBase',
+]);
 const POSITIVE_NUMBER_SETTING_KEYS = new Set([
+  'platformFixedFee',
   'distanceRatePerKm',
   'weatherMultiplier',
   'surgeMultiplier',
@@ -37,6 +46,14 @@ function validatePlatformSettingValue(key: string, value: unknown): void {
   if (PERCENT_SETTING_KEYS.has(key)) {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 100) {
       throw new BusinessException('INVALID_SETTING_VALUE', `"${key}" must be a number between 0 and 100`);
+    }
+    return;
+  }
+
+  // Bid/budget limits: a positive number up to 1000%.
+  if (LIMIT_PERCENT_SETTING_KEYS.has(key)) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || value > 1000) {
+      throw new BusinessException('INVALID_SETTING_VALUE', `"${key}" must be a number above 0 and at most 1000`);
     }
     return;
   }
@@ -276,6 +293,21 @@ export class AdminService extends BaseService implements IAdminService {
   }
 
   // Per-skill minimum/maximum fare limits.
+  // Admin's base rate per skill: the market price that provider budgets and worker bids are
+  // checked against.
+  async getSkillRates(): Promise<SkillRateRow[]> {
+    return await this.adminRepo.listSkillRates();
+  }
+
+  async updateSkillBaseRate(skillId: string, baseRate: number): Promise<SkillRateRow> {
+    this.log('Updating skill base rate', { skillId, baseRate });
+    const updated = await this.adminRepo.updateSkillBaseRate(skillId, baseRate);
+    if (!updated) {
+      throw new NotFoundException('Skill', skillId);
+    }
+    return updated;
+  }
+
   async getAllPricingRules(): Promise<PricingRuleWithSkill[]> {
     this.log('Fetching all pricing rules');
     return await this.pricingRuleRepo.findAll();

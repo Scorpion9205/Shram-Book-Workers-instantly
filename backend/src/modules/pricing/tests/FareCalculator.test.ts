@@ -45,9 +45,9 @@ describe("FareCalculator", () => {
   });
 
   it("passes the raw total through unchanged when no PricingRule exists for the skill", async () => {
-    // No commission setting either -> defaults to 15%, so 200 * 0.85 = 170
+    // No fee settings either -> defaults (₹10 flat + 10% service charge): 200 + 10 + 20 = 230
     const result = await calculator.calculate(context);
-    expect(result.estimatedFare).toBe(170);
+    expect(result.estimatedFare).toBe(230);
   });
 
   it("clamps the fare up to minFare when the calculated amount is below the floor", async () => {
@@ -55,8 +55,8 @@ describe("FareCalculator", () => {
 
     const result = await calculator.calculate(context);
 
-    // Clamped to 500 before commission: 500 * 0.85 = 425
-    expect(result.estimatedFare).toBe(425);
+    // Clamped to 500 before the fees: 500 + 10 + 50 = 560
+    expect(result.estimatedFare).toBe(560);
   });
 
   it("clamps the fare down to maxFare when the calculated amount exceeds the ceiling", async () => {
@@ -65,8 +65,8 @@ describe("FareCalculator", () => {
 
     const result = await calculator.calculate(context);
 
-    // Clamped to 300 before commission: 300 * 0.85 = 255
-    expect(result.estimatedFare).toBe(255);
+    // Clamped to 300 before the fees: 300 + 10 + 30 = 340
+    expect(result.estimatedFare).toBe(340);
   });
 
   it("isolates a failing optional strategy to a zero contribution instead of failing the whole calculation", async () => {
@@ -74,7 +74,7 @@ describe("FareCalculator", () => {
 
     const result = await calculator.calculate(context);
 
-    expect(result.estimatedFare).toBe(170); // same as the no-op baseline
+    expect(result.estimatedFare).toBe(230); // same as the no-op baseline
   });
 
   it("throws BusinessException when the base strategy itself fails", async () => {

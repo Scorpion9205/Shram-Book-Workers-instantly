@@ -187,19 +187,19 @@ describe("AdminService", () => {
   });
 
   describe("updatePlatformSetting", () => {
-    it("rejects a commissionPercent above 100, which would make FareCalculator's factor negative", async () => {
-      await expect(service.updatePlatformSetting("commissionPercent", 150)).rejects.toThrow(BusinessException);
+    it("rejects a serviceChargePercent above 100, which would make FareCalculator's factor negative", async () => {
+      await expect(service.updatePlatformSetting("serviceChargePercent", 150)).rejects.toThrow(BusinessException);
       expect(settingRepoMock.set).not.toHaveBeenCalled();
     });
 
-    it("rejects a non-numeric commissionPercent", async () => {
-      await expect(service.updatePlatformSetting("commissionPercent", "ten")).rejects.toThrow(BusinessException);
+    it("rejects a non-numeric serviceChargePercent", async () => {
+      await expect(service.updatePlatformSetting("serviceChargePercent", "ten")).rejects.toThrow(BusinessException);
     });
 
-    it("accepts a valid commissionPercent and busts the cache", async () => {
-      settingRepoMock.set.mockResolvedValue({ key: "commissionPercent", value: 12 });
-      await service.updatePlatformSetting("commissionPercent", 12);
-      expect(settingRepoMock.set).toHaveBeenCalledWith("commissionPercent", 12);
+    it("accepts a valid serviceChargePercent and busts the cache", async () => {
+      settingRepoMock.set.mockResolvedValue({ key: "serviceChargePercent", value: 12 });
+      await service.updatePlatformSetting("serviceChargePercent", 12);
+      expect(settingRepoMock.set).toHaveBeenCalledWith("serviceChargePercent", 12);
       expect(cacheMock.del).toHaveBeenCalled();
     });
 

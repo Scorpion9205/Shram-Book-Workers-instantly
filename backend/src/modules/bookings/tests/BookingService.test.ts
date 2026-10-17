@@ -1,3 +1,5 @@
+import { Prisma } from "@prisma/client";
+import { fakeRatesService } from "../../../tests/factories/fakeRatesService.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { BookingService } from "../services/BookingService.js";
 import { BusinessException, NotFoundException } from "../../../core/exceptions/index.js";
@@ -24,20 +26,26 @@ describe("BookingService", () => {
     paymentServiceMock = { refundForCancelledBooking: vi.fn() };
     agentRepoMock = { findByUserId: vi.fn() };
 
-    service = new BookingService(bookingRepoMock, stateServiceMock, eventPublisherMock, cacheMock, jobRepoMock, paymentServiceMock, agentRepoMock);
+    service = new BookingService(bookingRepoMock, stateServiceMock, eventPublisherMock, cacheMock, jobRepoMock, paymentServiceMock, agentRepoMock, fakeRatesService());
   });
 
   describe("createBooking", () => {
     const job = { id: "job_1", providerId: "provider_1", budget: 750, status: "OPEN" };
 
-    it("derives amount/estimatedFare from the job's own budget, never a client-supplied value", async () => {
+    it("prices the job budget as the worker's work charge, plus the flat fee and 10% service charge", async () => {
       jobRepoMock.findById.mockResolvedValue(job);
       bookingRepoMock.create.mockResolvedValue({ id: "booking_new" });
 
       await service.createBooking("provider_1", { jobId: "job_1", type: "NORMAL_JOB" });
 
       expect(bookingRepoMock.create).toHaveBeenCalledWith(
-        expect.objectContaining({ providerId: "provider_1", amount: 750, estimatedFare: 750 }),
+        expect.objectContaining({
+          providerId: "provider_1",
+          amount: new Prisma.Decimal(835),
+          estimatedFare: new Prisma.Decimal(835),
+          workAmount: new Prisma.Decimal(750),
+          agentAmount: new Prisma.Decimal(0),
+        }),
       );
     });
 

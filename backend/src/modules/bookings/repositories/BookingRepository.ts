@@ -161,6 +161,8 @@ export class BookingRepository extends BaseRepository<Booking> implements IBooki
           agentId: data.agentId ?? null,
           amount: data.amount,
           estimatedFare: data.estimatedFare,
+          workAmount: data.workAmount ?? null,
+          agentAmount: data.agentAmount ?? null,
           status: data.status || (data.workerId ? BookingStatus.WORKER_ASSIGNED : BookingStatus.CREATED),
           type: data.type as any,
           address: data.address ?? Prisma.DbNull,

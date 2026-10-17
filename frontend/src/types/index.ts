@@ -119,6 +119,9 @@ export interface JobApplication {
 
   bidAmount?: number;
 
+  // What the provider would pay in total for this bid (only the provider's own view has it).
+  totalAmount?: number;
+
   workerCount?: number;
 
   status: ApplicationStatus;
@@ -388,7 +391,6 @@ export interface AgentCommissionSummary {
   todayEarnings: number;
   monthEarnings: number;
   pendingCheckoutAmount: number;
-  minimumCheckoutAmount: number;
   recentCommissions: AgentCommission[];
 }
 

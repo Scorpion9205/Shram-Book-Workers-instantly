@@ -48,7 +48,7 @@ export default function TermsOfServicePage() {
             <ul className="mt-2 list-disc space-y-1.5 pl-5">
               <li>Fares shown to a Provider are calculated by SHRAM based on factors including base skill rate, distance, demand, and admin-configured platform rules. The final fare is determined by the platform, not negotiated directly outside it (except where Instant Bidding is explicitly used).</li>
               <li>Online payments are processed through Razorpay. A work-start OTP is used to confirm the Worker has arrived before work begins; the Provider shares this code with the Worker in person.</li>
-              <li>Platform commission is deducted from the amount paid before it is credited to the Worker's in-app wallet, at the rate configured by SHRAM at the time of the booking.</li>
+              <li>The Provider pays the Worker's work charge plus a platform fee set by SHRAM at the time of the booking. The Worker receives the full work charge in their in-app wallet; for cash bookings, SHRAM's platform fee is deducted from the Worker's wallet.</li>
               <li>Cancellations are governed by the booking status at the time of cancellation; a Provider may cancel an open, unaccepted Instant Request at any time before a Worker accepts it.</li>
             </ul>
           </section>

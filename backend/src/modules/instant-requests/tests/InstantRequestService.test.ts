@@ -1,3 +1,4 @@
+import { fakeRatesService } from "../../../tests/factories/fakeRatesService.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { InstantRequestService } from "../services/instant-request.service.js";
 import { NotFoundException, BusinessException, BadRequestException } from "../../../core/exceptions/index.js";
@@ -79,6 +80,7 @@ describe("InstantRequestService", () => {
       matchingServiceMock,
       historyRepoMock,
       eventPublisherMock,
+      fakeRatesService(),
     );
   });
 
@@ -102,11 +104,13 @@ describe("InstantRequestService", () => {
   });
 
   describe("submitBid", () => {
-    it("emits the bid with real worker rating/experience/totalJobs, not hardcoded mock values", async () => {
+    // The skill base rate is 500, so a bid may be 400 (80%) to 550 (110%) of it.
+    beforeEach(() => {
       requestRepoMock.findWorkerWithSkillsAndUser.mockResolvedValue({
         id: "worker_1",
         isAvailable: true,
         user: { isActive: true },
+        skills: [{ skillId: "skill_1" }],
       });
       requestRepoMock.findRequestById.mockResolvedValue({
         id: "req_1",
@@ -115,41 +119,44 @@ describe("InstantRequestService", () => {
         status: "OPEN",
         amount: 1000,
         expiresAt: new Date(Date.now() + 60_000),
+      });
+      requestRepoMock.findRequestWithItemsAndProvider = vi.fn().mockResolvedValue({
+        id: "req_1",
+        items: [{ skillId: "skill_1", skill: { baseRate: 500 } }],
       });
       requestRepoMock.upsertBid.mockResolvedValue({
         id: "bid_1",
         instantRequestId: "req_1",
-        bidAmount: 900,
-        worker: {
-          user: { name: "Test Worker" },
-          rating: 3.7,
-          experience: 5,
-          totalJobs: 42,
-        },
+        bidAmount: 450,
+        worker: { user: { name: "Test Worker" }, rating: 3.7, experience: 5, totalJobs: 42 },
       });
-
-      const bid = await service.submitBid("worker_user_1", "req_1", 900);
-
-      expect(bid.id).toBe("bid_1");
-      expect(requestRepoMock.upsertBid).toHaveBeenCalledWith("req_1", "worker_1", 900, prismaMock);
     });
 
-    it("rejects a bid outside the 20% discount band", async () => {
-      requestRepoMock.findWorkerWithSkillsAndUser.mockResolvedValue({
-        id: "worker_1",
-        isAvailable: true,
-        user: { isActive: true },
-      });
-      requestRepoMock.findRequestById.mockResolvedValue({
-        id: "req_1",
-        providerId: "provider_1",
-        bookingMode: "BIDDING",
-        status: "OPEN",
-        amount: 1000,
-        expiresAt: new Date(Date.now() + 60_000),
-      });
+    it("accepts a bid inside the allowed band", async () => {
+      const bid = await service.submitBid("worker_user_1", "req_1", 450);
 
-      await expect(service.submitBid("worker_user_1", "req_1", 700)).rejects.toThrow(BadRequestException);
+      expect(bid.id).toBe("bid_1");
+      expect(requestRepoMock.upsertBid).toHaveBeenCalledWith("req_1", "worker_1", 450, prismaMock);
+    });
+
+    it("lets a worker bid up to 10% above the base rate when the job needs more", async () => {
+      await expect(service.submitBid("worker_user_1", "req_1", 550)).resolves.toBeDefined();
+    });
+
+    it("rejects a bid more than 20% below the base rate", async () => {
+      await expect(service.submitBid("worker_user_1", "req_1", 350)).rejects.toThrow(BadRequestException);
+    });
+
+    it("rejects a bid more than 10% above the base rate", async () => {
+      await expect(service.submitBid("worker_user_1", "req_1", 600)).rejects.toThrow(BadRequestException);
+      expect(requestRepoMock.upsertBid).not.toHaveBeenCalled();
+    });
+
+    it("rejects a worker who has none of the skills the request needs", async () => {
+      requestRepoMock.findWorkerWithSkillsAndUser.mockResolvedValue({
+        id: "worker_1", isAvailable: true, user: { isActive: true }, skills: [{ skillId: "other_skill" }],
+      });
+      await expect(service.submitBid("worker_user_1", "req_1", 450)).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -181,6 +188,7 @@ describe("InstantRequestService", () => {
         acceptedWorkers: 0,
         requiredWorkers: 1,
         request: { id: "req_1", bookingMode: "DIRECT", status: "OPEN", providerId: "provider_1", amount: 500 },
+        skill: { baseRate: 400 },
       });
       requestRepoMock.findResponseByItemAndWorker.mockResolvedValue(null);
       requestRepoMock.createResponse.mockResolvedValue({ id: "response_1" });
@@ -197,6 +205,11 @@ describe("InstantRequestService", () => {
       const result = await service.acceptRequest("worker_user_1", "item_1");
 
       expect(result.bookingId).toBe("booking_1");
+      // The booking carries this worker's own price (skill rate 400 + ₹10 fee + 10% = 450), not the whole request's.
+      expect(requestRepoMock.createBooking).toHaveBeenCalledWith(
+        expect.objectContaining({ amount: 450, workAmount: 400, agentAmount: 0 }),
+        prismaMock,
+      );
       expect(requestRepoMock.markWorkerUnavailableIfAvailable).toHaveBeenCalledWith("worker_1", prismaMock);
       expect(requestRepoMock.markItemFilled).toHaveBeenCalledWith("item_1", prismaMock);
       expect(requestRepoMock.markRequestFilled).toHaveBeenCalledWith("req_1", prismaMock);
@@ -227,6 +240,7 @@ describe("InstantRequestService", () => {
         acceptedWorkers: 0,
         requiredWorkers: 1,
         request: { id: "req_1", bookingMode: "DIRECT", status: "OPEN", providerId: "provider_1", amount: 500 },
+        skill: { baseRate: 400 },
       });
       requestRepoMock.findResponseByItemAndWorker.mockResolvedValue(null);
       requestRepoMock.createResponse.mockResolvedValue({ id: "response_1" });
@@ -319,13 +333,17 @@ describe("InstantRequestService", () => {
       expect(requestRepoMock.findOpenNearbyRequestsForSkills).not.toHaveBeenCalled();
     });
 
-    it("delegates straight to the repository — no location/radius filter, unlike a Worker's own nearby view", async () => {
-      requestRepoMock.findOpenNearbyRequestsForSkills.mockResolvedValue([{ id: "req_1" }]);
+    it("queries by skill with no location/radius filter, and shows the worker pay (skill rate), not the provider total", async () => {
+      requestRepoMock.findOpenNearbyRequestsForSkills.mockResolvedValue([
+        { id: "req_1", amount: 1110, items: [{ id: "item_1", skill: { id: "skill_1", name: "Plumber", baseRate: 500 } }] },
+      ]);
 
       const result = await service.getOpenRequestsForSkills(["skill_1", "skill_2"]);
 
       expect(requestRepoMock.findOpenNearbyRequestsForSkills).toHaveBeenCalledWith(["skill_1", "skill_2"]);
-      expect(result).toEqual([{ id: "req_1" }]);
+      expect(result).toEqual([
+        { id: "req_1", amount: 500, items: [{ id: "item_1", skill: { id: "skill_1", name: "Plumber" } }] },
+      ]);
     });
   });
 
@@ -337,6 +355,7 @@ describe("InstantRequestService", () => {
       acceptedWorkers: 0,
       requiredWorkers: 1,
       request: { id: "req_1", bookingMode: "DIRECT", status: "OPEN", providerId: "provider_1", amount: 500 },
+      skill: { baseRate: 400 },
     };
 
     it("rejects when the roster worker doesn't have the item's required skill", async () => {
@@ -368,7 +387,8 @@ describe("InstantRequestService", () => {
 
       expect(result.bookingId).toBe("booking_1");
       expect(requestRepoMock.createBooking).toHaveBeenCalledWith(
-        expect.objectContaining({ workerId: "worker_1", agentId: "agent_1" }),
+        // The agent's 3% (12 of the 400 work charge) comes out of the platform side; the worker keeps all 400.
+        expect.objectContaining({ workerId: "worker_1", agentId: "agent_1", amount: 450, workAmount: 400, agentAmount: 12 }),
         prismaMock,
       );
       expect(requestRepoMock.markWorkerUnavailableIfAvailable).toHaveBeenCalledWith("worker_1", prismaMock);

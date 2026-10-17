@@ -59,7 +59,7 @@ export class InstantRequestController extends BaseController {
   calculateFare = async (req: Request, res: Response): Promise<void> => {
     const data = this.validate(calculateFareSchema, req.body);
 
-    const fare = await FareService.calculateInstantFare(data.items);
+    const fare = await this.instantRequestService.quoteFare(data.items);
 
     const quoteId = randomUUID();
     const ttlSeconds = 300; // 5 mins
@@ -72,9 +72,8 @@ export class InstantRequestController extends BaseController {
     this.ok(
       res,
       {
+        // Only the total is shown to the provider; the fee split is never exposed.
         estimatedFare: fare.total,
-        subtotal: fare.subtotal,
-        platformFee: fare.platformFee,
         quoteId,
       },
       "Fare calculated successfully",

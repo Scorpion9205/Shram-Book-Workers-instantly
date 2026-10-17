@@ -27,6 +27,8 @@ export const apiSlice = createApi({
     "Location",
     "Notification",
     "Chat",
+    "Wallet",
+    "Payout",
   ],
   endpoints: () => ({}),
 });

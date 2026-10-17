@@ -68,11 +68,6 @@ export const agentApi = apiSlice.injectEndpoints({
       transformResponse: (response: AgentDataResponse<AgentCommissionSummary>) => response.data,
       providesTags: ["AgentBooking"],
     }),
-    checkoutCommission: builder.mutation<{ checkedOutAmount: number }, void>({
-      query: () => ({ url: "/agents/commissions/checkout", method: "POST" }),
-      transformResponse: (response: AgentDataResponse<{ checkedOutAmount: number }>) => response.data,
-      invalidatesTags: ["AgentBooking"],
-    }),
     assignWorkerToApplication: builder.mutation<
       { success: boolean; bookingId?: string },
       { applicationId: string; workerId: string }
@@ -113,7 +108,6 @@ export const {
   useGetAgentApplicationsQuery,
   useGetAgentBookingsQuery,
   useGetAgentCommissionsQuery,
-  useCheckoutCommissionMutation,
   useAssignWorkerToApplicationMutation,
   useGetOpenInstantRequestsQuery,
   useAssignWorkerToInstantItemMutation,

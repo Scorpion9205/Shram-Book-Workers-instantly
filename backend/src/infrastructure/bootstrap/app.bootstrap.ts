@@ -16,6 +16,8 @@ import { ReviewRepository, ReviewService, ReviewController, createReviewRouter }
 import { AgentRepository, AgentWorkerRepository, AgentService, AgentController, createAgentRouter } from '../../modules/agents/index.js';
 import { PaymentRepository, RazorpayProvider, PaymentService, PaymentController, createPaymentRouter } from '../../modules/payments/index.js';
 import { WalletRepository, TransactionRepository, WalletService, WalletController, createWalletRouter } from '../../modules/wallet/index.js';
+import { PlatformRatesService } from '../../shared/pricing/PlatformRatesService.js';
+import { PayoutRepository, PayoutService, PayoutController, createPayoutRouter } from '../../modules/payouts/index.js';
 import { AdminService, AdminController, AdminRepository, createAdminRouter } from '../../modules/admin/index.js';
 import { BookingRepository, BookingStatusHistoryRepository, BookingStateService, BookingService, BookingController, createBookingRouter } from '../../modules/bookings/index.js';
 import { PlatformSettingRepository } from '../../modules/platform-settings/index.js';
@@ -97,6 +99,7 @@ export interface AppDependencies {
   agentRouter: Router;
   paymentRouter: Router;
   walletRouter: Router;
+  payoutRouter: Router;
   adminRouter: Router;
   notificationRouter: Router;
   bookingRouter: Router;
@@ -182,6 +185,7 @@ export async function wireModules(
   const userService = new UserService(userRepo, cacheService, s3Provider);
   const workerService = new WorkerService(workerRepo, cacheService);
   const locationService = new LocationService(locationRepo, cacheService);
+  const ratesService = new PlatformRatesService(platformSettingRepo, cacheService);
   const jobService = new JobService(
     jobRepo,
     workerRepo,
@@ -189,6 +193,7 @@ export async function wireModules(
     agentWorkerRepo,
     cacheService,
     prismaService,
+    ratesService,
   );
   const applicationService = new ApplicationService(
     applicationRepo,
@@ -199,6 +204,7 @@ export async function wireModules(
     prismaService,
     eventPublisher,
     bookingHistoryRepo,
+    ratesService,
   );
   const reviewService = new ReviewService(
     reviewRepo,
@@ -224,6 +230,7 @@ export async function wireModules(
     instantMatchingService,
     bookingHistoryRepo,
     eventPublisher,
+    ratesService,
   );
   const agentService = new AgentService(
     agentRepo,
@@ -272,6 +279,7 @@ export async function wireModules(
     jobRepo,
     paymentService,
     agentRepo,
+    ratesService,
   );
   const tokenService = new TokenService(cacheService);
   const otpService = new OTPService(otpRepo, cacheService, emailProvider, smsProvider);
@@ -307,6 +315,9 @@ export async function wireModules(
   const agentController = new AgentController(agentService);
   const paymentController = new PaymentController(paymentService);
   const walletController = new WalletController(walletService);
+  const payoutRepo = new PayoutRepository(prismaService);
+  const payoutService = new PayoutService(payoutRepo, agentRepo, ratesService);
+  const payoutController = new PayoutController(payoutService);
   const adminController = new AdminController(adminService);
   const notificationController = new NotificationController(notificationRepo);
   const bookingController = new BookingController(bookingService, reviewService, cacheService);
@@ -319,7 +330,7 @@ export async function wireModules(
   const chatController = new ChatController(chatService);
   const categoryController = new CategoryController(categoryService);
   const supportController = new SupportController(supportService);
-  const pricingController = new PricingController(fareCalculator);
+  const pricingController = new PricingController(fareCalculator, ratesService, pricingSkillRepo);
 
   // 6. Routers
   const userRouter = createUserRouter(userController);
@@ -329,6 +340,7 @@ export async function wireModules(
   const agentRouter = createAgentRouter(agentController);
   const paymentRouter = createPaymentRouter(paymentController);
   const walletRouter = createWalletRouter(walletController);
+  const payoutRouter = createPayoutRouter(payoutController);
   const adminRouter = createAdminRouter(adminController);
   const notificationRouter = createNotificationRouter(notificationController);
   const bookingRouter = createBookingRouter(bookingController);
@@ -350,7 +362,7 @@ export async function wireModules(
     const notificationConsumer = new NotificationConsumer(channel, notificationDispatcher, bookingRepo);
     await notificationConsumer.start();
     
-    const walletConsumer = new WalletConsumer(channel, walletService, bookingRepo, bookingStateService, platformSettingRepo, cacheService);
+    const walletConsumer = new WalletConsumer(channel, walletService, bookingRepo, bookingStateService);
     await walletConsumer.start();
     
     const cleanupConsumer = new CleanupConsumer(channel, prismaService);
@@ -377,6 +389,7 @@ export async function wireModules(
     agentRouter,
     paymentRouter,
     walletRouter,
+    payoutRouter,
     adminRouter,
     notificationRouter,
     bookingRouter,

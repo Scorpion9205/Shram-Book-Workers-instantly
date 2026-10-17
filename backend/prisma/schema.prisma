@@ -126,32 +126,33 @@ enum SupportTicketPriority {
 }
 
 model User {
-  id                 String           @id @default(uuid())
-  name               String
-  phone              String?          @unique
-  email              String?          @unique
-  passwordHash       String?          // Optional: only for ADMIN / AGENT passwords
-  googleId           String?          @unique
-  role               UserRole
-  isVerified         Boolean          @default(false)
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
-  address            String?
-  isActive           Boolean          @default(true)
-  profileImage       String?
-  city               String?
-  pincode            String?
-  state              String?
-  deletedAt          DateTime?        // Soft delete support
-  agentProfile       AgentProfile?
-  bookingsAsProvider Booking[]        @relation("ProviderBookings")
-  instantRequests    InstantRequest[]
-  jobsPosted         Job[]            @relation("ProviderJobs")
-  notifications      Notification[]
-  providerProfile    ProviderProfile?
-  providerReviews    Review[]         @relation("ProviderReviews")
-  workerProfile      WorkerProfile?
-  supportTickets     SupportTicket[]
+  payoutRequests      PayoutRequest[]
+  id                  String               @id @default(uuid())
+  name                String
+  phone               String?              @unique
+  email               String?              @unique
+  passwordHash        String? // Optional: only for ADMIN / AGENT passwords
+  googleId            String?              @unique
+  role                UserRole
+  isVerified          Boolean              @default(false)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  address             String?
+  isActive            Boolean              @default(true)
+  profileImage        String?
+  city                String?
+  pincode             String?
+  state               String?
+  deletedAt           DateTime? // Soft delete support
+  agentProfile        AgentProfile?
+  bookingsAsProvider  Booking[]            @relation("ProviderBookings")
+  instantRequests     InstantRequest[]
+  jobsPosted          Job[]                @relation("ProviderJobs")
+  notifications       Notification[]
+  providerProfile     ProviderProfile?
+  providerReviews     Review[]             @relation("ProviderReviews")
+  workerProfile       WorkerProfile?
+  supportTickets      SupportTicket[]
   passwordResetTokens PasswordResetToken[]
 }
 
@@ -270,16 +271,16 @@ model WorkerSkill {
 }
 
 model AgentWorker {
-  id             String        @id @default(uuid())
-  agentId        String
-  workerId       String
+  id              String        @id @default(uuid())
+  agentId         String
+  workerId        String
   // The Agent's own "I vouch for this worker" trust flag — scoped to this roster link only,
   // separate from User.isVerified (Admin's platform-wide compliance verification).
-  verifiedByAgent Boolean      @default(false)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  agent          AgentProfile  @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  worker         WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  verifiedByAgent Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  agent           AgentProfile  @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  worker          WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)
 
   @@unique([agentId, workerId])
   @@index([agentId])
@@ -385,6 +386,25 @@ model Booking {
   // from the company (their salary arrangement, handled outside the app). Independent of
   // whether the worker has been paid yet.
   commissionCheckedOutAt   DateTime?
+  // Agent-managed bookings: the workers' share is first paid to the agent in one lump
+  // (workerFundsRequest), and only then does the agent hand each worker their part.
+  // The agent's own commission is claimed through commissionRequest.
+  workerFundsRequestId     String?
+  workerFundsRequest       PayoutRequest?          @relation("WorkerFundsRequest", fields: [workerFundsRequestId], references: [id])
+  workerFundsReleasedAt    DateTime?
+  commissionRequestId      String?
+  commissionRequest        PayoutRequest?          @relation("CommissionRequest", fields: [commissionRequestId], references: [id])
+  // Cash bookings of an agent: the agent collected the money, so the platform's share is owed
+  // by the agent. It is netted off their next payout (duesRequest) and stamped settled when
+  // that payout is paid.
+  duesRequestId            String?
+  duesRequest              PayoutRequest?          @relation("DuesRequest", fields: [duesRequestId], references: [id])
+  platformDueSettledAt     DateTime?
+  // Frozen when the booking is created, so later admin price changes cannot alter it. amount is
+  // the total the provider pays; workAmount is what the worker earns (all of their work charge);
+  // agentAmount is the agent cut, paid out of the platform side. Null on older bookings.
+  workAmount               Decimal?
+  agentAmount              Decimal?
   agent                    AgentProfile?           @relation(fields: [agentId], references: [id])
   instantRequest           InstantRequest?         @relation(fields: [instantRequestId], references: [id])
   response                 InstantRequestResponse? @relation(fields: [instantRequestResponseId], references: [id])
@@ -420,17 +440,17 @@ model BookingStatusHistory {
 }
 
 model Otp {
-  id          String      @id @default(uuid())
-  purpose     OtpPurpose
-  channel     OtpChannel
-  identifier  String
-  codeHash    String
-  attempts    Int         @default(0)
-  consumedAt  DateTime?
-  expiresAt   DateTime
-  bookingId   String?
-  booking     Booking?    @relation(fields: [bookingId], references: [id])
-  createdAt   DateTime    @default(now())
+  id         String     @id @default(uuid())
+  purpose    OtpPurpose
+  channel    OtpChannel
+  identifier String
+  codeHash   String
+  attempts   Int        @default(0)
+  consumedAt DateTime?
+  expiresAt  DateTime
+  bookingId  String?
+  booking    Booking?   @relation(fields: [bookingId], references: [id])
+  createdAt  DateTime   @default(now())
 
   @@index([identifier, purpose, channel])
   @@index([expiresAt])
@@ -573,15 +593,15 @@ model ChatMessage {
 }
 
 model SupportTicket {
-  id        String                 @id @default(uuid())
+  id        String                @id @default(uuid())
   userId    String
-  user      User                   @relation(fields: [userId], references: [id])
+  user      User                  @relation(fields: [userId], references: [id])
   subject   String
-  status    SupportTicketStatus    @default(OPEN)
-  priority  SupportTicketPriority  @default(MEDIUM)
+  status    SupportTicketStatus   @default(OPEN)
+  priority  SupportTicketPriority @default(MEDIUM)
   messages  SupportMessage[]
-  createdAt DateTime               @default(now())
-  updatedAt DateTime               @updatedAt
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
 
   @@index([userId])
   @@index([status])
@@ -611,13 +631,58 @@ model Payment {
   updatedAt         DateTime      @updatedAt
 }
 
+enum PayoutRequestKind {
+  WORKER_WALLET // a self-managed worker withdrawing their wallet balance
+  AGENT_COMMISSION // an agent claiming their own commission
+  AGENT_WORKER_FUNDS // an agent claiming the total owed to their managed workers
+}
+
+enum PayoutRequestStatus {
+  PENDING
+  PAID
+  REJECTED
+}
+
+// One row per "please pay me" request. Admin pays it outside the app (UPI / bank) and marks it
+// PAID with the transaction reference; REJECTED puts the money back (wallet credit, or the
+// stamped bookings are released again).
+model PayoutRequest {
+  id                 String              @id @default(uuid())
+  kind               PayoutRequestKind
+  status             PayoutRequestStatus @default(PENDING)
+  userId             String
+  user               User                @relation(fields: [userId], references: [id])
+  amount             Decimal
+  method             String // UPI or BANK
+  upiId              String?
+  accountHolderName  String?
+  accountNumber      String?
+  ifscCode           String?
+  bankName           String?
+  transactionRef     String?
+  rejectionReason    String?
+  processedById      String?
+  processedAt        DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  fundsBookings      Booking[]           @relation("WorkerFundsRequest")
+  commissionBookings Booking[]           @relation("CommissionRequest")
+  // How much of the agent's cash dues to the platform was netted off this request. `amount` is
+  // what admin actually has to pay, i.e. already after this deduction.
+  duesDeducted       Decimal             @default(0)
+  duesBookings       Booking[]           @relation("DuesRequest")
+
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+}
+
 model Wallet {
-  id        String        @id @default(uuid())
-  workerId  String        @unique
-  worker    WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)
-  balance   Decimal       @default(0.00)
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  id           String        @id @default(uuid())
+  workerId     String        @unique
+  worker       WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  balance      Decimal       @default(0.00)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
   transactions Transaction[]
 }
 
@@ -626,7 +691,7 @@ model Transaction {
   walletId  String
   wallet    Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
   amount    Decimal
-  type      String   // CREDIT or DEBIT
+  type      String // CREDIT or DEBIT
   // Unique so a redelivered RabbitMQ message (e.g. consumer crashes after crediting but
   // before acking) can't double-pay — the second insert attempt fails fast instead of
   // silently moving money twice. Every caller today derives this as "{purpose}:{bookingId}",

@@ -94,6 +94,17 @@ export const adminApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ["Booking"],
     }),
+    getSkillRates: builder.query<
+      { success: boolean; data: { skills: { id: string; name: string; baseRate: number; rateUnit: string; category: string | null }[] } },
+      void
+    >({
+      query: () => ({ url: "/admin/skills" }),
+      providesTags: ["Skill" as any],
+    }),
+    updateSkillBaseRate: builder.mutation<{ success: boolean }, { skillId: string; baseRate: number }>({
+      query: ({ skillId, baseRate }) => ({ url: `/admin/skills/${skillId}/base-rate`, method: "PUT", body: { baseRate } }),
+      invalidatesTags: ["Skill" as any],
+    }),
     getSettings: builder.query<{ success: boolean; data: PlatformSetting[] }, void>({
       query: () => ({ url: "/admin/settings" }),
       providesTags: ["Settings" as any],
@@ -140,6 +151,8 @@ export const {
   useVerifyWorkerMutation,
   useGetBookingsQuery,
   useAssignWorkerMutation,
+  useGetSkillRatesQuery,
+  useUpdateSkillBaseRateMutation,
   useGetSettingsQuery,
   useUpdateSettingMutation,
   useGetPlatformAnalyticsQuery,

@@ -176,6 +176,7 @@ mountDI(app, "/api/v1/reviews", (deps) => deps.reviewRouter);
 mountDI(app, "/api/v1/jobs", (deps) => deps.jobRouter);
 mountDI(app, "/api/v1/payments", (deps) => deps.paymentRouter);
 mountDI(app, "/api/v1/wallet", (deps) => deps.walletRouter);
+mountDI(app, "/api/v1/payouts", (deps) => deps.payoutRouter);
 mountDI(app, "/api/v1/admin", (deps) => deps.adminRouter);
 mountDI(app, "/api/v1/notifications", (deps) => deps.notificationRouter);
 mountDI(app, "/api/v1/bookings", (deps) => deps.bookingRouter);

@@ -25,6 +25,9 @@ export interface CreateInstantBookingData {
   instantRequestId: string;
   instantRequestResponseId?: string;
   amount: Prisma.Decimal | number;
+  /** Frozen split: what the worker earns and what the agent gets (see shared/pricing). */
+  workAmount?: number;
+  agentAmount?: number;
   status: string;
   startOtp: string;
   /** Set only when an Agent assigned the roster worker, so commission/payout tracking attributes it correctly. */

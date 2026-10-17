@@ -25,7 +25,8 @@ type FlowStep = "form" | "searching" | "bidding" | "sent" | "no-worker" | "no-bi
 interface BidInfo {
   bidId: string;
   instantRequestId: string;
-  bidAmount: number;
+  // What the provider would pay in total if they pick this bid.
+  totalAmount: number;
   workerName: string;
   rating: number;
   experience: number;
@@ -38,8 +39,6 @@ export default function InstantHirePage() {
   const [bookingMode, setBookingMode] = useState<"DIRECT" | "BIDDING">("DIRECT");
   const [quoteId, setQuoteId] = useState<string>("");
   const [estimatedPrice, setEstimatedPrice] = useState<number | null>(null);
-  const [subtotal, setSubtotal] = useState<number | null>(null);
-  const [platformFee, setPlatformFee] = useState<number | null>(null);
 
   // Geolocation states for fare calculation and worker matching
   const [latitude, setLatitude] = useState<number>(28.628848);
@@ -85,8 +84,6 @@ export default function InstantHirePage() {
       .unwrap()
       .then((res) => {
         setEstimatedPrice(res.estimatedFare);
-        setSubtotal(res.subtotal);
-        setPlatformFee(res.platformFee);
         setQuoteId(res.quoteId);
       })
       .catch((err) => {
@@ -212,7 +209,7 @@ export default function InstantHirePage() {
 
   // Bids sorting helper
   const sortedBids = [...bids].sort((a, b) => {
-    if (sortBy === "price") return a.bidAmount - b.bidAmount;
+    if (sortBy === "price") return a.totalAmount - b.totalAmount;
     if (sortBy === "rating") return b.rating - a.rating;
     return b.experience - a.experience; // Default: experience recommended
   });
@@ -329,17 +326,9 @@ export default function InstantHirePage() {
                   </div>
 
                   {estimatedPrice !== null && (
-                    <div className="p-3 bg-muted rounded-lg space-y-2 border">
-                      <div className="flex justify-between text-sm">
-                        <span>Base Charge:</span>
-                        <span>₹{subtotal}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span>Platform & Instant Fees:</span>
-                        <span>₹{platformFee}</span>
-                      </div>
-                      <div className="border-t pt-2 flex justify-between font-bold text-foreground">
-                        <span>Authoritative Total:</span>
+                    <div className="p-3 bg-muted rounded-lg border">
+                      <div className="flex justify-between font-bold text-foreground">
+                        <span>Total to pay:</span>
                         <span>₹{estimatedPrice}</span>
                       </div>
                     </div>
@@ -380,7 +369,7 @@ export default function InstantHirePage() {
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle>Nearby Live Bids</CardTitle>
-                  <CardDescription>Workers are placing bids below or at your requested amount.</CardDescription>
+                  <CardDescription>Workers are placing bids. Each price shown is the total you would pay.</CardDescription>
                 </div>
                 <div className="flex items-center gap-1 bg-destructive/10 text-destructive px-3 py-1.5 rounded-lg text-sm font-semibold">
                   <Clock className="size-4" /> {biddingTimeLeft}s
@@ -425,7 +414,7 @@ export default function InstantHirePage() {
                         <div className="flex items-center gap-4">
                           <div className="text-right">
                             <span className="text-xs text-muted-foreground line-through">₹{estimatedPrice}</span>
-                            <div className="text-lg font-extrabold text-foreground">₹{bid.bidAmount}</div>
+                            <div className="text-lg font-extrabold text-foreground">₹{bid.totalAmount}</div>
                           </div>
                           <Button size="sm" className="bg-primary hover:bg-primary/95 text-primary-foreground font-semibold" onClick={() => handleSelectBid(bid.bidId)}>
                             Select

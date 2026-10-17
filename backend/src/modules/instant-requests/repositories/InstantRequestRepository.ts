@@ -152,7 +152,7 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
             id: true,
             requiredWorkers: true,
             acceptedWorkers: true,
-            skill: { select: { id: true, name: true } },
+            skill: { select: { id: true, name: true, baseRate: true } },
           },
         },
       },
@@ -178,7 +178,7 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
     const client = tx ?? this.prisma.client;
     return client.instantRequestItem.findUnique({
       where: { id: itemId },
-      include: { request: true },
+      include: { request: true, skill: true },
     });
   }
 
@@ -263,6 +263,8 @@ export class InstantRequestRepository extends BaseRepository<InstantRequest> imp
         instantRequestId: data.instantRequestId,
         instantRequestResponseId: data.instantRequestResponseId ?? null,
         amount: data.amount,
+        workAmount: data.workAmount ?? null,
+        agentAmount: data.agentAmount ?? null,
         status: data.status as any,
         startOtp: data.startOtp,
         agentId: data.agentId ?? null,

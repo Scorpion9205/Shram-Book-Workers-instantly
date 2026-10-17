@@ -34,6 +34,4 @@ export interface IAgentService {
 
   getOpenInstantRequests(agentUserId: string): Promise<any[]>;
   assignWorkerToInstantItem(agentUserId: string, itemId: string, workerId: string): Promise<any>;
-
-  checkoutCommission(agentUserId: string): Promise<{ checkedOutAmount: number }>;
 }

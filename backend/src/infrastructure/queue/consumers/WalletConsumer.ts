@@ -2,13 +2,9 @@ import type * as amqp from 'amqplib';
 import type { IWalletService } from '../../../modules/wallet/interfaces/IWalletService.js';
 import type { IBookingRepository } from '../../../modules/bookings/interfaces/IBookingRepository.js';
 import type { IBookingStateService } from '../../../modules/bookings/interfaces/IBookingStateService.js';
-import type { IPlatformSettingRepository } from '../../../modules/platform-settings/interfaces/IPlatformSettingRepository.js';
-import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import { BookingStatus } from '@prisma/client';
 import { Logger } from '../../../core/logger/Logger.js';
-import { CacheKeys } from '../../cache/cacheKeys.js';
-
-const DEFAULT_COMMISSION_PERCENT = 15;
+import { splitSettledBooking } from '../../../shared/pricing/bookingPricing.js';
 
 export class WalletConsumer {
   private readonly logger = new Logger('WalletConsumer');
@@ -18,25 +14,7 @@ export class WalletConsumer {
     private readonly walletService: IWalletService,
     private readonly bookingRepo: IBookingRepository,
     private readonly bookingStateService: IBookingStateService,
-    private readonly platformSettingRepo: IPlatformSettingRepository,
-    private readonly cache: ICacheService,
   ) {}
-
-  // Mirrors FareCalculator.applyCommission() exactly — the rate the Provider was actually
-  // charged must be the same rate used to compute the Worker's payout, or the platform
-  // silently over/under-pays on every settlement (previously hardcoded to 10% here while
-  // FareCalculator defaulted to 15%, drifting further whenever an admin changed the setting).
-  private async getCommissionPercent(): Promise<number> {
-    const cacheKey = CacheKeys.platformSetting('commissionPercent');
-    const cached = await this.cache.get<number>(cacheKey);
-    if (cached !== null) return cached;
-
-    const setting = await this.platformSettingRepo.get('commissionPercent');
-    const percent = setting && setting.value ? Number(setting.value) : DEFAULT_COMMISSION_PERCENT;
-
-    await this.cache.set(cacheKey, percent, 60);
-    return percent;
-  }
 
   async start(): Promise<void> {
     this.logger.info('Starting Wallet Queue Consumer...');
@@ -101,24 +79,32 @@ export class WalletConsumer {
           return;
         }
 
-        const amount = Number(booking.amount);
-        const commissionPercent = await this.getCommissionPercent();
+        // The split was frozen on the booking when it was created: the worker earns their whole
+        // work charge, and the rest of what the provider paid is the platform's.
+        const split = splitSettledBooking(
+          {
+            amount: Number(booking.amount),
+            finalFare: booking.finalFare !== null ? Number(booking.finalFare) : null,
+            workAmount: booking.workAmount !== null ? Number(booking.workAmount) : null,
+            agentAmount: booking.agentAmount !== null ? Number(booking.agentAmount) : null,
+          },
+          false,
+        );
 
         if (booking.paymentMode === 'ONLINE') {
-          // Online payment captured: credit 90% to worker's wallet
-          const creditAmount = Number((amount * (1 - commissionPercent / 100)).toFixed(2));
-          await this.walletService.creditWallet(workerId, creditAmount, 'BOOKING_PAYMENT', bookingId);
+          // The platform collected the money online, so the worker's earnings go into the wallet.
+          await this.walletService.creditWallet(workerId, split.worker, 'BOOKING_PAYMENT', bookingId);
           this.logger.info(`Successfully credited worker wallet for booking ${bookingId}`, {
             workerId,
-            amount: creditAmount,
+            amount: split.worker,
           });
         } else {
-          // Offline cash payment: debit 10% commission from worker's wallet (allowNegative = true)
-          const debitAmount = Number((amount * (commissionPercent / 100)).toFixed(2));
-          await this.walletService.debitWallet(workerId, debitAmount, 'COMMISSION_DEDUCTION', bookingId, true);
-          this.logger.info(`Successfully debited commission from worker wallet for offline booking ${bookingId}`, {
+          // Cash: the worker kept everything, so the platform's part is taken off the wallet
+          // (allowNegative = true, so it is recorded even if the balance is short).
+          await this.walletService.debitWallet(workerId, split.platform, 'COMMISSION_DEDUCTION', bookingId, true);
+          this.logger.info(`Successfully debited platform share from worker wallet for offline booking ${bookingId}`, {
             workerId,
-            amount: debitAmount,
+            amount: split.platform,
           });
         }
       }

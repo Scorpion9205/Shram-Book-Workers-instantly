@@ -182,11 +182,4 @@ export class AgentController extends BaseController {
     const result = await this.agentService.assignWorkerToInstantItem(user.userId, itemId, dto.workerId);
     this.created(res, result, 'Worker assigned to the instant request successfully.');
   };
-
-  // The agent cashing out their own commission (separate from paying workers).
-  checkoutCommission = async (req: Request, res: Response): Promise<void> => {
-    const user = (req as any).user;
-    const result = await this.agentService.checkoutCommission(user.userId);
-    this.ok(res, result, `₹${result.checkedOutAmount} commission checked out successfully.`);
-  };
 }

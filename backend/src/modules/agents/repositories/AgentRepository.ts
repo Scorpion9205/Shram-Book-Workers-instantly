@@ -82,7 +82,16 @@ export class AgentRepository extends BaseRepository<AgentProfile> implements IAg
         agentId,
         status: { in: SETTLED_STATUSES },
       },
-      select: { id: true, amount: true, finalFare: true, completedAt: true, commissionCheckedOutAt: true },
+      select: {
+        id: true,
+        amount: true,
+        finalFare: true,
+        workAmount: true,
+        agentAmount: true,
+        completedAt: true,
+        commissionCheckedOutAt: true,
+        commissionRequestId: true,
+      },
       orderBy: { completedAt: 'desc' },
     });
 
@@ -90,8 +99,11 @@ export class AgentRepository extends BaseRepository<AgentProfile> implements IAg
       id: b.id,
       amount: Number(b.amount),
       finalFare: b.finalFare !== null ? Number(b.finalFare) : null,
+      workAmount: b.workAmount !== null ? Number(b.workAmount) : null,
+      agentAmount: b.agentAmount !== null ? Number(b.agentAmount) : null,
       completedAt: b.completedAt,
       commissionCheckedOutAt: b.commissionCheckedOutAt,
+      commissionRequestId: b.commissionRequestId,
     }));
   }
 
@@ -107,42 +119,38 @@ export class AgentRepository extends BaseRepository<AgentProfile> implements IAg
         id: true,
         amount: true,
         finalFare: true,
+        workAmount: true,
+        agentAmount: true,
         completedAt: true,
         payoutPaidAt: true,
         payoutMethod: true,
+        workerFundsReleasedAt: true,
+        paymentMode: true,
       },
       orderBy: { completedAt: 'desc' },
     });
 
-    // A booking is "paid" once the agent has clicked Paid on it (payoutPaidAt is set).
-    let totalEarned = 0;
-    let totalPaid = 0;
+    // The amounts here are the full booking amounts; AgentService turns them into the worker's
+    // share (after platform commission). "Paid" means the agent has clicked Paid (payoutPaidAt).
+    const mapped = bookings.map((b) => ({
+      id: b.id,
+      amount: Number(b.finalFare ?? b.amount),
+      finalFare: b.finalFare !== null ? Number(b.finalFare) : null,
+      workAmount: b.workAmount !== null ? Number(b.workAmount) : null,
+      agentAmount: b.agentAmount !== null ? Number(b.agentAmount) : null,
+      completedAt: b.completedAt,
+      payoutPaidAt: b.payoutPaidAt,
+      payoutMethod: b.payoutMethod,
+      // Cash bookings never go through admin, so the agent already holds that money.
+      fundsReleased: b.workerFundsReleasedAt !== null || b.paymentMode === 'OFFLINE',
+    }));
 
-    const mapped = bookings.map((b) => {
-      const earned = Number(b.finalFare ?? b.amount);
-      totalEarned += earned;
-      if (b.payoutPaidAt) totalPaid += earned;
-
-      return {
-        id: b.id,
-        amount: earned,
-        finalFare: b.finalFare !== null ? Number(b.finalFare) : null,
-        completedAt: b.completedAt,
-        payoutPaidAt: b.payoutPaidAt,
-        payoutMethod: b.payoutMethod,
-      };
-    });
-
-    return {
-      totalEarned: Number(totalEarned.toFixed(2)),
-      totalPaid: Number(totalPaid.toFixed(2)),
-      totalPending: Number((totalEarned - totalPaid).toFixed(2)),
-      bookings: mapped,
-    };
+    return { totalEarned: 0, totalPaid: 0, totalPending: 0, payableNow: 0, bookings: mapped };
   }
 
-  // Stamps all of a worker's unpaid settled bookings as paid. Returns how many were updated
-  // (0 means nothing was pending). The payoutPaidAt: null condition makes a double-click harmless.
+  // Stamps a worker's unpaid settled bookings as paid, but only the ones whose money admin has
+  // already released to the agent (nothing can be handed over before that). Returns how many were
+  // updated (0 means nothing payable). The payoutPaidAt: null condition makes a double-click harmless.
   async markWorkerBookingsPaid(agentId: string, workerId: string, method: 'CASH' | 'BANK_TRANSFER'): Promise<number> {
     const result = await this.prisma.client.booking.updateMany({
       where: {
@@ -150,25 +158,11 @@ export class AgentRepository extends BaseRepository<AgentProfile> implements IAg
         workerId,
         status: { in: SETTLED_STATUSES },
         payoutPaidAt: null,
+        OR: [{ workerFundsReleasedAt: { not: null } }, { paymentMode: 'OFFLINE' }],
       },
       data: {
         payoutPaidAt: new Date(),
         payoutMethod: method,
-      },
-    });
-    return result.count;
-  }
-
-  // Same idea for the agent's own commission: stamps every not-yet-checked-out booking.
-  async markCommissionCheckedOut(agentId: string): Promise<number> {
-    const result = await this.prisma.client.booking.updateMany({
-      where: {
-        agentId,
-        status: { in: SETTLED_STATUSES },
-        commissionCheckedOutAt: null,
-      },
-      data: {
-        commissionCheckedOutAt: new Date(),
       },
     });
     return result.count;

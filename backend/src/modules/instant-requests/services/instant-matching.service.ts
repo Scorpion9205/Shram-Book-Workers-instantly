@@ -5,6 +5,8 @@ import type { IMapsProvider } from "../../pricing/interfaces/IPricingStrategy.js
 import type { IInstantRequestRepository } from "../interfaces/IInstantRequestRepository.js";
 import type { IInstantMatchingService } from "../interfaces/IInstantMatchingService.js";
 import { Logger } from "../../../core/logger/Logger.js";
+import { PlatformRatesService } from "../../../shared/pricing/PlatformRatesService.js";
+import { allowedBidRange } from "../../../shared/pricing/bookingPricing.js";
 
 // How long to wait between rounds before looking again for newly available workers or a
 // cancellation. It's a polling pause, not a timeout - the loop never gives up by itself.
@@ -23,6 +25,7 @@ const TERMINAL_STATUSES = new Set(["FILLED", "CANCELLED", "EXPIRED", "COMPLETED"
  */
 export class InstantMatchingService implements IInstantMatchingService {
   private readonly logger = new Logger('InstantMatchingService');
+  private readonly ratesService: PlatformRatesService;
 
   // cache and platformSettingRepo are not used while matching ignores distance; they stay in
   // the constructor so the radius search can come back without changing how this is wired up.
@@ -31,7 +34,9 @@ export class InstantMatchingService implements IInstantMatchingService {
     private readonly cache: ICacheService,
     private readonly platformSettingRepo: IPlatformSettingRepository,
     private readonly mapsProvider: IMapsProvider,
-  ) {}
+  ) {
+    this.ratesService = new PlatformRatesService(platformSettingRepo, cache);
+  }
 
   // Called once at server startup. The matching loops live in memory, so a restart/deploy
   // kills them; this restarts one for every request that is still OPEN.
@@ -88,6 +93,11 @@ export class InstantMatchingService implements IInstantMatchingService {
         `Matching request ${requestId}: ${eligibleWorkers.length} eligible worker(s), ${newWorkers.length} newly notified`,
       );
 
+      // Workers see what THEY earn (the skill's rate), never the provider's total with fees, and
+      // for bidding requests the range their bid must stay within.
+      const workerPay = Number(request.skill?.baseRate ?? 0);
+      const bidRange = allowedBidRange(workerPay, workerPay, await this.ratesService.getBidRules());
+
       for (const worker of newWorkers) {
         notifiedWorkerIds.add(worker.userId);
 
@@ -120,7 +130,7 @@ export class InstantMatchingService implements IInstantMatchingService {
               latitude: request.latitude,
               longitude: request.longitude,
               address: request.address,
-              amount: request.amount,
+              amount: workerPay,
               notes: request.description,
               status: request.status,
               distanceKm,
@@ -135,7 +145,8 @@ export class InstantMatchingService implements IInstantMatchingService {
             workerType: request.skill?.name || "Task",
             address: request.address,
             notes: request.description,
-            amount: request.amount,
+            amount: workerPay,
+            bidRange,
             expiresAt: request.expiresAt,
             distanceKm,
             estimatedMinutes,

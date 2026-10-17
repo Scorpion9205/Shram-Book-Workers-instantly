@@ -5,6 +5,8 @@ import type { IApplicationRepository } from '../interfaces/IApplicationRepositor
 import type { IJobRepository } from '../interfaces/IJobRepository.js';
 import type { IWorkerRepository } from '../../workers/interfaces/IWorkerRepository.js';
 import type { IAgentRepository } from '../../agents/interfaces/IAgentRepository.js';
+import type { IPlatformRatesService } from '../../../shared/pricing/PlatformRatesService.js';
+import { allowedBidRange } from '../../../shared/pricing/bookingPricing.js';
 import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
 import type { IEventPublisher } from '../../../core/interfaces/IEventPublisher.js';
 import { BookingStatus } from '@prisma/client';
@@ -38,6 +40,7 @@ export class ApplicationService extends BaseService implements IApplicationServi
     private readonly prisma: PrismaService,
     private readonly eventPublisher: IEventPublisher,
     private readonly historyRepo: IBookingHistoryRepository,
+    private readonly ratesService: IPlatformRatesService,
   ) {
     super('ApplicationService');
   }
@@ -58,6 +61,10 @@ export class ApplicationService extends BaseService implements IApplicationServi
     if (job.status !== 'OPEN') {
       throw new BusinessException('JOB_CLOSED', 'Job is closed');
     }
+
+    // Agents quote one total for all their workers; the limits apply to each worker's share.
+    const perWorkerBid = role === 'AGENT' ? data.bidAmount / (data.workerCount ?? 1) : data.bidAmount;
+    await this.assertBidWithinRange(job, perWorkerBid, role === 'AGENT');
 
     // Agent applications belong to the agency itself: agentId is set and workerId stays null.
     // The specific workers are picked later, after the provider accepts (assignWorkerToApplication).
@@ -118,7 +125,33 @@ export class ApplicationService extends BaseService implements IApplicationServi
       throw new BusinessException('UNAUTHORIZED_ACCESS', 'Unauthorized access to job applications');
     }
 
-    return this.applicationRepo.findManyByJobId(jobId);
+    // The provider is only ever shown the total they would pay for each bid, never the work
+    // charge / fee breakdown.
+    const applications = await this.applicationRepo.findManyByJobId(jobId);
+    return Promise.all(
+      applications.map(async (a: any) => {
+        const isAgent = a.applicantType === 'AGENT';
+        const workers = isAgent ? a.workerCount ?? 1 : 1;
+        const perWorker = Number(a.bidAmount ?? 0) / workers;
+        const price = await this.ratesService.price(perWorker, isAgent);
+        return { ...a, totalAmount: Math.round(price.total * workers * 100) / 100 };
+      }),
+    );
+  }
+
+  // A bid has to stay near the provider's budget (or the skill's base rate when the job has
+  // none): the admin sets how far below/above, so nobody can bid an arbitrary amount.
+  private async assertBidWithinRange(job: any, perWorkerBid: number, perWorker: boolean): Promise<void> {
+    const base = Number(job.skill?.baseRate ?? 0);
+    if (!(base > 0)) return; // no reference price to check against
+    const reference = job.budget !== null && job.budget !== undefined ? Number(job.budget) : base;
+    const range = allowedBidRange(reference, base, await this.ratesService.getBidRules());
+    if (perWorkerBid < range.min || perWorkerBid > range.max) {
+      throw new BusinessException(
+        'BID_OUT_OF_RANGE',
+        `Your bid${perWorker ? ' per worker' : ''} must be between ₹${range.min} and ₹${range.max} for this job.`,
+      );
+    }
   }
 
   // Provider accepts an application.
@@ -204,13 +237,18 @@ export class ApplicationService extends BaseService implements IApplicationServi
         // provider can still read it out when the worker arrives.
         const { code: startOtpPlain, hash: startOtp } = await generateHashedStartOtp();
 
+        // The bid is the worker's work charge; the provider pays it plus the platform fees.
+        const price = await this.ratesService.price(Number(application.bidAmount ?? 0), !!application.agentId);
+
         booking = await tx.booking.create({
           data: {
             jobId: application.jobId,
             providerId: application.job.providerId,
             workerId: application.workerId,
             agentId: application.agentId,
-            amount: application.bidAmount ?? 0,
+            amount: price.total,
+            workAmount: price.work,
+            agentAmount: price.agent,
             scheduledAt: application.job.scheduledAt,
             status: paymentMode === 'OFFLINE' ? BookingStatus.WORKER_ASSIGNED : BookingStatus.CREATED,
             paymentMode: paymentMode === 'OFFLINE' ? 'OFFLINE' : 'ONLINE',
@@ -338,7 +376,10 @@ export class ApplicationService extends BaseService implements IApplicationServi
       // Agent bookings are always OFFLINE (cash/UPI). The provider agreed to one total bid,
       // and charging it online in separate pieces as workers get assigned would be confusing.
       // Instant requests work the same way. Each booking gets an equal share of the bid.
+      // The bid is the work charge, so each worker's booking carries an equal share of it plus the
+      // platform fees (and the agent's cut).
       const perWorkerAmount = Number(application.bidAmount ?? 0) / workerCount;
+      const price = await this.ratesService.price(perWorkerAmount, true);
       const { code: startOtpPlain, hash: startOtp } = await generateHashedStartOtp();
 
       const booking = await tx.booking.create({
@@ -347,7 +388,9 @@ export class ApplicationService extends BaseService implements IApplicationServi
           providerId: application.job.providerId,
           workerId,
           agentId,
-          amount: perWorkerAmount,
+          amount: price.total,
+          workAmount: price.work,
+          agentAmount: price.agent,
           scheduledAt: application.job.scheduledAt,
           status: BookingStatus.WORKER_ASSIGNED,
           paymentMode: 'OFFLINE',

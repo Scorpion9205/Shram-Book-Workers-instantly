@@ -40,7 +40,13 @@ async function main() {
 
   // 2. Seed Platform Settings
   const settings = [
-    { key: "commissionPercent", value: 15 },
+    { key: "platformFixedFee", value: 10 },
+    { key: "serviceChargePercent", value: 10 },
+    { key: "agentCommissionPercent", value: 3 },
+    { key: "bidMinPercent", value: 80 },
+    { key: "bidMaxPercent", value: 110 },
+    { key: "budgetMinPercentOfBase", value: 70 },
+    { key: "budgetMaxPercentOfBase", value: 300 },
     { key: "instantRequestRadiusTiers", value: [2, 5, 10] },
     { key: "distanceRatePerKm", value: 5 },
     { key: "otpMaxAttempts", value: 5 },

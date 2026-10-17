@@ -2,7 +2,7 @@ import type { IFareCalculator, IPricingStrategy, PricingContext } from '../inter
 import type { IPlatformSettingRepository } from '../../platform-settings/interfaces/IPlatformSettingRepository.js';
 import type { IPricingRuleRepository } from '../../pricing-rules/interfaces/IPricingRuleRepository.js';
 import type { ICacheService } from '../../../core/interfaces/ICacheService.js';
-import { CacheKeys } from '../../../infrastructure/cache/cacheKeys.js';
+import { PlatformRatesService } from '../../../shared/pricing/PlatformRatesService.js';
 import { Logger } from '../../../core/logger/Logger.js';
 import { BusinessException } from '../../../core/exceptions/index.js';
 
@@ -12,6 +12,7 @@ export class FareCalculator implements IFareCalculator {
   // core price. BaseRateStrategy is intentionally excluded: if it fails (e.g. a deleted
   // skillId), pricing must abort loudly, not silently produce a near-zero fare.
   private readonly optionalStrategies: IPricingStrategy[];
+  private readonly ratesService: PlatformRatesService;
 
   constructor(
     private readonly baseRateStrategy: IPricingStrategy,
@@ -23,6 +24,7 @@ export class FareCalculator implements IFareCalculator {
     private readonly cache: ICacheService,
     private readonly pricingRuleRepo: IPricingRuleRepository,
   ) {
+    this.ratesService = new PlatformRatesService(platformSettingRepo, cache);
     this.optionalStrategies = [
       distanceStrategy,
       demandStrategy,
@@ -54,8 +56,8 @@ export class FareCalculator implements IFareCalculator {
     // Apply min/max fare caps
     const cappedTotal = await this.applyPricingRules(rawTotal, context.skillId);
 
-    // Deduct platform commission
-    const finalFare = await this.applyCommission(cappedTotal);
+    // What the provider pays: the work charge plus the flat platform fee and service charge.
+    const finalFare = (await this.ratesService.price(cappedTotal, false)).total;
 
     this.logger.info(`Fare calculation finished. Raw: ${rawTotal}, Final: ${finalFare}`);
 
@@ -82,22 +84,5 @@ export class FareCalculator implements IFareCalculator {
       return maxFare;
     }
     return amount;
-  }
-
-  private async applyCommission(amount: number): Promise<number> {
-    const cacheKey = CacheKeys.platformSetting('commissionPercent');
-    const cached = await this.cache.get<number>(cacheKey);
-
-    let commissionPct = 15;
-    if (cached !== null) {
-      commissionPct = cached;
-    } else {
-      const setting = await this.platformSettingRepo.get('commissionPercent');
-      commissionPct = setting && setting.value ? Number(setting.value) : 15;
-      await this.cache.set(cacheKey, commissionPct, 60);
-    }
-
-    const factor = 1 - commissionPct / 100;
-    return amount * factor;
   }
 }

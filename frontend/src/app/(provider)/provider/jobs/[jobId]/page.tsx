@@ -112,10 +112,10 @@ export default function ProviderJobDetailPage({ params }: { params: Promise<{ jo
                         <span>{app.worker.experience} yrs exp</span>
                       )}
 
-                      {app.bidAmount != null && (
+                      {(app.totalAmount ?? app.bidAmount) != null && (
                         <span className="flex items-center gap-1 font-semibold text-primary">
                           <IndianRupee className="size-3" />
-                          {app.bidAmount}
+                          {app.totalAmount ?? app.bidAmount} total
                         </span>
                       )}
 

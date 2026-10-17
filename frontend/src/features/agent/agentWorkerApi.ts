@@ -32,12 +32,16 @@ export interface WorkerEarningBooking {
   completedAt: string | null;
   payoutPaidAt: string | null;
   payoutMethod: string | null;
+  // True once admin has paid the agent the money for this booking.
+  fundsReleased: boolean;
 }
 
 export interface WorkerEarningsSummary {
   totalEarned: number;
   totalPaid: number;
   totalPending: number;
+  // Pending money the agent already holds and can hand to the worker right now.
+  payableNow: number;
   bookings: WorkerEarningBooking[];
 }
 

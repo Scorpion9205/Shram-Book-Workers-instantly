@@ -18,6 +18,7 @@ import { BookingStatusHistoryRepository } from "../../modules/bookings/index.js"
 import { PlatformSettingRepository } from "../../modules/platform-settings/index.js";
 import { TokenService } from "../../modules/auth/index.js";
 import { MapsProvider } from "../../modules/pricing/providers/MapsProvider.js";
+import { PlatformRatesService } from "../../shared/pricing/PlatformRatesService.js";
 
 /**
  * REAL-DB concurrency test for the instant-request accept race (Phase 6 "Hardening" — the
@@ -136,6 +137,7 @@ beforeAll(async () => {
     matchingService,
     bookingHistoryRepo,
     noopEventPublisher,
+    new PlatformRatesService(platformSettingRepo, cache),
   );
   const instantRequestController = new InstantRequestController(instantRequestService, cache);
   const instantRequestRouter = createInstantRequestRouter(instantRequestController);

@@ -1,12 +1,50 @@
 import { PaymentStatus, UserRole } from '@prisma/client';
 import { BaseRepository } from '../../../core/base/BaseRepository.js';
-import type { IAdminRepository, DashboardCounts, PlatformAnalyticsRawData } from '../interfaces/IAdminRepository.js';
+import type {
+  IAdminRepository,
+  DashboardCounts,
+  PlatformAnalyticsRawData,
+  SkillRateRow,
+} from '../interfaces/IAdminRepository.js';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 
 // Cross-table counts and raw numbers for the admin dashboard and analytics.
 export class AdminRepository extends BaseRepository<any> implements IAdminRepository {
   constructor(private readonly prisma: PrismaService) {
     super();
+  }
+
+  // Every skill with its base rate, for the admin rate editor.
+  async listSkillRates(): Promise<SkillRateRow[]> {
+    const skills = await this.prisma.client.skill.findMany({
+      include: { category: { select: { name: true } } },
+      orderBy: { name: 'asc' },
+    });
+    return skills.map((s) => ({
+      id: s.id,
+      name: s.name,
+      baseRate: Number(s.baseRate),
+      rateUnit: s.rateUnit,
+      category: s.category?.name ?? null,
+    }));
+  }
+
+  // Returns null when the skill doesn't exist.
+  async updateSkillBaseRate(skillId: string, baseRate: number): Promise<SkillRateRow | null> {
+    const existing = await this.prisma.client.skill.findUnique({ where: { id: skillId } });
+    if (!existing) return null;
+    const s = await this.prisma.client.skill.update({
+      where: { id: skillId },
+      data: { baseRate },
+      include: { category: { select: { name: true } } },
+    });
+    return {
+      id: s.id,
+      name: s.name,
+      baseRate: Number(s.baseRate),
+      rateUnit: s.rateUnit,
+      category: s.category?.name ?? null,
+    };
   }
 
   // Total rows in the main tables. The six counts run in parallel.

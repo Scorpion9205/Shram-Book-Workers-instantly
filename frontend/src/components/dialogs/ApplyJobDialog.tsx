@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { Job } from "@/types";
 import { useApplyToJobMutation } from "@/features/jobs/jobsApi";
+import { useGetPriceLimitsQuery } from "@/features/pricing/pricingApi";
 import { usePermission } from "@/hooks/usePermission";
 
 import {
@@ -40,6 +41,16 @@ export default function ApplyJobDialog({
 
   const [applyToJob, { isLoading }] = useApplyToJobMutation();
 
+  // The server decides how far a bid may sit from the budget (or the skill's base rate).
+  const { data: limits } = useGetPriceLimitsQuery(
+    { skillId: job.skill?.id ?? "", ...(job.budget ? { budget: job.budget } : {}) },
+    { skip: !job.skill?.id },
+  );
+  // An agent quotes one total for all their workers; the limits are per worker.
+  const workers = isAgent ? Math.max(Number(workerCount) || 1, 1) : 1;
+  const allowedMin = limits ? limits.bid.min * workers : null;
+  const allowedMax = limits ? limits.bid.max * workers : null;
+
   useEffect(() => {
     setBidAmount(job.budget?.toString() ?? "");
     setMessage("");
@@ -49,6 +60,10 @@ export default function ApplyJobDialog({
   async function handleApply() {
     if (!bidAmount) {
       toast.error("Please enter your bid amount.");
+      return;
+    }
+    if (allowedMin !== null && allowedMax !== null && (Number(bidAmount) < allowedMin || Number(bidAmount) > allowedMax)) {
+      toast.error(`Your bid must be between ₹${allowedMin} and ₹${allowedMax}.`);
       return;
     }
 
@@ -93,7 +108,7 @@ export default function ApplyJobDialog({
         <div className="space-y-5">
 
           <div>
-            <Label>Provider Budget</Label>
+            <Label>Provider Budget (per worker)</Label>
 
             <div className="mt-2 rounded-lg border bg-muted p-3 flex items-center gap-2">
               <IndianRupee className="h-4 w-4" />
@@ -114,6 +129,12 @@ export default function ApplyJobDialog({
                 setBidAmount(e.target.value)
               }
             />
+            {allowedMin !== null && allowedMax !== null && (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                You can bid between ₹{allowedMin} and ₹{allowedMax}
+                {isAgent && workers > 1 ? ` for ${workers} workers` : ""}.
+              </p>
+            )}
           </div>
 
           {isAgent && (

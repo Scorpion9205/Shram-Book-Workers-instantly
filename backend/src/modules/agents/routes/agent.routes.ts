@@ -139,14 +139,5 @@ export function createAgentRouter(controller: AgentController): Router {
     controller.assignWorkerToInstantItem,
   );
 
-  // Agent's own commission checkout — separate from worker payouts, minimum-gated (see
-  // AgentService.checkoutCommission).
-  router.post(
-    '/commissions/checkout',
-    authenticate,
-    authorize(UserRole.AGENT),
-    controller.checkoutCommission,
-  );
-
   return router;
 }

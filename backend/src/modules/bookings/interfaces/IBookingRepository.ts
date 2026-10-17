@@ -17,6 +17,9 @@ export interface CreateBookingInput {
   agentId?: string | undefined;
   amount: Prisma.Decimal;
   estimatedFare: Prisma.Decimal;
+  // Frozen split: what the worker earns and what the agent gets (see shared/pricing).
+  workAmount?: Prisma.Decimal | undefined;
+  agentAmount?: Prisma.Decimal | undefined;
   status?: BookingStatus | undefined;
   type: string; // BookingType
   address?: Prisma.InputJsonValue | undefined;

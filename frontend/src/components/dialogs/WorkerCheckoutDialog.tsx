@@ -80,6 +80,9 @@ export default function WorkerCheckoutDialog({ open, onOpenChange, worker }: Wor
   }
 
   const hasPending = (earnings?.totalPending ?? 0) > 0;
+  const payableNow = earnings?.payableNow ?? 0;
+  // Pending money that admin hasn't paid to the agent yet can't be handed over.
+  const waitingForAdmin = Math.max((earnings?.totalPending ?? 0) - payableNow, 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -88,7 +91,9 @@ export default function WorkerCheckoutDialog({ open, onOpenChange, worker }: Wor
           <DialogTitle className="flex items-center gap-2">
             <Wallet className="size-5 text-primary" /> Checkout — {worker.worker.user.name}
           </DialogTitle>
-          <DialogDescription>Settle what this worker has earned, by cash or bank transfer.</DialogDescription>
+          <DialogDescription>
+            Hand this worker their earnings, by cash or bank transfer, and mark it paid.
+          </DialogDescription>
         </DialogHeader>
 
         {isLoading ? (
@@ -121,6 +126,11 @@ export default function WorkerCheckoutDialog({ open, onOpenChange, worker }: Wor
 
             {!hasPending ? (
               <p className="text-center text-sm text-muted-foreground">Nothing pending right now — fully settled.</p>
+            ) : payableNow <= 0 ? (
+              <p className="rounded-xl bg-secondary p-3 text-center text-sm text-muted-foreground">
+                ₹{waitingForAdmin} is pending, but admin hasn&apos;t paid it to you yet. Request the workers&apos; payout
+                from the Commissions page first; you can pay this worker once admin has paid you.
+              </p>
             ) : (
               <>
                 <div className="space-y-2">
@@ -165,6 +175,13 @@ export default function WorkerCheckoutDialog({ open, onOpenChange, worker }: Wor
                     </div>
                   )}
                 </div>
+
+                <p className="text-center text-sm">
+                  You can pay <span className="font-semibold">₹{payableNow}</span> to this worker now.
+                  {waitingForAdmin > 0 && (
+                    <span className="text-muted-foreground"> (₹{waitingForAdmin} more is waiting for admin.)</span>
+                  )}
+                </p>
 
                 <div className="flex gap-3">
                   <Button

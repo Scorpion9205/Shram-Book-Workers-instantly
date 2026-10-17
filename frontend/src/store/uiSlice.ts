@@ -15,6 +15,8 @@ export interface IncomingBiddingRequest {
   address?: string | null;
   notes?: string | null;
   amount: number;
+  // What a bid may be, worked out by the server from the skill's base rate.
+  bidRange?: { min: number; max: number };
   expiresAt: string;
   distanceKm: number;
   estimatedMinutes: number;

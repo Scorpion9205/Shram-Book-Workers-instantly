@@ -1,3 +1,4 @@
+import { fakeRatesService } from "../../../tests/factories/fakeRatesService.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ApplicationService } from "../services/ApplicationService.js";
 import { BusinessException } from "../../../core/exceptions/index.js";
@@ -65,6 +66,7 @@ describe("ApplicationService.acceptApplication — worker double-booking guard",
       prismaMock,
       eventPublisherMock,
       historyRepoMock,
+      fakeRatesService(),
     );
   });
 
@@ -135,6 +137,7 @@ describe("ApplicationService.applyForJob", () => {
       {} as any,
       {} as any,
       {} as any,
+      fakeRatesService(),
     );
   });
 
@@ -170,6 +173,44 @@ describe("ApplicationService.applyForJob", () => {
     await expect(
       service.applyForJob("agent_user_1", "job_1", { bidAmount: 500 }, "AGENT"),
     ).rejects.toThrow();
+  });
+  describe("bid limits (skill base rate 500, provider budget 500: a bid may be 400 to 550)", () => {
+    const pricedJob = { id: "job_1", providerId: "provider_1", status: "OPEN", budget: 500, skill: { baseRate: 500 } };
+
+    beforeEach(() => {
+      jobRepoMock.findById.mockResolvedValue(pricedJob);
+    });
+
+    it("accepts a bid inside the band, including 10% above the budget", async () => {
+      await expect(service.applyForJob("worker_user_1", "job_1", { bidAmount: 450 })).resolves.toBeDefined();
+      await expect(service.applyForJob("worker_user_1", "job_1", { bidAmount: 550 })).resolves.toBeDefined();
+    });
+
+    it("rejects a bid more than 20% below the budget", async () => {
+      await expect(service.applyForJob("worker_user_1", "job_1", { bidAmount: 350 })).rejects.toThrow(BusinessException);
+      expect(applicationRepoMock.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects a bid more than 10% above the budget", async () => {
+      await expect(service.applyForJob("worker_user_1", "job_1", { bidAmount: 600 })).rejects.toThrow(BusinessException);
+    });
+
+    it("checks an agent's bid per worker, not on the combined total", async () => {
+      // 1000 for 2 workers = 500 each: fine
+      await expect(
+        service.applyForJob("agent_user_1", "job_1", { bidAmount: 1000, workerCount: 2 }, "AGENT"),
+      ).resolves.toBeDefined();
+      // 600 for 2 workers = 300 each: too low
+      await expect(
+        service.applyForJob("agent_user_1", "job_1", { bidAmount: 600, workerCount: 2 }, "AGENT"),
+      ).rejects.toThrow(BusinessException);
+    });
+
+    it("uses the skill base rate as the reference when the job has no budget", async () => {
+      jobRepoMock.findById.mockResolvedValue({ ...pricedJob, budget: null });
+      await expect(service.applyForJob("worker_user_1", "job_1", { bidAmount: 400 })).resolves.toBeDefined();
+      await expect(service.applyForJob("worker_user_1", "job_1", { bidAmount: 700 })).rejects.toThrow(BusinessException);
+    });
   });
 });
 
@@ -219,6 +260,7 @@ describe("ApplicationService.assignWorkerToApplication", () => {
       prismaMock,
       eventPublisherMock,
       historyRepoMock,
+      fakeRatesService(),
     );
   });
 
@@ -262,7 +304,10 @@ describe("ApplicationService.assignWorkerToApplication", () => {
           jobId: "job_1",
           workerId: "worker_1",
           agentId: "agent_1",
-          amount: 500, // bidAmount(1000) / workerCount(2)
+          // bid 1000 / 2 workers = 500 work charge; + ₹10 fee + 10% = 560; agent cut 3% of 500 = 15
+          amount: 560,
+          workAmount: 500,
+          agentAmount: 15,
           paymentMode: "OFFLINE",
           status: "WORKER_ASSIGNED",
         }),

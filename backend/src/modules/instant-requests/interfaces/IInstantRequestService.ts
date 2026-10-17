@@ -2,6 +2,8 @@ import type { CreateInstantRequestInput } from '../validations/instant-request.v
 
 export interface IInstantRequestService {
   createInstantRequest(userId: string, data: CreateInstantRequestInput): Promise<any>;
+  /** What the provider would pay for these items, fees included. */
+  quoteFare(items: { skillId: string; requiredWorkers: number }[]): Promise<{ total: number }>;
   getNearbyRequests(userId: string): Promise<any[]>;
   acceptRequest(userId: string, itemId: string): Promise<any>;
   getMyRequests(userId: string): Promise<any[]>;

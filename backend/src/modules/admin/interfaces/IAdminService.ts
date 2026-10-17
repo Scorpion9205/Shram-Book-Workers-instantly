@@ -3,6 +3,7 @@ import type { PaginatedResult } from '../../../core/base/BaseRepository.js';
 import type { UserFilter } from '../../users/interfaces/IUserRepository.js';
 import type { BookingFilter } from '../../bookings/interfaces/IBookingRepository.js';
 import type { PricingRuleWithSkill } from '../../pricing-rules/interfaces/IPricingRuleRepository.js';
+import type { SkillRateRow } from './IAdminRepository.js';
 
 export interface IAdminService {
   getDashboardStats(): Promise<any>;
@@ -13,6 +14,8 @@ export interface IAdminService {
   getAllSettings(): Promise<PlatformSetting[]>;
   updatePlatformSetting(key: string, value: any): Promise<PlatformSetting>;
   getAllPricingRules(): Promise<PricingRuleWithSkill[]>;
+  getSkillRates(): Promise<SkillRateRow[]>;
+  updateSkillBaseRate(skillId: string, baseRate: number): Promise<SkillRateRow>;
   upsertPricingRule(skillId: string, minFare?: number, maxFare?: number): Promise<PricingRule>;
   getPlatformAnalytics(range?: string, startDateStr?: string, endDateStr?: string): Promise<any>;
   getNotificationTemplates(page: number, limit: number): Promise<PaginatedResult<NotificationTemplate>>;

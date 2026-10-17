@@ -25,9 +25,10 @@ export function BiddingRequestPopup() {
 
   const { minBid, maxBid } = useMemo(() => {
     if (!incoming) return { minBid: 0, maxBid: 0 };
+    // The server works out the allowed range from the skill's base rate.
     return {
-      minBid: Math.ceil(incoming.amount * 0.8),
-      maxBid: Math.floor(incoming.amount),
+      minBid: incoming.bidRange?.min ?? Math.ceil(incoming.amount * 0.8),
+      maxBid: incoming.bidRange?.max ?? Math.floor(incoming.amount * 1.1),
     };
   }, [incoming]);
 

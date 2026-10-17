@@ -56,6 +56,10 @@ const UpdateSettingSchema = z.object({
   value: z.any(),
 });
 
+const UpdateSkillBaseRateBodySchema = z.object({
+  baseRate: z.number().positive().max(1000000),
+});
+
 const UpsertPricingRuleBodySchema = z
   .object({
     minFare: z.number().nonnegative().optional(),
@@ -151,6 +155,18 @@ export class AdminController extends BaseController {
     const dto = this.validate(UpdateSettingSchema, req.body);
     const setting = await this.adminService.updatePlatformSetting(key, dto.value);
     this.ok(res, setting, 'Platform setting updated successfully.');
+  };
+
+  getSkillRates = async (_req: Request, res: Response): Promise<void> => {
+    const skills = await this.adminService.getSkillRates();
+    this.ok(res, { skills }, 'Skill rates retrieved successfully.');
+  };
+
+  updateSkillBaseRate = async (req: Request, res: Response): Promise<void> => {
+    const skillId = req.params.skillId as string;
+    const dto = this.validate(UpdateSkillBaseRateBodySchema, req.body);
+    const skill = await this.adminService.updateSkillBaseRate(skillId, dto.baseRate);
+    this.ok(res, { skill }, 'Skill base rate updated successfully.');
   };
 
   getAllPricingRules = async (req: Request, res: Response): Promise<void> => {

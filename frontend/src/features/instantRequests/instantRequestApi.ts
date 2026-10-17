@@ -22,9 +22,8 @@ export interface FareCalculationPayload {
 }
 
 export interface FareCalculationResult {
+  // The provider only ever sees the total, never how it splits.
   estimatedFare: number;
-  subtotal: number;
-  platformFee: number;
   quoteId: string;
 }
 
@@ -63,8 +62,6 @@ interface NearbyInstantRequestsResponse {
 interface BackendFareResponse {
   success: boolean;
   estimatedFare: number;
-  subtotal: number;
-  platformFee: number;
   quoteId: string;
 }
 
@@ -132,8 +129,6 @@ export const instantRequestApi = apiSlice.injectEndpoints({
         const data = response.data || response;
         return {
           estimatedFare: data.estimatedFare,
-          subtotal: data.subtotal,
-          platformFee: data.platformFee,
           quoteId: data.quoteId,
         };
       },

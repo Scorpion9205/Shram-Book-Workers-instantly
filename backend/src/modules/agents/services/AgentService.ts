@@ -18,11 +18,10 @@ import { BookingStatus, ApplicationStatus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/PrismaService.js';
 import { NotFoundException, BusinessException } from '../../../core/exceptions/index.js';
 import { CacheKeys } from '../../../infrastructure/cache/cacheKeys.js';
+import { splitSettledBooking } from '../../../shared/pricing/bookingPricing.js';
 
 // Used when the admin hasn't set an "agentCommissionPercent" platform setting.
-const DEFAULT_AGENT_COMMISSION_PERCENT = 10;
-// An agent can only cash out their commission once at least this much (in rupees) has piled up.
-const MINIMUM_COMMISSION_CHECKOUT = 2000;
+const DEFAULT_AGENT_COMMISSION_PERCENT = 3;
 
 /**
  * Everything an agent (agency) does: manage a roster of phone-less workers, take jobs and
@@ -70,7 +69,29 @@ export class AgentService extends BaseService implements IAgentService {
   async getWorkerEarnings(agentUserId: string, workerId: string): Promise<any> {
     const agent = await this.getAgentByUserId(agentUserId);
     await this.getAgentWorkerLink(agent.id, workerId);
-    return this.agentRepo.findWorkerEarnings(agent.id, workerId);
+
+    const summary = await this.agentRepo.findWorkerEarnings(agent.id, workerId);
+
+    // The repository gives full booking amounts; the worker's own share is the work charge.
+    let totalEarned = 0;
+    let totalPaid = 0;
+    let payableNow = 0;
+    const bookings = summary.bookings.map((b) => {
+      const share = splitSettledBooking(b, true).worker;
+      totalEarned += share;
+      if (b.payoutPaidAt) totalPaid += share;
+      else if (b.fundsReleased) payableNow += share;
+      return { ...b, amount: share };
+    });
+
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    return {
+      totalEarned: round2(totalEarned),
+      totalPaid: round2(totalPaid),
+      totalPending: round2(totalEarned - totalPaid),
+      payableNow: round2(payableNow),
+      bookings,
+    };
   }
 
   // The app never moves money itself. The agent pays the worker (cash or bank transfer)
@@ -81,7 +102,10 @@ export class AgentService extends BaseService implements IAgentService {
     await this.getAgentWorkerLink(agent.id, workerId);
     const count = await this.agentRepo.markWorkerBookingsPaid(agent.id, workerId, method);
     if (count === 0) {
-      throw new BusinessException('NOTHING_TO_PAY', 'This worker has no pending payout right now.');
+      throw new BusinessException(
+        'NOTHING_TO_PAY',
+        "Nothing to pay this worker yet. Request the workers' payout first and wait for admin to pay it to you.",
+      );
     }
   }
 
@@ -172,12 +196,16 @@ export class AgentService extends BaseService implements IAgentService {
   // Commission % comes from the admin-editable platform setting, cached for a minute so the
   // dashboard doesn't hit the DB on every load. Falls back to the default if unset.
   private async getAgentCommissionPercent(): Promise<number> {
-    const cacheKey = CacheKeys.platformSetting('agentCommissionPercent');
+    return this.getPercentSetting('agentCommissionPercent', DEFAULT_AGENT_COMMISSION_PERCENT);
+  }
+
+  private async getPercentSetting(key: string, fallback: number): Promise<number> {
+    const cacheKey = CacheKeys.platformSetting(key);
     const cached = await this.cache.get<number>(cacheKey);
     if (cached !== null) return cached;
 
-    const setting = await this.platformSettingRepo.get('agentCommissionPercent');
-    const percent = setting && setting.value ? Number(setting.value) : DEFAULT_AGENT_COMMISSION_PERCENT;
+    const setting = await this.platformSettingRepo.get(key);
+    const percent = setting && setting.value ? Number(setting.value) : fallback;
 
     await this.cache.set(cacheKey, percent, 60);
     return percent;
@@ -370,15 +398,16 @@ export class AgentService extends BaseService implements IAgentService {
       this.getAgentCommissionPercent(),
     ]);
 
-    // Use the final settled fare if there is one, otherwise the booked amount. Rounded to paise.
+    // The agent's cut was frozen on the booking when it was created. Rounded to paise.
     const commissions = bookings.map((b) => {
       const grossAmount = b.finalFare ?? b.amount;
       return {
         bookingId: b.id,
         grossAmount,
-        commission: Math.round(grossAmount * (commissionPercent / 100) * 100) / 100,
+        commission: splitSettledBooking(b, true).agent,
         completedAt: b.completedAt,
-        checkedOut: b.commissionCheckedOutAt !== null,
+        // Claimed = already requested from admin (or paid).
+        checkedOut: b.commissionCheckedOutAt !== null || !!b.commissionRequestId,
       };
     });
 
@@ -410,27 +439,7 @@ export class AgentService extends BaseService implements IAgentService {
       todayEarnings: sumSince(startOfToday),
       monthEarnings: sumSince(startOfMonth),
       pendingCheckoutAmount,
-      minimumCheckoutAmount: MINIMUM_COMMISSION_CHECKOUT,
       recentCommissions: commissions.slice(0, 20),
     };
-  }
-
-  // Agent cashes out their commission. Refused until the pending amount reaches the minimum;
-  // on success every currently pending booking is stamped as checked out.
-  async checkoutCommission(userId: string): Promise<{ checkedOutAmount: number }> {
-    this.log('Agent checking out commission', { agentUserId: userId });
-    const summary = await this.getCommissionSummary(userId);
-
-    if (summary.pendingCheckoutAmount < MINIMUM_COMMISSION_CHECKOUT) {
-      throw new BusinessException(
-        'MINIMUM_CHECKOUT_NOT_MET',
-        `You need at least ₹${MINIMUM_COMMISSION_CHECKOUT} pending commission to checkout (currently ₹${summary.pendingCheckoutAmount}).`,
-      );
-    }
-
-    const agent = await this.getAgentByUserId(userId);
-    await this.agentRepo.markCommissionCheckedOut(agent.id);
-
-    return { checkedOutAmount: summary.pendingCheckoutAmount };
   }
 }

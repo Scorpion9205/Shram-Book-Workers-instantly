@@ -30,6 +30,13 @@ export class BookingFactory {
       payoutPaidAt: overrides.payoutPaidAt !== undefined ? overrides.payoutPaidAt : null,
       payoutMethod: overrides.payoutMethod !== undefined ? overrides.payoutMethod : null,
       commissionCheckedOutAt: overrides.commissionCheckedOutAt !== undefined ? overrides.commissionCheckedOutAt : null,
+      workerFundsRequestId: overrides.workerFundsRequestId !== undefined ? overrides.workerFundsRequestId : null,
+      workerFundsReleasedAt: overrides.workerFundsReleasedAt !== undefined ? overrides.workerFundsReleasedAt : null,
+      commissionRequestId: overrides.commissionRequestId !== undefined ? overrides.commissionRequestId : null,
+      duesRequestId: overrides.duesRequestId !== undefined ? overrides.duesRequestId : null,
+      workAmount: overrides.workAmount !== undefined ? overrides.workAmount : null,
+      agentAmount: overrides.agentAmount !== undefined ? overrides.agentAmount : null,
+      platformDueSettledAt: overrides.platformDueSettledAt !== undefined ? overrides.platformDueSettledAt : null,
       createdAt: overrides.createdAt || new Date(),
       updatedAt: overrides.updatedAt || new Date(),
     };

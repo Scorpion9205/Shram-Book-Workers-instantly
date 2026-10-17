@@ -1,6 +1,8 @@
 import { BookingStatus } from "@prisma/client";
 import type { CreateInstantRequestInput } from "../validations/instant-request.validation.js";
 import { FareService } from "../../../shared/services/pricing/fare.service.js";
+import type { IPlatformRatesService } from "../../../shared/pricing/PlatformRatesService.js";
+import { allowedBidRange } from "../../../shared/pricing/bookingPricing.js";
 import { getIO } from "../../../socket/socket.js";
 import { calculateDistance } from "../../../shared/utils/distance.js";
 import { CacheInvalidationService } from "../../../shared/services/cache/cache-invalidation.service.js";
@@ -45,7 +47,13 @@ export class InstantRequestService implements IInstantRequestService {
     private readonly matchingService: IInstantMatchingService,
     private readonly historyRepo: IBookingHistoryRepository,
     private readonly eventPublisher: IEventPublisher,
+    private readonly ratesService: IPlatformRatesService,
   ) {}
+
+  // Prices an instant request for the provider (only the total is shown to them).
+  async quoteFare(items: { skillId: string; requiredWorkers: number }[]): Promise<{ total: number }> {
+    return FareService.calculateInstantFare(items, await this.ratesService.getRates());
+  }
 
   // Provider posts a new instant request. The request and its per-skill items are created in
   // one transaction; matching (notifying nearby workers) then starts in the background.
@@ -55,8 +63,11 @@ export class InstantRequestService implements IInstantRequestService {
 
     const { title, description, latitude, longitude, address, amount, items, bookingMode } = data;
 
+    // Read the pricing settings before the transaction opens, so no cache/DB lookups run inside it.
+    const rates = await this.ratesService.getRates();
+
     const createdRequest = await this.prisma.transaction(async (tx) => {
-      const fare = await FareService.calculateInstantFare(items);
+      const fare = await FareService.calculateInstantFare(items, rates);
 
       const request = await this.requestRepo.createRequest(
         {
@@ -129,7 +140,7 @@ export class InstantRequestService implements IInstantRequestService {
       return [];
     }
 
-    const requests = await this.requestRepo.findOpenNearbyRequestsForSkills(skillIds);
+    const requests = this.showWorkerPay(await this.requestRepo.findOpenNearbyRequestsForSkills(skillIds));
 
     const SEARCH_RADIUS_KM = 10;
 
@@ -218,13 +229,18 @@ export class InstantRequestService implements IInstantRequestService {
         const response = await this.requestRepo.createResponse(itemId, worker.id, tx);
 
 
+        const price = await this.ratesService.price(Number(item.skill.baseRate), false);
+
         const booking = await this.requestRepo.createBooking(
           {
             providerId: item.request.providerId,
             workerId: worker.id,
             instantRequestId: item.request.id,
             instantRequestResponseId: response.id,
-            amount: item.request.amount,
+            // This worker's own price: the skill's rate plus the platform fees (not the whole request).
+            amount: price.total,
+            workAmount: price.work,
+            agentAmount: price.agent,
             status: BookingStatus.WORKER_ASSIGNED,
             startOtp,
           },
@@ -340,7 +356,20 @@ export class InstantRequestService implements IInstantRequestService {
   // Open requests for a set of skills, with no distance filter. Agents use this to browse.
   async getOpenRequestsForSkills(skillIds: string[]): Promise<any[]> {
     if (skillIds.length === 0) return [];
-    return this.requestRepo.findOpenNearbyRequestsForSkills(skillIds);
+    return this.showWorkerPay(await this.requestRepo.findOpenNearbyRequestsForSkills(skillIds));
+  }
+
+  // Workers and agents are shown what a worker earns on the request (the skill's rate), not the
+  // provider's total, which includes the platform fees. Also drops the raw base rate from items.
+  private showWorkerPay(requests: any[]): any[] {
+    return requests.map((request) => {
+      const items = (request.items ?? []).map((item: any) => ({
+        ...item,
+        skill: item.skill ? { id: item.skill.id, name: item.skill.name } : item.skill,
+      }));
+      const firstRate = Number(request.items?.[0]?.skill?.baseRate ?? 0);
+      return { ...request, amount: firstRate > 0 ? firstRate : request.amount, items };
+    });
   }
 
   // Same as acceptRequest, but an agent fills the slot with one of their roster workers.
@@ -388,6 +417,9 @@ export class InstantRequestService implements IInstantRequestService {
 
         const { code: startOtpPlain, hash: startOtp } = await generateHashedStartOtp();
 
+        // The agent's cut comes out of the platform side, so the worker still earns the full rate.
+        const price = await this.ratesService.price(Number(item.skill.baseRate), true);
+
         const booking = await this.requestRepo.createBooking(
           {
             providerId: item.request.providerId,
@@ -395,7 +427,9 @@ export class InstantRequestService implements IInstantRequestService {
             agentId,
             instantRequestId: item.request.id,
             instantRequestResponseId: response.id,
-            amount: item.request.amount,
+            amount: price.total,
+            workAmount: price.work,
+            agentAmount: price.agent,
             status: BookingStatus.WORKER_ASSIGNED,
             startOtp,
           },
@@ -524,12 +558,18 @@ export class InstantRequestService implements IInstantRequestService {
       throw new BusinessException("REQUEST_EXPIRED", "Bidding for this request has expired");
     }
 
-    // A bid may undercut the provider's price by at most 20%, and can't go above it.
-    const requestAmount = Number(request.amount);
-    const minBid = 0.8 * requestAmount;
-    const maxBid = requestAmount;
-    if (bidAmount < minBid || bidAmount > maxBid) {
-      throw new BadRequestException(`Bid amount must be between ₹${Math.round(minBid)} and ₹${maxBid}`);
+    // A bid is the worker's own charge and must stay near the skill's base rate (limits set by
+    // admin), so a bid can't be an arbitrary amount. The provider's total is shown separately.
+    const full = await this.requestRepo.findRequestWithItemsAndProvider(requestId);
+    const workerSkillIds = worker.skills.map((s: any) => s.skillId);
+    const item = full?.items.find((i: any) => workerSkillIds.includes(i.skillId));
+    if (!item) {
+      throw new BadRequestException("You don't have a skill this request needs");
+    }
+    const base = Number(item.skill.baseRate);
+    const range = allowedBidRange(base, base, await this.ratesService.getBidRules());
+    if (bidAmount < range.min || bidAmount > range.max) {
+      throw new BadRequestException(`Your bid must be between ₹${range.min} and ₹${range.max}`);
     }
 
     const bid = await this.prisma.transaction(async (tx) => {
@@ -537,12 +577,14 @@ export class InstantRequestService implements IInstantRequestService {
     });
 
     // Show the new bid on the provider's screen right away. Best effort - the bid is saved either way.
+    // The provider only sees the total they would pay for this bid.
+    const bidTotal = (await this.ratesService.price(Number(bid.bidAmount), false)).total;
     try {
       const io = getIO();
       io.to(`user:${request.providerId}`).emit("instant-bidding:bid-submitted", {
         bidId: bid.id,
         instantRequestId: bid.instantRequestId,
-        bidAmount: bid.bidAmount,
+        totalAmount: bidTotal,
         workerName: bid.worker.user.name,
         rating: bid.worker.rating,
         experience: bid.worker.experience,
@@ -594,13 +636,18 @@ export class InstantRequestService implements IInstantRequestService {
 
         const { code: startOtpPlain, hash: startOtp } = await generateHashedStartOtp();
 
+        // The bid is the worker's work charge; the provider pays it plus the platform fees.
+        const price = await this.ratesService.price(Number(bid.bidAmount), false);
+
         // Create booking with selected bid amount
         const booking = await this.requestRepo.createBooking(
           {
             providerId: request.providerId,
             workerId: bid.workerId,
             instantRequestId: request.id,
-            amount: bid.bidAmount,
+            amount: price.total,
+            workAmount: price.work,
+            agentAmount: price.agent,
             status: BookingStatus.WORKER_ASSIGNED,
             startOtp,
           },

@@ -33,6 +33,10 @@ export function createAdminRouter(controller: AdminController): Router {
   router.put('/settings/:key', controller.updateSetting);
 
   // Pricing Rules (per-skill min/max fare caps)
+  // Base rate per skill (the market price budgets and bids are checked against)
+  router.get('/skills', controller.getSkillRates);
+  router.put('/skills/:skillId/base-rate', controller.updateSkillBaseRate);
+
   router.get('/pricing-rules', controller.getAllPricingRules);
   router.put('/pricing-rules/:skillId', controller.upsertPricingRule);
 
