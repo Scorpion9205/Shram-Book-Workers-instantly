@@ -9,6 +9,8 @@ export interface BookingResponseDto {
   agentId: string | null;
   amount: number;
   estimatedFare: number;
+  // What the worker earns from this booking (their work charge); null on older bookings.
+  workAmount: number | null;
   finalFare: number | null;
   status: string;
   type: string;
@@ -45,6 +47,7 @@ export class BookingMapper {
       agentId: booking.agentId,
       amount: Number(booking.amount),
       estimatedFare: Number(booking.estimatedFare),
+      workAmount: booking.workAmount !== null ? Number(booking.workAmount) : null,
       finalFare: booking.finalFare ? Number(booking.finalFare) : null,
       status: booking.status,
       type: booking.type,

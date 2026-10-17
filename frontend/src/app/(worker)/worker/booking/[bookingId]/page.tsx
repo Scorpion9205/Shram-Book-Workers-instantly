@@ -149,7 +149,7 @@ export default function WorkerBookingDetailPage({ params }: { params: Promise<{ 
                 Earnings
               </p>
               <p className="text-2xl font-bold text-primary">
-                ₹{booking.amount}
+                ₹{booking.workAmount ?? booking.amount}
               </p>
             </div>
 

@@ -182,7 +182,11 @@ export type BookingStatus =
 export interface Booking {
   id: string;
 
+  // The total the provider pays.
   amount: number;
+
+  // What the worker earns from it (their work charge). Missing on older bookings.
+  workAmount?: number | null;
 
   status: BookingStatus;
 

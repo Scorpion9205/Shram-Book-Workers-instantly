@@ -58,7 +58,7 @@ export default function WorkerBookingsPage() {
                     {new Date(booking.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                   </p>
                 </div>
-                <span className="text-sm font-semibold">₹{booking.amount}</span>
+                <span className="text-sm font-semibold">₹{booking.workAmount ?? booking.amount}</span>
                 <Badge
                   variant={statusVariant[booking.status]}
                 >
