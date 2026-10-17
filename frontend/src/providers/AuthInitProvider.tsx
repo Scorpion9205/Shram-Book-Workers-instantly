@@ -20,7 +20,9 @@ export function AuthInitProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const init = async () => {
       const token = tokenStorage.getAccessToken();
-      if (!token) {
+      // Nothing stored at all means a logged-out visitor. If only the refresh token is left,
+      // carry on: the first request will 401 and the silent refresh gets a new access token.
+      if (!token && !tokenStorage.getRefreshToken()) {
         dispatch(finishedLoading());
         return;
       }
@@ -32,6 +34,11 @@ export function AuthInitProvider({ children }: { children: React.ReactNode }) {
         // overwrite that freshly-rotated token with the expired one, in both Redux and
         // localStorage, causing every subsequent request to 401 again.
         const currentToken = tokenStorage.getAccessToken() ?? token;
+        // No token at this point means the silent refresh failed, so treat it as logged out.
+        if (!currentToken) {
+          dispatch(clearAuth());
+          return;
+        }
         dispatch(setCredentials({ user, accessToken: currentToken }));
       } catch {
         dispatch(clearAuth());

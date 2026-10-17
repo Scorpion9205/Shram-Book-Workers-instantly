@@ -1,4 +1,14 @@
 import { BookingStatus } from "@prisma/client";
+
+// A job counts as done once the work is finished, and stays done after payment is settled,
+// reviewed or closed. Using only WORK_COMPLETED would make a job vanish from earnings and
+// "completed" counts the moment its payment settles.
+const COMPLETED_STATUSES = [
+  BookingStatus.WORK_COMPLETED,
+  BookingStatus.PAYMENT_SETTLED,
+  BookingStatus.REVIEWED,
+  BookingStatus.CLOSED,
+];
 import { PrismaService } from "../../../database/prisma/PrismaService.js";
 import type {
   IDashboardRepository,
@@ -26,7 +36,7 @@ export class DashboardRepository implements IDashboardRepository {
         client.booking.aggregate({
           where: {
             workerId,
-            status: BookingStatus.WORK_COMPLETED,
+            status: { in: COMPLETED_STATUSES },
             completedAt: { gte: today },
           },
           _sum: { amount: true },
@@ -37,7 +47,7 @@ export class DashboardRepository implements IDashboardRepository {
         }),
 
         client.booking.count({
-          where: { workerId, status: BookingStatus.WORK_COMPLETED },
+          where: { workerId, status: { in: COMPLETED_STATUSES } },
         }),
 
         // The booking currently in progress (if any) — shown as the
@@ -78,7 +88,7 @@ export class DashboardRepository implements IDashboardRepository {
         client.booking.findMany({
           where: {
             workerId,
-            status: BookingStatus.WORK_COMPLETED,
+            status: { in: COMPLETED_STATUSES },
             completedAt: { gte: trendStart, lte: trendEnd },
           },
           select: { amount: true, completedAt: true },
@@ -145,7 +155,7 @@ export class DashboardRepository implements IDashboardRepository {
       }),
 
       client.booking.count({
-        where: { providerId, status: BookingStatus.WORK_COMPLETED },
+        where: { providerId, status: { in: COMPLETED_STATUSES } },
       }),
 
       client.application.count({
@@ -153,22 +163,22 @@ export class DashboardRepository implements IDashboardRepository {
       }),
 
       client.booking.aggregate({
-        where: { providerId, status: BookingStatus.WORK_COMPLETED, completedAt: { gte: today } },
+        where: { providerId, status: { in: COMPLETED_STATUSES }, completedAt: { gte: today } },
         _sum: { amount: true },
       }),
 
       client.booking.aggregate({
-        where: { providerId, status: BookingStatus.WORK_COMPLETED, completedAt: { gte: weekStart } },
+        where: { providerId, status: { in: COMPLETED_STATUSES }, completedAt: { gte: weekStart } },
         _sum: { amount: true },
       }),
 
       client.booking.aggregate({
-        where: { providerId, status: BookingStatus.WORK_COMPLETED, completedAt: { gte: monthStart } },
+        where: { providerId, status: { in: COMPLETED_STATUSES }, completedAt: { gte: monthStart } },
         _sum: { amount: true },
       }),
 
       client.booking.count({
-        where: { providerId, status: BookingStatus.WORK_COMPLETED },
+        where: { providerId, status: { in: COMPLETED_STATUSES } },
       }),
 
       client.booking.findMany({
@@ -207,7 +217,7 @@ export class DashboardRepository implements IDashboardRepository {
       client.booking.findMany({
         where: {
           providerId,
-          status: BookingStatus.WORK_COMPLETED,
+          status: { in: COMPLETED_STATUSES },
           completedAt: { gte: trendStart, lte: trendEnd },
         },
         select: { amount: true, completedAt: true },

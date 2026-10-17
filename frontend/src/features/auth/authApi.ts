@@ -1,5 +1,6 @@
 import { apiSlice } from "@/services/api/apiSlice";
 import type { User } from "@/types";
+import { tokenStorage } from "@/lib/utils/token-storage";
 
 interface AuthResponse {
   user: User;
@@ -69,6 +70,11 @@ const normalizeAuthResponse = (
   response: any
 ): AuthResponse => {
   const authData = response.data || response;
+  // Remember the week-long refresh token so the session can renew itself after the 15-minute
+  // access token expires.
+  if (authData.refreshToken) {
+    tokenStorage.setRefreshToken(authData.refreshToken);
+  }
   return {
     user: {
       ...authData.user,

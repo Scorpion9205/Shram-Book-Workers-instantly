@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { MapPin, IndianRupee, Clock, X, Check, Briefcase } from "lucide-react";
@@ -9,21 +9,19 @@ import { useAppDispatch, useAppSelector } from "@/hooks/redux";
 import { clearIncomingInstantRequest } from "@/store/uiSlice";
 import { useAcceptInstantRequestItemMutation } from "@/features/instantRequests/instantRequestApi";
 import { Button } from "@/components/ui/button";
-import { INSTANT_REQUEST_TIMEOUT_SECONDS } from "@/lib/constants";
 
 export function InstantRequestPopup() {
   const dispatch = useAppDispatch();
   const router = useRouter();
   const incoming = useAppSelector((s) => s.ui.incomingInstantRequest);
   const [acceptItem, { isLoading: isAccepting }] = useAcceptInstantRequestItemMutation();
-  const [secondsLeft, setSecondsLeft] = useState(INSTANT_REQUEST_TIMEOUT_SECONDS);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // The popup stays until the worker taps Accept or Reject (or the server closes the request).
+  // There is no countdown or expiry. This only plays a short alert sound while it is open.
   useEffect(() => {
     if (!incoming) return;
-    setSecondsLeft(INSTANT_REQUEST_TIMEOUT_SECONDS);
 
-    
     try {
       audioRef.current = new Audio(
         "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="
@@ -35,39 +33,20 @@ export function InstantRequestPopup() {
       /* ignore */
     }
 
-    const interval = setInterval(() => {
-      setSecondsLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
     return () => {
-      clearInterval(interval);
       audioRef.current?.pause();
       audioRef.current = null;
     };
   }, [incoming]);
 
-  useEffect(() => {
-    if (incoming && secondsLeft === 0) {
-      handleDecline(true);
-    }
-   
-  }, [secondsLeft]);
-
   if (!incoming) return null;
 
   const { itemId, request } = incoming;
-  const progress = (secondsLeft / INSTANT_REQUEST_TIMEOUT_SECONDS) * 100;
 
-  function handleDecline(auto = false) {
+  // Reject just closes the popup for this worker; nothing is sent to the server.
+  function handleReject() {
     audioRef.current?.pause();
     dispatch(clearIncomingInstantRequest());
-    if (auto) toast.info("Instant request expired");
   }
 
   async function handleAccept() {
@@ -114,15 +93,6 @@ export function InstantRequestPopup() {
             <h2 className="text-2xl font-bold">{request.providerName || "A nearby Provider"}</h2>
           </div>
 
-          {/* Countdown progress bar */}
-          <div className="h-1.5 w-full bg-secondary">
-            <motion.div
-              className="h-full bg-accent"
-              animate={{ width: `${progress}%` }}
-              transition={{ ease: "linear", duration: 1 }}
-            />
-          </div>
-
           <div className="space-y-5 px-6 py-6">
             <div className="grid grid-cols-3 gap-3 text-center">
               <div className="rounded-2xl bg-secondary p-3">
@@ -154,22 +124,16 @@ export function InstantRequestPopup() {
               )}
             </div>
 
-            <div className="flex items-center justify-center">
-              <div className="flex size-12 items-center justify-center rounded-full bg-accent/10 text-accent font-bold text-lg tabular-nums">
-                {secondsLeft}
-              </div>
-            </div>
-
             <div className="flex gap-3">
               <Button
                 variant="outline"
                 size="lg"
                 className="flex-1 border-destructive/30 text-destructive hover:bg-destructive/5"
-                onClick={() => handleDecline(false)}
+                onClick={handleReject}
                 disabled={isAccepting}
               >
                 <X className="size-4" />
-                Decline
+                Reject
               </Button>
               <Button
                 variant="default"

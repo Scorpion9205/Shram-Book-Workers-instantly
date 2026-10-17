@@ -9,7 +9,9 @@ import { randomInt } from "crypto";
  */
 export async function generateHashedStartOtp(): Promise<{ code: string; hash: string }> {
   const code = randomInt(100000, 1000000).toString();
-  const hash = await argon2.hash(code, { type: argon2.argon2id });
+  // Deliberately light settings: a 6-digit code has only a million possibilities, so a heavy
+  // hash adds almost no security but made accepting a request take seconds on a small server.
+  const hash = await argon2.hash(code, { type: argon2.argon2id, memoryCost: 4096, timeCost: 2, parallelism: 1 });
   return { code, hash };
 }
 

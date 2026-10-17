@@ -2,15 +2,31 @@ import { RedisService } from "../redis/redis.service.js";
 
 export class CacheInvalidationService {
 
+  // Dashboard cache keys are "dashboard:<role>:<userId>:<range>:<startDate>:<endDate>" (one per
+  // date range the user looked at), so they are cleared with a pattern, not an exact key.
+  // Called whenever a booking changes status, so earnings and counts update right away.
+  static async afterBookingStatusChanged(
+    providerUserId: string,
+    workerUserId?: string | null
+  ) {
+
+    const jobs: Promise<any>[] = [
+      RedisService.deletePattern(`dashboard:provider:${providerUserId}:*`),
+    ];
+    if (workerUserId) {
+      jobs.push(RedisService.deletePattern(`dashboard:worker:${workerUserId}:*`));
+    }
+    await Promise.all(jobs);
+
+  }
+
   static async afterJobCreated(
     providerUserId: string
   ) {
 
     await Promise.all([
 
-      RedisService.del(
-        `dashboard:provider:${providerUserId}`
-      ),
+      RedisService.deletePattern(`dashboard:provider:${providerUserId}:*`),
 
       // JobService.getAllJobs actually caches under `jobs:worker:${userId}` /
       // `jobs:agent:${userId}` (per-viewer, not a shared "nearby" key) — "jobs:nearby:*" never
@@ -30,9 +46,7 @@ export class CacheInvalidationService {
   ) {
 
     const promises: Promise<any>[] = [
-      RedisService.del(
-        `dashboard:provider:${providerUserId}`
-      ),
+      RedisService.deletePattern(`dashboard:provider:${providerUserId}:*`),
 
       // See the identical comment in afterJobCreated — same dead-pattern bug.
       RedisService.deletePattern("jobs:worker:*"),
@@ -41,9 +55,7 @@ export class CacheInvalidationService {
 
     if (workerUserId) {
       promises.push(
-        RedisService.del(
-          `dashboard:worker:${workerUserId}`
-        )
+        RedisService.deletePattern(`dashboard:worker:${workerUserId}:*`)
       );
     }
 
@@ -58,13 +70,9 @@ export class CacheInvalidationService {
 
     await Promise.all([
 
-      RedisService.del(
-        `dashboard:provider:${providerUserId}`
-      ),
+      RedisService.deletePattern(`dashboard:provider:${providerUserId}:*`),
 
-      RedisService.del(
-        `dashboard:worker:${workerUserId}`
-      )
+      RedisService.deletePattern(`dashboard:worker:${workerUserId}:*`)
 
     ]);
 
@@ -74,9 +82,7 @@ export class CacheInvalidationService {
     workerUserId: string
   ) {
 
-    await RedisService.del(
-      `dashboard:worker:${workerUserId}`
-    );
+    await RedisService.deletePattern(`dashboard:worker:${workerUserId}:*`);
 
   }
 
@@ -86,9 +92,7 @@ export class CacheInvalidationService {
 
     await Promise.all([
 
-      RedisService.del(
-        `dashboard:provider:${providerUserId}`
-      ),
+      RedisService.deletePattern(`dashboard:provider:${providerUserId}:*`),
 
       RedisService.deletePattern(
         "requests:nearby:*"
@@ -105,13 +109,9 @@ export class CacheInvalidationService {
 
     await Promise.all([
 
-      RedisService.del(
-        `dashboard:provider:${providerUserId}`
-      ),
+      RedisService.deletePattern(`dashboard:provider:${providerUserId}:*`),
 
-      RedisService.del(
-        `dashboard:worker:${workerUserId}`
-      ),
+      RedisService.deletePattern(`dashboard:worker:${workerUserId}:*`),
 
       RedisService.deletePattern(
         "requests:nearby:*"
@@ -128,13 +128,9 @@ export class CacheInvalidationService {
 
     await Promise.all([
 
-      RedisService.del(
-        `dashboard:provider:${providerUserId}`
-      ),
+      RedisService.deletePattern(`dashboard:provider:${providerUserId}:*`),
 
-      RedisService.del(
-        `dashboard:worker:${workerUserId}`
-      )
+      RedisService.deletePattern(`dashboard:worker:${workerUserId}:*`)
 
     ]);
 

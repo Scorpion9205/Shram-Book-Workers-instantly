@@ -51,6 +51,8 @@ export const baseQueryWithReauth: BaseQueryFn<
           {
             url: "/auth/refresh-token",
             method: "POST",
+            // Sent in the body because the cookie usually isn't returned on cross-site requests.
+            body: { refreshToken: tokenStorage.getRefreshToken() },
           },
           api,
           extraOptions

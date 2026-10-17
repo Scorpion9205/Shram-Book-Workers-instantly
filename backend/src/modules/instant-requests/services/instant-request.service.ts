@@ -177,6 +177,10 @@ export class InstantRequestService implements IInstantRequestService {
     }
 
     try {
+      // Hashing is the slowest single step on a small server, so do it here (lock held, no DB
+      // transaction open yet) rather than inside the transaction.
+      const { code: startOtpPlain, hash: startOtp } = await generateHashedStartOtp();
+
       const result = await this.prisma.transaction(async (tx) => {
         const item = await this.requestRepo.findRequestItemWithRequest(itemId, tx);
 
@@ -213,7 +217,6 @@ export class InstantRequestService implements IInstantRequestService {
         // plaintext cached for the provider to read out when the worker arrives).
         const response = await this.requestRepo.createResponse(itemId, worker.id, tx);
 
-        const { code: startOtpPlain, hash: startOtp } = await generateHashedStartOtp();
 
         const booking = await this.requestRepo.createBooking(
           {
@@ -227,8 +230,6 @@ export class InstantRequestService implements IInstantRequestService {
           },
           tx,
         );
-
-        await this.cache.set(bookingStartOtpCacheKey(booking.id), startOtpPlain, BOOKING_START_OTP_CACHE_TTL_SECONDS);
 
         // The booking row was written directly (not via BookingStateService), so add its first
         // audit-history entry by hand. We can't use BookingStateService here: instant bookings
@@ -250,11 +251,6 @@ export class InstantRequestService implements IInstantRequestService {
         const workerClaimed = await this.requestRepo.markWorkerUnavailableIfAvailable(worker.id, tx);
         if (workerClaimed === 0) {
           throw new BusinessException("WORKER_UNAVAILABLE", "You have just been booked on another job");
-        }
-
-        // A busy worker must not be found by matching, so take them out of every skill's GEO set.
-        for (const s of worker.skills) {
-          await this.cache.geoRemove(`geo:instant-workers:${s.skillId}`, worker.id);
         }
 
         // Take one slot with a conditional UPDATE (only if acceptedWorkers < requiredWorkers),
@@ -286,7 +282,11 @@ export class InstantRequestService implements IInstantRequestService {
           await this.requestRepo.markRequestFilled(item.requestId, tx);
         }
 
-        const finalItem = await this.requestRepo.findItemById(itemId, tx);
+        // The item as it looks now, without another DB read.
+        const finalItem = {
+          ...updatedItem,
+          status: updatedItem.acceptedWorkers >= updatedItem.requiredWorkers ? "FILLED" : updatedItem.status,
+        };
 
         return {
           item: finalItem,
@@ -296,6 +296,14 @@ export class InstantRequestService implements IInstantRequestService {
           booking,
         };
       });
+
+      // Redis housekeeping after the DB work is done (kept out of the transaction so it stays
+      // short): remember the plaintext start OTP for the provider, and take the now-busy worker
+      // out of every skill's GEO index. These run in parallel.
+      await Promise.all([
+        this.cache.set(bookingStartOtpCacheKey(result.bookingId), startOtpPlain, BOOKING_START_OTP_CACHE_TTL_SECONDS),
+        ...worker.skills.map((sk: any) => this.cache.geoRemove(`geo:instant-workers:${sk.skillId}`, worker.id)),
+      ]);
 
       // Cached lists for both people are stale now.
       await CacheInvalidationService.afterInstantRequestAccepted(result.providerUserId, result.workerUserId);

@@ -11,6 +11,7 @@ import { BusinessException, NotFoundException } from '../../../core/exceptions/i
 import { Logger } from '../../../core/logger/Logger.js';
 import { getIO } from '../../../socket/socket.js';
 import { BookingMapper } from '../mappers/Booking.mapper.js';
+import { CacheInvalidationService } from '../../../shared/services/cache/cache-invalidation.service.js';
 
 /**
  * The only place allowed to change a booking's status. Each transition is checked against
@@ -67,42 +68,49 @@ export class BookingStateService implements IBookingStateService {
         reason: meta.reason,
       }, tx);
 
+      // Record when the work actually started / finished. Earnings, "today" counts and the
+      // trend charts are all based on completedAt.
+      if (toStatus === BookingStatus.WORK_STARTED) {
+        return this.bookingRepo.update(bookingId, { startedAt: new Date() }, tx);
+      }
+      if (toStatus === BookingStatus.WORK_COMPLETED) {
+        return this.bookingRepo.update(bookingId, { completedAt: new Date() }, tx);
+      }
+
       return updatedBooking;
     });
+
+    // Look up the worker's login id once; it's needed for both the dashboard cache and sockets.
+    let workerUserId: string | null = null;
+    if (updated.workerId) {
+      const workerProfile = await this.prisma.client.workerProfile.findUnique({
+        where: { id: updated.workerId },
+        select: { userId: true },
+      });
+      workerUserId = workerProfile?.userId ?? null;
+    }
+
+    // Dashboards (earnings, counts) are cached for a minute. Clear them first, so the refetch
+    // that the socket event below triggers returns fresh numbers instead of the old cached ones.
+    try {
+      await CacheInvalidationService.afterBookingStatusChanged(updated.providerId, workerUserId);
+    } catch (err) {
+      this.logger.error(`Failed to clear dashboard cache for booking ${bookingId}`, err);
+    }
 
     // Push the change to the browsers of both sides so their screens update without a refresh.
     // Failures here are logged but never block the transition - the DB is already updated.
     try {
       const io = getIO();
       const mappedBooking = BookingMapper.toResponse(updated, { userId: updated.providerId });
-      
-      const payload = {
-        bookingId: updated.id,
-        status: toStatus,
-      };
+      const payload = { bookingId: updated.id, status: toStatus };
 
       // "bookingStatusUpdated" is the light event - just id + status - used by the booking detail page.
-      io.to(`user:${updated.providerId}`).emit('bookingStatusUpdated', payload);
-      if (updated.workerId) {
-        const workerProfile = await this.prisma.client.workerProfile.findUnique({
-          where: { id: updated.workerId },
-          select: { userId: true },
-        });
-        if (workerProfile) {
-          io.to(`user:${workerProfile.userId}`).emit('bookingStatusUpdated', payload);
-        }
-      }
-
       // "bookingUpdated" carries the whole booking and feeds the global timeline/toast listener.
-      io.to(`user:${updated.providerId}`).emit('bookingUpdated', mappedBooking);
-      if (updated.workerId) {
-        const workerProfile = await this.prisma.client.workerProfile.findUnique({
-          where: { id: updated.workerId },
-          select: { userId: true },
-        });
-        if (workerProfile) {
-          io.to(`user:${workerProfile.userId}`).emit('bookingUpdated', mappedBooking);
-        }
+      const recipients = [updated.providerId, ...(workerUserId ? [workerUserId] : [])];
+      for (const userId of recipients) {
+        io.to(`user:${userId}`).emit('bookingStatusUpdated', payload);
+        io.to(`user:${userId}`).emit('bookingUpdated', mappedBooking);
       }
     } catch (err: any) {
       if (err?.message === 'Socket not initialized') {

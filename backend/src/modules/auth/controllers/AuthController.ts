@@ -11,7 +11,11 @@ import { ForgotPasswordSchema } from '../dto/ForgotPassword.dto.js';
 import { ResetPasswordSchema } from '../dto/ResetPassword.dto.js';
 import { signupSchema } from '../validations/auth.validation.js';
 import { z } from 'zod';
+import { env } from '../../../config/env.js';
 
+// Login responses carry the refresh token in the body as well as in the cookie. The site and the
+// API live on different domains, so browsers often won't send the cookie back; the frontend keeps
+// the token itself and sends it in the refresh request body instead.
 export class AuthController extends BaseController {
   constructor(
     private readonly authService: IAuthService,
@@ -40,8 +44,8 @@ export class AuthController extends BaseController {
     // Set refresh token in HttpOnly cookie
     res.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: env.NODE_ENV === 'production',
+      sameSite: env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
@@ -52,6 +56,7 @@ export class AuthController extends BaseController {
     this.ok(res, {
       user: result.user,
       accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
       ...(result.redirectTo && { redirectTo: result.redirectTo }),
     }, 'OTP verified and login successful');
   };
@@ -62,14 +67,15 @@ export class AuthController extends BaseController {
 
     res.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: env.NODE_ENV === 'production',
+      sameSite: env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     this.ok(res, {
       user: result.user,
       accessToken: result.accessToken,
+    refreshToken: result.refreshToken,
     }, 'Administrator/Agent login successful');
   };
 
@@ -79,14 +85,15 @@ export class AuthController extends BaseController {
 
     res.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: env.NODE_ENV === 'production',
+      sameSite: env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     this.ok(res, {
       user: result.user,
       accessToken: result.accessToken,
+    refreshToken: result.refreshToken,
     }, 'Google authentication successful');
   };
 
